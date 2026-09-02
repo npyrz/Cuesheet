@@ -30,6 +30,8 @@ Open the app. Add your AIs.
 
 Give each one a harness, a role, a workspace, and a leash. Watch them work on one screen. Scan a QR code and carry the whole crew in your pocket — approve a command from a coffee shop, kill a run from bed, read the diff on the train.
 
+Arm On-Call and production paging you at 3am gets you a reviewed patch instead of a stack trace.
+
 Your memory, your knowledge, your rules, and your history live in Cuesheet. The models are interchangeable parts.
 
 ---
@@ -93,7 +95,7 @@ Adding an AI is five choices, and Cuesheet has already made four of them by the 
 │      ○ opencode                 not installed      install ↓│
 │                                                             │
 │  2 · MODEL      opus ▾                                      │
-│  3 · ROLE       engineer ▾   reviewer · worker · conductor  │
+│  3 · ROLE       engineer ▾   reviewer · worker · caller     │
 │  4 · WORKSPACE  ~/code/api                         browse   │
 │  5 · LEASH      may touch   src/**  tests/**                │
 │                 never       **/*.env  infra/**  .git/**     │
@@ -124,7 +126,7 @@ Every vendor meters differently and none of them tell you where you stand until 
 
 ---
 
-## On call — your phone
+## Away from the desk
 
 Scan a QR code once. That's the setup.
 
@@ -162,18 +164,19 @@ Nothing is public. Nothing is shared. Nothing leaves except what your models wer
 
 ## Core concepts
 
-Eleven words and you know the system.
+Twelve words and you know the system.
 
 | Term | What it is |
 |---|---|
 | **Desk** | Your control surface. A grid of live tiles, one per Station. |
 | **Station** | One model, on one harness, in one role, bound to one workspace, under one leash. The unit you add. |
 | **Harness** | The integration for one runtime — `claude-code`, `codex`, `ollama`. Versioned, swappable, community-maintained. |
-| **Role** | What a Station is *for*: `engineer`, `reviewer`, `worker`, or `conductor`. Roles change permissions, not just prompts. |
+| **Role** | What a Station is *for*: `engineer`, `reviewer`, `worker`, or `caller`. Roles change permissions, not just prompts. |
 | **Cue** | One step: a Station and an action. |
 | **Cuesheet** | An ordered list of cues and gates. The plan. |
 | **Run** | One execution of a cuesheet: a prompt in, a diff and a set of verdicts out. Durable, replayable, costed. |
 | **Standby** | A run paused, waiting on you. Answer it from anywhere. |
+| **Incident** | An externally-triggered Run — an alert came in, not a prompt. Same record, same gates, stricter defaults. |
 | **Gate** | A condition a Run must clear before its diff is accepted. |
 | **Hold** | A Run stopped by a Gate, with the reason attached. |
 | **Commons** | The shared memory and knowledge every Station reads and writes. Git-backed, synced across your devices. |
@@ -235,7 +238,7 @@ A harness is *how* a model runs. A role is *what it is allowed to do*. Roles are
 | `engineer` | Write access to the workspace, full toolset, owns the working tree | — |
 | `reviewer` | Read-only clone, the diff, and the brief. Never told what verdict to reach | Cannot write to the workspace |
 | `worker` | Narrow, cheap, deterministic tasks: classification, summaries, commit messages, memory dedup | Cannot review; cannot write code |
-| `conductor` | The task, the roster, the Commons, past Runs, a read-only view of the repo. Emits a *proposed* cuesheet | Cannot write code, review, run commands, or execute its own plan |
+| `caller` | The task, the roster, the Commons, past Runs, a read-only view of the repo. Emits a *proposed* cuesheet | Cannot write code, review, run commands, or execute its own plan |
 
 `worker` exists to stop the mistake everyone makes: **a small local model is not a reviewer.** A 7–30B model reviewing a frontier model's output approves nearly everything, which is worse than no review because it manufactures confidence. Cuesheet warns you when you drop one into a reviewer seat.
 
@@ -254,20 +257,20 @@ block_at    = 0.97            # refuse to start a run that cannot finish
 when_capped = { codex = "qwen", opus = "sonnet" }
 ```
 
-### 🎼 The Conductor — optional, and deliberately weak
+### 🎼 The Caller — optional, and deliberately weak
 
 "An AI that manages your terminals" usually means a model deciding, live, who does what. Cuesheet does not work that way by default, and the reason isn't caution — it's that a routing model is the worst place to spend a token. It picks wrong, spends 3× the budget picking, and lands a worse diff than handing the whole task to one good engineer would have.
 
 **Execution is deterministic.** Cuesheets and Gates are declared; the daemon runs exactly what you declared, every time, so when two runs differ you know the difference came from the models rather than from the plan.
 
-The Conductor is the escape hatch for when you don't yet know what to declare.
+The Caller is the escape hatch for when you don't yet know what to declare.
 
 ```
   you ─── "add rate limiting to the upload endpoint"
               │
               ▼
        ┌─────────────┐   reads   roster, Commons, past Runs,
-       │  conductor  │           repo layout — all read-only
+       │   caller    │           repo layout — all read-only
        └──────┬──────┘   writes  nothing
               │
               ▼  a proposed cuesheet, with reasons and an estimate
@@ -284,13 +287,13 @@ The Conductor is the escape hatch for when you don't yet know what to declare.
 
 Four rules keep it from becoming the thing it replaces:
 
-1. **Its output is a plan, not an action.** The Conductor emits a cuesheet. The daemon executes cuesheets. It cannot execute anything, including its own proposal — the seam is enforced in the daemon, not requested in a prompt.
+1. **Its output is a plan, not an action.** The Caller emits a cuesheet. The daemon executes cuesheets. It cannot execute anything, including its own proposal — the seam is enforced in the daemon, not requested in a prompt.
 2. **It cannot weaken a Gate.** A proposal may tighten `min_gate`; it may never drop below it, shrink `distinct_vendors`, or remove a blocking category.
 3. **Hard budget.** A fixed token ceiling per proposal. Planning that costs a meaningful fraction of the work is planning you shouldn't have bought.
 4. **It aims to make itself unnecessary.** Every accepted proposal offers **save as cuesheet** — it becomes named, deterministic config you own.
 
 ```toml
-[conductor]
+[caller]
 station  = "opus"        # which Station plans
 budget   = 4000          # hard token ceiling per proposal
 autorun  = false         # never execute its own plan unattended
@@ -319,6 +322,98 @@ blocking           = ["security", "correctness", "data-loss"]
 ```
 
 A Run that fails its gate is **held**, with the finding attached, and lands as a standby on whatever device you are holding.
+
+### 🚨 On-Call — a reviewed patch waiting for you when the pager goes off
+
+Every other feature here starts with you typing a prompt. This one starts with production breaking at 3am.
+
+On-Call is a standing cuesheet, armed and waiting on a trigger instead of on you. When an alert fires, Cuesheet triages it, writes a candidate patch, has a *different vendor's* model tear that patch apart, and puts the result on your phone with a verdict attached. You wake up to a reviewed diff and a test that now passes — not to a stack trace and an empty editor.
+
+```
+   🔔 alert         Sentry · PagerDuty · Datadog · webhook · failing CI
+        │
+        ▼
+   ┌──────────┐   qwen · local · free
+   │  triage  │   dedupe, pull the trace, git blame the frames,
+   └────┬─────┘   search the Commons for prior incidents on this path
+        │
+        ├── duplicate of INC-118, or noise ──▶ logged · no run · no spend
+        ▼
+   ┌──────────┐   opus · branched from the commit actually deployed
+   │  patch   │   narrow leash: only the files in the trace
+   └────┬─────┘   must ship a test that fails before and passes after
+        │
+        ▼
+   ┌──────────┐   codex · different vendor · read-only clone
+   │  review  │   adversarial, never told what verdict to reach
+   └────┬─────┘
+        ▼
+   ┌──────────┐
+   │   gate   │   hotfix · distinct_vendors = 2 · never merges
+   └────┬─────┘
+        ▼
+   📱 standby on your phone — diff, verdict, test result, [ PR ] [ NO ]
+```
+
+```
+        ┌──────────────────┐
+        │ CUESHEET INCIDENT│
+        │                  │
+        │ 502s on /upload  │
+        │ since 03:12      │
+        │ ───────────────  │
+        │ ✓ reproduced     │
+        │ ✓ patch ready    │
+        │ ✓ codex reviewed │
+        │   1 note 0 block │
+        │                  │
+        │ +14 −3           │
+        │ api/limit.ts     │
+        │ ───────────────  │
+        │ [ open PR ][ NO ]│
+        └──────────────────┘
+```
+
+Six rules make this safe to leave armed:
+
+1. **It never deploys.** On-Call opens a branch and a PR. It cannot merge, cannot touch `infra/**`, and holds no credential for anything but your repo. Shipping stays a human act at 3am the same as at 3pm.
+2. **No reproduction, no patch.** If the patch station can't produce a test that fails on the deployed commit and passes with its change, the run stops and says so. A confident-looking fix for a bug nobody reproduced is worse than an empty inbox — it is the fastest way to turn one incident into two.
+3. **It branches from what is actually running,** not from `main`. Main has moved on; the deployed commit is the thing that's broken.
+4. **The gate is not optional.** `[oncall]` refuses to arm without a reviewer from a distinct vendor. This is the one place in Cuesheet where a model's output reaches a production repo without you having written the prompt, so it is the one place the interlock is not a preference.
+5. **Storm control.** Dedupe window, max incidents per hour, hard token budget per incident. A flapping alert should cost you one triage, not forty patches and a surprise invoice.
+6. **Triage runs local and free.** Most pages are duplicates or noise. Putting the first pass on Ollama means the 90% that go nowhere burn no plan quota at all — and it is what finally makes the local station earn its seat.
+
+```toml
+[oncall]
+enabled       = true
+workspace     = "~/code/api"
+branch_from   = "deployed"        # the commit in production, never main
+budget        = 15000             # tokens per incident, hard stop
+max_per_hour  = 3                 # storm control
+dedupe_window = "30m"
+quiet_hours   = false             # an incident is an incident
+
+cues = [
+  { station = "qwen",  action = "triage" },
+  { station = "opus",  action = "patch",  require_failing_test = true },
+  { station = "codex", action = "review", mode = "adversarial" },
+  { gate    = "hotfix" },
+]
+
+[[trigger]]
+id     = "sentry"
+kind   = "webhook"
+match  = { level = "error", environment = "production" }
+secret = "$SENTRY_WEBHOOK_SECRET"
+
+[gate.hotfix]
+require          = "1-of-1"
+distinct_vendors = 2
+blocking         = ["security", "correctness", "data-loss", "unreproduced"]
+merges           = false          # not configurable — hotfix gates never merge
+```
+
+On-Call adds no new role. It is an ordinary cuesheet wired to an ordinary trigger, run by the same `worker`, `engineer`, and `reviewer` seats you already configured — which is the point. The thing that answers your pager is governed by exactly the same leashes, gates, and run records as the thing that adds a button.
 
 ### 🧠 The Commons — memory that follows you
 
@@ -415,8 +510,8 @@ Every Run is a durable object: prompt, brief, diff, verdicts, tool calls, denial
 
 | Harness | Vendor | Roles | Status |
 |---|---|---|---|
-| `claude-code` | Anthropic | engineer, reviewer, conductor | 🚧 In progress |
-| `codex` | OpenAI | engineer, reviewer, conductor | 🚧 In progress |
+| `claude-code` | Anthropic | engineer, reviewer, caller | 🚧 In progress |
+| `codex` | OpenAI | engineer, reviewer, caller | 🚧 In progress |
 | `ollama` | local | worker | 🚧 In progress |
 | `gemini-cli` | Google | engineer, reviewer | 📋 Planned |
 | `opencode` | community | engineer | 📋 Planned |
@@ -513,8 +608,8 @@ cues = [
   { station = "qwen",  action = "commit-message" },
 ]
 
-# ── Conductor (optional) ────────────────────────────────────
-[conductor]
+# ── Caller (optional) ────────────────────────────────────
+[caller]
 station  = "opus"
 budget   = 4000
 autorun  = false
@@ -525,6 +620,33 @@ min_gate = "default"
 warn_at     = 0.85
 block_at    = 0.97
 when_capped = { codex = "qwen" }
+
+# ── On-Call ────────────────────────────────────────────────
+[oncall]
+enabled       = true
+workspace     = "~/code/api"
+branch_from   = "deployed"
+budget        = 15000
+max_per_hour  = 3
+dedupe_window = "30m"
+cues = [
+  { station = "qwen",  action = "triage" },
+  { station = "opus",  action = "patch",  require_failing_test = true },
+  { station = "codex", action = "review", mode = "adversarial" },
+  { gate    = "hotfix" },
+]
+
+[[trigger]]
+id     = "sentry"
+kind   = "webhook"
+match  = { level = "error", environment = "production" }
+secret = "$SENTRY_WEBHOOK_SECRET"
+
+[gate.hotfix]
+require          = "1-of-1"
+distinct_vendors = 2
+blocking         = ["security", "correctness", "data-loss", "unreproduced"]
+merges           = false
 
 # ── Commons ─────────────────────────────────────────────────
 [commons]
@@ -568,12 +690,13 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 | **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | 🚧 |
 | **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 📋 |
 | **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | 📋 |
-| **M3 · On call** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
+| **M3 · Pocket** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
 | **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | 📋 |
 | **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | 📋 |
-| **M6 · Conductor** | `conductor` role, `cuesheet plan`, proposal review, save-as-cuesheet | 📋 |
-| **M7 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |
-| **M8 · Ecosystem** | Harness SDK published, `gemini-cli` + `opencode`, connector registry, policy packs | 📋 |
+| **M6 · Caller** | `caller` role, `cuesheet plan`, proposal review, save-as-cuesheet | 📋 |
+| **M7 · On-Call** | Triggers, triage/patch/review cuesheet, hotfix gate, storm control, incident records | 📋 |
+| **M8 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |
+| **M9 · Ecosystem** | Harness SDK published, `gemini-cli` + `opencode`, connector registry, policy packs | 📋 |
 
 Later candidates: optional container isolation per workspace, [Agent Client Protocol](https://agentclientprotocol.com) as a transport so one harness covers many runtimes, CI mode, team-shared Commons with review.
 
@@ -587,7 +710,8 @@ Stating these up front so nobody files the issue.
 - **Not a hosted service.** It runs on your machines. There is no cloud tier and no account.
 - **Not an IDE or an editor.** It manages agents; you keep your editor.
 - **Not a credential broker.** Bring your own auth, always.
-- **Not an autonomous manager.** A Conductor may propose a plan; it never approves, executes, or relaxes a Gate. If you want a system that decides and acts while you sleep, this is the wrong tool on purpose.
+- **Not an autonomous manager.** A Caller may propose a plan; it never approves, executes, or relaxes a Gate. If you want a system that decides and acts while you sleep, this is the wrong tool on purpose.
+- **Not auto-remediation.** On-Call prepares a reviewed patch and stops. It never merges, deploys, restarts, scales, or rolls anything back. If you want a system that fixes production without you, this is the wrong tool on purpose.
 - **Not a benchmark suite.** It won't tell you which model is better — it lets you make them check each other.
 
 ---
@@ -597,9 +721,10 @@ Stating these up front so nobody files the issue.
 Contributions welcome, especially:
 
 1. **Harnesses.** The highest-leverage contribution. See [`docs/harnesses.md`](docs/harnesses.md).
-2. **Usage reporting.** Every vendor exposes limits differently, and some barely expose them at all.
-3. **Verdict parsing.** Turning free-text review output into structured findings with categories is where most of the difficulty lives.
-4. **Mobile UX.** Answering a standby one-handed, correctly, in eight seconds is a real design problem.
+2. **Triggers.** Sentry, PagerDuty, Datadog, Grafana, CI — On-Call is only as good as the signals it can listen to.
+3. **Usage reporting.** Every vendor exposes limits differently, and some barely expose them at all.
+4. **Verdict parsing.** Turning free-text review output into structured findings with categories is where most of the difficulty lives.
+5. **Mobile UX.** Answering a standby one-handed, correctly, in eight seconds is a real design problem.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) first. This project integrates against several fast-moving upstreams — harness churn is the permanent tax, and keeping harnesses thin and isolated is a design rule, not a preference.
 
@@ -614,10 +739,13 @@ No, and if it ends up being that, it has failed. What Cuesheet adds is the part 
 Because a vendor's orchestration only ever reaches their own models. It cannot give you a second opinion from a competitor, a memory store both companies read, one view of usage across your plans, or a setup that survives you switching. Those four things are what Cuesheet exists to own.
 
 **So is an AI managing the whole thing, or isn't it?**
-Neither, exactly. Execution is deterministic — declared cuesheets, enforced gates, no model in the control path. *Planning* can be delegated to a Conductor Station, which proposes a cuesheet you approve, edit, or save as permanent config. Models are good at suggesting a shape and bad at being a scheduler you can't audit.
+Neither, exactly. Execution is deterministic — declared cuesheets, enforced gates, no model in the control path. *Planning* can be delegated to a Caller Station, which proposes a cuesheet you approve, edit, or save as permanent config. Models are good at suggesting a shape and bad at being a scheduler you can't audit.
 
 **How is the phone mode different from a vendor's remote agent?**
 It runs on your machine, against your working tree, with your credentials, over your tailnet. No relay, no cloud worker, no copy of your repo anywhere else. And it is a control surface for *all* your agents at once, not one session with one vendor.
+
+**Will On-Call push code to production while I'm asleep?**
+No. It opens a branch and a PR, and that is the end of its authority. It cannot merge, cannot reach your infrastructure, and cannot arm at all without a reviewer from a second vendor. If it could not reproduce the bug with a failing test, it does not hand you a patch — it hands you what it found and stops.
 
 **Can I use only local models?**
 Yes, and Cuesheet runs fully offline. It will warn you when a `worker`-class model is placed in a `reviewer` seat, because that combination produces false confidence rather than safety.
