@@ -57,11 +57,13 @@ Interlock has a small vocabulary. Learn these eight words and you know the whole
 |---|---|
 | **Deck** | Your control surface. A grid of live tiles, one per Station. This is the Stream Deck part. |
 | **Station** | One model, in one role, bound to one workspace, under one policy. The unit you configure. |
-| **Role** | What a Station is *for*: `engineer`, `reviewer`, or `worker`. Roles carry different prompts, different tool permissions, and different defaults. |
+| **Role** | What a Station is *for*: `engineer`, `reviewer`, `worker`, or `conductor`. Roles carry different prompts, different tool permissions, and different defaults. |
 | **Run** | One unit of work: a prompt in, a diff and a set of verdicts out. Durable, replayable, costed. |
 | **Gate** | The condition a Run must clear before its diff is accepted — e.g. *two reviewers from distinct vendors must pass*. |
 | **Trip** | A Run blocked by a Gate, with the reason attached. The interlock did its job. |
 | **Commons** | The shared memory and knowledge store every Station reads and writes. Git-backed. |
+| **Pipeline** | An ordered list of steps — Stations, actions, and Gates — declared in config and executed verbatim. |
+| **Conductor** | An optional planning Station. Reads a task, *proposes* a Pipeline, and hands it to you. It never writes code and never runs its own plan. |
 | **Adapter** | The integration for one runtime. Community-maintained, versioned, swappable. |
 
 ---
@@ -194,6 +196,7 @@ Roles are not prompt decoration — they change what a Station is allowed to do.
 | `engineer` | Write access to the workspace, full toolset, owns the working tree | — |
 | `reviewer` | Read-only clone, the diff, and the brief. Never told what verdict to reach | Cannot write to the workspace |
 | `worker` | Narrow, cheap, deterministic tasks: classification, summaries, commit messages, memory dedup | Cannot review; cannot write code |
+| `conductor` | The task, the Station roster, the Commons, past Run records, and a read-only view of the repo. Emits a *proposed* Pipeline | Cannot write code, review, run commands, or execute the plan it just wrote |
 
 `worker` exists to keep you from making the mistake everyone makes: **a small local model is not a reviewer.** A 7–30B model reviewing a frontier model's output approves nearly everything, which is worse than no review because it manufactures confidence. Interlock will warn you if you try.
 
@@ -206,6 +209,53 @@ distinct_vendors   = 2             # ...from at least two different companies
 blocking           = ["security", "correctness"]   # categories that always trip
 skip_if_diff_under = 20            # don't burn tokens reviewing a typo fix
 ```
+
+### 🎼 The Conductor — optional, and deliberately weak
+
+"An AI that manages your terminals" usually means a model deciding, live, who does what. Interlock does not work that way by default, and the reason isn't caution — it's that a routing model is the worst place to spend a token. It picks wrong, spends 3× the budget picking, and lands a worse diff than handing the whole task to one good engineer would have.
+
+**The manager is deterministic.** Pipelines and Gates are declared; `interlockd` executes exactly what you declared, every time, and you can diff two runs and know the difference came from the models rather than from the plan.
+
+The Conductor is the escape hatch for when you don't yet know what to declare.
+
+```
+  you ─── "add rate limiting to the upload endpoint"
+              │
+              ▼
+       ┌─────────────┐   reads   station roster, Commons, past Runs,
+       │  conductor  │           repo layout — all read-only
+       └──────┬──────┘   writes  nothing
+              │
+              ▼  a proposed Pipeline, with reasons and an estimate
+   ┌───────────────────────────────────────────────────────────┐
+   │  opus     implement   src/api/**             ~$0.80       │
+   │  codex    review      adversarial            ~$0.12       │
+   │  gate     release     distinct_vendors = 2                │
+   │                                                           │
+   │  why codex: the last 3 Trips on src/api/** were security  │
+   │                                                           │
+   │  [ run it ]  [ edit ]  [ save as pipeline ]  [ discard ]  │
+   └───────────────────────────────────────────────────────────┘
+```
+
+Four rules keep it from becoming the thing it replaces:
+
+1. **Its output is a plan, not an action.** The Conductor emits a Pipeline. The daemon executes Pipelines. The Conductor cannot execute anything, including its own proposal — the seam is enforced in the daemon, not requested in a prompt.
+2. **It cannot weaken a Gate.** A proposal may tighten `min_gate`; it may never drop below it, shrink `distinct_vendors`, or remove a blocking category. The interlock is not up for negotiation by a model.
+3. **Hard budget.** A fixed token ceiling per proposal. Planning that costs a meaningful fraction of the work is planning you shouldn't have bought.
+4. **It aims to make itself unnecessary.** Every accepted proposal offers **save as pipeline** — it becomes named, deterministic TOML you own. The Conductor is scaffolding that emits config, not a dependency that re-decides every morning.
+
+Any Station can wear the hat, and which one you pick is a real cost decision: a frontier model plans well and bills for it; a `worker`-class local model is fine at *"this is a two-line typo fix, skip the gate"* and useless at anything structural.
+
+```toml
+[conductor]
+station  = "opus"        # which Station plans
+budget   = 4000          # hard token ceiling per proposal
+autorun  = false         # never execute its own plan unattended
+min_gate = "default"     # may propose stricter, never weaker
+```
+
+`interlock plan "…"` prints a proposal and exits. `interlock run` with no `--engineer` asks the Conductor first, if one is configured, and asks you before it moves.
 
 ### 🧠 The Commons — shared memory
 
@@ -365,6 +415,13 @@ steps = [
   { station = "qwen",  action = "commit-message" },
 ]
 
+# ── Conductor (optional) ────────────────────────────────────
+[conductor]
+station  = "opus"
+budget   = 4000
+autorun  = false
+min_gate = "default"
+
 # ── Commons ─────────────────────────────────────────────────
 [commons]
 store      = "~/.interlock/commons"
@@ -410,6 +467,7 @@ Interlock has not been audited. Do not expose the daemon to an untrusted network
 | **M4 · Remote** | Tailnet serving, QR pairing, mobile approvals, device revocation | 📋 |
 | **M5 · Fleet** | Multiple machines as worker nodes; run on the desktop from the laptop | 📋 |
 | **M6 · Ecosystem** | Adapter SDK published, `gemini-cli` + `opencode`, connector registry, policy packs | 📋 |
+| **M7 · Conductor** | `conductor` role, `interlock plan`, proposal review UI, save-as-pipeline, budget ceiling | 📋 |
 
 Post-M6 candidates: optional container isolation per workspace, [Agent Client Protocol](https://agentclientprotocol.com) as a transport so one adapter covers many runtimes, CI mode, team-shared Commons with review.
 
@@ -423,6 +481,7 @@ Stating these up front so nobody files the issue.
 - **Not a hosted service.** It runs on your machines. There is no cloud tier and no account.
 - **Not an IDE or an editor.** It orchestrates agents; you keep your editor.
 - **Not a credential broker.** Bring your own auth, always.
+- **Not an autonomous manager.** A Conductor may propose a plan; it never approves, executes, or relaxes a Gate. If you want a system that decides and acts while you sleep, this is the wrong tool on purpose.
 - **Not a benchmark suite.** It won't tell you which model is better — it lets you make them check each other.
 
 ---
@@ -444,6 +503,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) first. Be aware that this project integr
 
 **Isn't this just another web UI for Claude Code?**
 No, and if it ends up being that, it has failed. Web UIs for agent CLIs are a crowded field. What Interlock adds is the part nobody has shipped: cross-vendor memory, roles and gates as enforced structure rather than prompt convention, and run records. The Deck is how you touch that, not what it is.
+
+**So is an AI managing the whole thing, or isn't it?**
+Neither, exactly. Execution is deterministic — declared Pipelines, enforced Gates, no model in the control path. *Planning* can be delegated to a Conductor Station, which proposes a Pipeline you approve, edit, or save as permanent config. The split is deliberate: models are good at reading a task and suggesting a shape, and bad at being a scheduler you can't audit.
 
 **Why not just use one very good model?**
 You should, for writing the code. The claim here is narrower and better supported: a model reviewing its own output shares its own blind spots, so an independent second opinion has to come from somewhere else. Interlock makes "somewhere else" a config line.
