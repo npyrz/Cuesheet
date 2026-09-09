@@ -1,0 +1,19 @@
+node_modules/
+dist/
+release/
+out/
+*.tsbuildinfo
+
+# Local daemon state used during development
+.cuesheet-dev/
+
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -14,9 +14,10 @@ These are the four choices that shape everything else. Stated here so steps belo
 
 | Decision | Choice | Why |
 |---|---|---|
-| **Language / repo** | TypeScript, pnpm workspaces, ESM, Node ≥ 22 | The README already commits to a TS harness SDK. pnpm workspaces keeps daemon/UI/CLI/desktop in one repo without a build system to learn. |
+| **Language / repo** | TypeScript, **npm workspaces**, ESM, Node ≥ 22 | The README already commits to a TS harness SDK. npm 11 ships with Node so there is nothing extra to install, and pnpm's isolated `node_modules` needs `node-linker=hoisted` to work with `electron-builder` — friction with no payoff here. |
 | **Desktop shell** | **Electron** (`electron-builder`) | It bundles a Node runtime, so the daemon runs *inside* the app with zero extra install. Tauri is leaner but needs Rust on both machines and makes shipping a Node daemon the hard part. Revisit after it works. |
 | **Run store** | **Files on disk** (JSON + JSONL), behind a `RunStore` interface | SQLite means a native module, and native modules are the #1 way a cross-platform Electron build dies on Windows. Files get you to "working" fast; swap in `better-sqlite3` or `node:sqlite` behind the interface once packaging is proven. |
+| **Module format** | ESM everywhere **except** `packages/desktop`, which is CJS and gets bundled by esbuild in Phase 5 | Electron's ESM main process has real `__dirname`/preload caveats. A CJS main also cannot `require()` an ESM daemon, so Step 21 bundles main + daemon into one CJS file — which also solves asar module resolution. |
 | **Process spawning** | `cross-spawn`, never `shell: true` | `claude`/`codex` on Windows are `.cmd` shims. Node's bare `spawn` won't execute them; `shell: true` fixes it but re-opens quoting/injection problems with user prompts. `cross-spawn` handles PATHEXT and `.cmd` correctly. |
 
 ---
@@ -25,9 +26,9 @@ These are the four choices that shape everything else. Stated here so steps belo
 
 ```
 cuesheet/
-├─ package.json                 pnpm workspace root
-├─ pnpm-workspace.yaml
+├─ package.json                 npm workspace root ("workspaces": ["packages/*"])
 ├─ tsconfig.base.json
+├─ eslint.config.js  .prettierrc.json  vitest.config.ts
 ├─ packages/
 │  ├─ core/                     types, config schema, leash checks, ids, paths
 │  ├─ harness/                  Harness interface, registry, built-in harnesses
@@ -42,33 +43,61 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 ---
 
-# Phase 0 · Repo and toolchain
+## Status
 
-### Step 1 — Workspace skeleton
-Create the pnpm workspace, `tsconfig.base.json` (`"module": "nodenext"`, `"strict": true`, `"target": "es2023"`), and empty `packages/*` with their own `package.json`. Add `.gitignore` (`node_modules`, `dist`, `release`, `.cuesheet-dev`).
+| Phase | State |
+|---|---|
+| **0 · Repo and toolchain** | ✅ Done (Steps 1–4) |
+| 1 · Contracts | ⬜ Next — Step 5 |
+| 2 · Daemon spine | ⬜ |
+| 3 · Harnesses | ⬜ |
+| 4 · Desk | ⬜ |
+| 5 · Electron shell | ⬜ |
+| 6 · Packaging and CI | ⬜ |
 
-Set `"type": "module"` everywhere **except** `packages/desktop` — Electron's main process is smoother as CJS until you're sure of your toolchain.
+---
 
-**Done when:** `pnpm install` succeeds and `pnpm -r exec tsc --noEmit` passes on empty packages.
+# Phase 0 · Repo and toolchain ✅
 
-### Step 2 — Lint, format, test harness
-Add `typescript`, `vitest`, `prettier`, and `eslint` (flat config) at the root. One script set repeated in each package: `build`, `dev`, `test`, `typecheck`.
+### Step 1 — Workspace skeleton ✅
+Create the npm workspace, `tsconfig.base.json` (`"module": "nodenext"`, `"strict": true`, `"target": "es2023"`), and `packages/*` each with their own `package.json` and `tsconfig.json`. Add `.gitignore` (`node_modules`, `dist`, `release`, `.cuesheet-dev`).
 
-**Done when:** `pnpm test` runs zero tests without error, on both OSes.
+Set `"type": "module"` everywhere **except** `packages/desktop`, which omits the field so `nodenext` resolves it as CJS.
 
-### Step 3 — `.gitattributes` and line endings
-You already have a `.gitattributes`. Confirm it has `* text=auto eol=lf` and force `*.sh eol=lf`, `*.cmd eol=crlf`. CRLF sneaking into a shell script is a Windows-only failure you'll spend an hour on.
+Give every package a stub `src/index.ts` (`export {};`) immediately — `tsc` errors with *"No inputs were found in config file"* on a package with no sources, so without stubs your first acceptance check fails for a reason unrelated to your setup.
+
+Each package needs two tsconfigs: `tsconfig.json` includes tests (so `typecheck` covers them) and `tsconfig.build.json` excludes `src/**/*.test.ts` (so tests don't land in `dist`).
+
+**Done when:** `npm install` succeeds and `npm run typecheck` passes across all six packages.
+
+### Step 2 — Lint, format, test harness ✅
+Add `typescript`, `vitest`, `prettier`, and `eslint` (flat config) at the root. Root scripts: `build`, `clean`, `typecheck`, `test`, `lint`, `format`. One `vitest.config.ts` at the root collecting `packages/*/src/**/*.test.ts` — simpler than a config per package.
+
+Two things worth doing now rather than later:
+- `clean` scripts must be `node -e "import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))"`, not `rm -rf`. `rm` does not exist on Windows.
+- Add `*.md` to `.prettierignore`. The README is full of hand-aligned ASCII diagrams and tables that Prettier reflows into mush.
+
+**Done when:** `npm test`, `npm run lint`, and `npm run format:check` are all green on both OSes.
+
+### Step 3 — `.gitattributes` and line endings ✅
+Set `* text=auto eol=lf`, then force `*.cmd`, `*.bat`, and `*.ps1` to `eol=crlf` and `*.sh` to `eol=lf`. CRLF in a shell script makes `\r` part of the command; LF in a `.cmd` or `.ps1` misbehaves under the Windows script hosts. Mark binaries (`*.png`, `*.ico`, `*.icns`) explicitly so normalization never touches them. Add a matching `.editorconfig`.
 
 **Done when:** `git clone` on Windows produces a tree that still typechecks.
 
-### Step 4 — Cross-platform path helper (`core`)
-`packages/core/src/paths.ts`:
+### Step 4 — Cross-platform path helper (`core`) ✅
+`packages/core/src/paths.ts`. Two traps make the obvious implementation untestable, so build it this way from the start:
+
+- **Take an injectable `HostEnv = { platform, homedir }`**, defaulted to the real host. If `configDir` is a top-level `const`, mocking `process.platform` in a test does nothing — the value was computed at import.
+- **Select `path.win32` / `path.posix` explicitly off that platform value.** Mocking `process.platform` does not rebind the ambient `path` module, so an implementation using bare `path` still emits POSIX output from a Mac and the Windows test passes for the wrong reason.
+
+Exports:
 - `configDir()` → `~/.cuesheet` (works as `%USERPROFILE%\.cuesheet` on Windows).
 - `dataDir()`, `runsDir()`, `logsDir()`.
 - `expandHome(p)` — the README's config uses `~/code/api` and Windows won't expand it for you.
-- `toPosix(p)` — normalize separators before any glob match.
+- `toPosix(p)` — normalize separators before any glob match. Gate this on platform: a backslash is a legal character in a POSIX filename, so rewriting it there corrupts real paths.
+- `resolveUserPath(p, cwd)`, `isWindows()`, `pathFor()`, plus `DEFAULT_PORT` and `daemonLockFile()` for Step 8.
 
-**Done when:** unit tests assert correct dirs on `darwin` and `win32` (mock `process.platform` + `os.homedir`).
+**Done when:** tests running on macOS assert `C:\\Users\\noah\\.cuesheet` for a `win32` env, and vice versa.
 
 ---
 
@@ -212,7 +241,7 @@ Keep the mapping layer thin and isolated. The README calls harness churn "the pe
 ### Step 17 — Vite + React app
 `packages/ui`. React 19, TypeScript, no UI framework yet — plain CSS modules or Tailwind, your call, but pick one and stop thinking about it. Dev server proxies `/api` and `/ws` to `:7373`.
 
-**Done when:** `pnpm --filter ui dev` shows a page reading `/health` from a running daemon.
+**Done when:** `npm run dev -w packages/ui` shows a page reading `/health` from a running daemon.
 
 ### Step 18 — Client store from the WebSocket
 One reducer consuming `RunEvent`s into `{ stations, runs, activeRun }`. Reconnect with backoff; on reconnect, refetch `/runs` and resync rather than trusting the buffer.
@@ -244,7 +273,7 @@ Workspace picking needs a native dialog in Electron, and a typed path with serve
 - Loads the built UI from `file://` in production, `http://localhost:5173` in dev.
 - `contextIsolation: true`, `nodeIntegration: false`, a minimal preload exposing only `{ platform, chooseDirectory, daemonPort }`.
 
-**Done when:** `pnpm --filter desktop dev` opens a window running the Desk against the embedded daemon.
+**Done when:** `npm run dev -w packages/desktop` opens a window running the Desk against the embedded daemon.
 
 ### Step 22 — Tray, notifications, start-on-login
 - Tray icon: macOS wants a **template PNG** (`iconTemplate.png` + `@2x`, monochrome with alpha); Windows wants a **multi-size `.ico`**. Ship both; pick by `process.platform`.
@@ -275,7 +304,7 @@ Set aside a session for these; they are all one-line fixes that each cost an aft
 ### Step 25 — `electron-builder`
 Targets: `dmg` + `zip` (arm64 **and** x64) for macOS, `nsis` for Windows x64. Ensure the UI build output and the daemon's non-JS assets are in `files`; native modules, if you ever add one, need `asarUnpack`.
 
-**Done when:** `pnpm --filter desktop build` produces an installer on each OS that launches from a path with a space in it (`/Applications`, `C:\Program Files`).
+**Done when:** `npm run build -w packages/desktop` produces an installer on each OS that launches from a path with a space in it (`/Applications`, `C:\Program Files`).
 
 ### Step 26 — Signing, honestly
 - **macOS:** unsigned builds get quarantined; users need `xattr -d com.apple.quarantine` or right-click-open. Fine for pre-alpha — document it. Notarization when you have a Developer ID.
