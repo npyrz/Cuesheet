@@ -4,6 +4,8 @@ Small, ordered steps to get a **working** Cuesheet on **macOS and Windows**. Eve
 
 Scope of this plan = README milestones **M0 (Spine)** and **M1 (Desk)**, plus just enough of the harness abstraction that M2–M9 don't require a rewrite. Linux, phone pairing, Commons, Gates, Caller, and On-Call are explicitly out of scope here — see [Deferred](#deferred-on-purpose).
 
+**This plan ends at alpha, not at 1.0.** Phases 0–4 are pre-alpha, Phases 5–6 are alpha, and the beta and 1.0 bars are stated in [Release stages](#release-stages) so the gap is visible rather than assumed.
+
 **Done when:** on both a Mac and a Windows box, you double-click the app, it detects your installed harnesses, you add a Station, type a prompt, and watch a real Claude Code run stream into a tile and land as a durable run record with a diff.
 
 ---
@@ -45,19 +47,65 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 ## Status
 
-| Phase | State |
-|---|---|
-| **0 · Repo and toolchain** | ✅ Done (Steps 1–4) |
-| 1 · Contracts | ⬜ Next — Step 5 |
-| 2 · Daemon spine | ⬜ |
-| 3 · Harnesses | ⬜ |
-| 4 · Desk | ⬜ |
-| 5 · Electron shell | ⬜ |
-| 6 · Packaging and CI | ⬜ |
+| Phase | Steps | Stage | State |
+|---|---|---|---|
+| **0 · Repo and toolchain** | 1–4 | 🟠 pre-alpha | ✅ Done |
+| 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done |
+| 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ⬜ Next — Step 8 |
+| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ⬜ |
+| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ⬜ |
+| 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ |
+| 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
+| — beyond this plan — | M2, M4, M5 | 🔵 beta | ⬜ |
+| — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
+
+---
+
+## Release stages
+
+Everything in *this* plan lands you at **alpha**. That is the honest ceiling: this document covers README milestones **M0** and **M1** only, and the features that make Cuesheet worth choosing over a terminal — gates, the Commons, the limits strip, the phone — are M2 through M5. A build without them works, but it is not yet the product the README describes.
+
+| Stage | Version | What it means | Who can use it |
+|---|---|---|---|
+| 🟠 **Pre-alpha** | `0.0.x` | No installer. Runs from a checkout. Shapes and contracts are still moving; expect to delete state between runs. | You, and nobody else. |
+| 🟡 **Alpha** | `0.1.x` | Installable, unsigned. One harness, one station at a time, no gates. Config may break without migration. Run records may be discarded on upgrade. | People who will read a changelog and tolerate a wipe. |
+| 🔵 **Beta** | `0.5.x` | Feature-complete against the README's core thesis. Signed. Config format frozen with migrations. No data loss, ever. | Strangers, daily, on real work. |
+| 🟢 **1.0** | `1.0.0` | The README is true as written, minus the sections it marks optional. Security posture documented and reviewed. | Anyone. |
+
+### Exit criteria
+
+**Pre-alpha → alpha** (end of Phase 6)
+- [ ] Milestone A and B both true on macOS **and** Windows
+- [ ] A stranger with Claude Code installed can open the app and complete a run without editing TOML
+- [ ] Crash mid-run leaves a readable run record, never a corrupt one
+- [ ] CI green on both OSes; installers uploaded on tag
+- [ ] Install caveats (quarantine, SmartScreen) documented, not hidden
+
+**Alpha → beta** — none of this is in this plan; each maps to a README milestone
+- [ ] **M5 · Gates** — `codex` harness, reviewer role, verdict parsing, Holds. *The second opinion is the thesis; without it this is a nicer terminal.*
+- [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.*
+- [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.*
+- [ ] `ollama` harness, so the local/worker story is real
+- [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs)
+- [ ] Config migrations, and an upgrade that never discards run history
+- [ ] Code signing + notarization on macOS; signed installer on Windows
+- [ ] Crash and error reporting you can actually act on — local only, no telemetry
+
+**Beta → 1.0**
+- [ ] **M3 · Pocket** — QR pairing, tailnet serving, mobile standby. *The README leads with it; 1.0 can't ship without it.*
+- [ ] Security review of the daemon's network surface, pairing tokens, and redaction pack. The README already promises "not audited" — 1.0 is where that stops being acceptable
+- [ ] Leash enforcement fuzzed, not just unit-tested
+- [ ] `docs/harnesses.md` published and a third-party harness proven to work against it
+- [ ] Linux builds (the README calls it first-class)
+- [ ] Documented backup/restore of `~/.cuesheet`
+
+**Explicitly post-1.0** — README milestones M6 (Caller), M7 (On-Call), M8 (Fleet), M9 (Ecosystem). On-Call is a headline section and it will feel odd to defer, but it is opt-in, armed deliberately, and depends on Gates being battle-tested first. Shipping it before gates have real mileage is how you get a 3am patch nobody trusts.
 
 ---
 
 # Phase 0 · Repo and toolchain ✅
+
+> 🟠 **Pre-alpha.** Nothing runs yet.
 
 ### Step 1 — Workspace skeleton ✅
 Create the npm workspace, `tsconfig.base.json` (`"module": "nodenext"`, `"strict": true`, `"target": "es2023"`), and `packages/*` each with their own `package.json` and `tsconfig.json`. Add `.gitignore` (`node_modules`, `dist`, `release`, `.cuesheet-dev`).
@@ -92,7 +140,7 @@ Set `* text=auto eol=lf`, then force `*.cmd`, `*.bat`, and `*.ps1` to `eol=crlf`
 
 Exports:
 - `configDir()` → `~/.cuesheet` (works as `%USERPROFILE%\.cuesheet` on Windows).
-- `dataDir()`, `runsDir()`, `logsDir()`.
+- `configFile()`, `runsDir()`, `logsDir()`, `commonsDir()`.
 - `expandHome(p)` — the README's config uses `~/code/api` and Windows won't expand it for you.
 - `toPosix(p)` — normalize separators before any glob match. Gate this on platform: a backslash is a legal character in a POSIX filename, so rewriting it there corrupts real paths.
 - `resolveUserPath(p, cwd)`, `isWindows()`, `pathFor()`, plus `DEFAULT_PORT` and `daemonLockFile()` for Step 8.
@@ -101,12 +149,18 @@ Exports:
 
 ---
 
-# Phase 1 · Contracts before code
+# Phase 1 · Contracts before code ✅
+
+> 🟠 **Pre-alpha.** Types only — no process, no UI.
 
 The point of these three steps is that everything downstream depends on types, not on the daemon.
 
-### Step 5 — Domain types (`core`)
-`Station`, `Harness`, `Role`, `Cue`, `Cuesheet`, `Run`, `RunEvent`, `Standby`, `Verdict`. Match the README's vocabulary exactly — the words are the spec.
+### Step 5 — Domain types (`core`) ✅
+`Station`, `HarnessId`, `Role`, `Cue`, `Cuesheet`, `Run`, `RunEvent`, `Standby`, `Verdict`. Match the README's vocabulary exactly — the words are the spec.
+
+Core owns the harness *identifier*, not the `Harness` interface — that lands in `packages/harness` at Step 13. Conflating them makes core depend on spawning and I/O, and sets up a core↔harness cycle.
+
+`Cuesheet.cues` is `Array<Cue | GateRef>`: the README's `[cuesheet.ship]` mixes `{ station, action }` and `{ gate = "default" }` in one array, and "a gate is a cue kind" only stays additive if that shape exists now.
 
 Define `RunEvent` as a discriminated union now, because it's the wire format for everything:
 
@@ -125,14 +179,21 @@ type RunEvent =
 
 **Done when:** the union compiles and every variant carries `runId` + `at` (ISO 8601, UTC).
 
-### Step 6 — Config schema and TOML loader (`core`)
+### Step 6 — Config schema and TOML loader (`core`) ✅
 Parse `cuesheet.toml` with `smol-toml` (pure JS — no native dep), validate with `zod`. Support the README's shape but only implement `[desk]`, `[[station]]`, and `[cuesheet.*]` for now; parse-and-ignore the rest with a warning rather than erroring, so the README's full example loads on day one.
 
 Resolution order: `./cuesheet.toml` → `~/.cuesheet/cuesheet.toml` → built-in defaults.
 
+Two things the obvious implementation gets wrong:
+
+- **Zod strips unknown keys silently — it does not error.** Collect warnings by diffing the TOML's top-level table names against the implemented set, separately from validation. A schema-only implementation reports nothing and the done-when fails while the tests pass.
+- **Return `{ config, warnings, sourcePath, deferred }`**, not a bare config. Step 12's `/stations` surfaces the warnings, Step 20 writes back to the file it loaded from, and `deferred` keeps the unimplemented tables verbatim so a UI-driven rewrite doesn't eat the user's Gates.
+
+Config-shaped types (`Station`, `Cue`, `Cuesheet`) are inferred from their zod schemas rather than hand-written in Step 5. `exactOptionalPropertyTypes` is on, and zod's `{ model?: string | undefined }` is not assignable to a hand-written `{ model?: string }` — two shapes that must agree is a wall of errors at the seam.
+
 **Done when:** the exact TOML block from the README's Configuration section parses to a typed object with warnings for the unimplemented tables.
 
-### Step 7 — Leash enforcement (`core`)
+### Step 7 — Leash enforcement (`core`) ✅
 Pure function, no I/O, heavily tested:
 
 ```ts
@@ -141,13 +202,25 @@ checkPath(station, absPath): { allowed: boolean; reason?: string }
 
 Rules: resolve to absolute → assert it's inside `workspace` (via `path.relative` not string prefix, so `../` escapes are caught) → deny globs win over allow globs → default deny outside `paths`.
 
+Keep `checkPath` pure and put the `fs.realpath` call in a thin async `resolveAndCheck` beside it — otherwise "pure function, no I/O" and "call `fs.realpath` first" contradict each other and you lose the exhaustive testability that is the whole point.
+
+Three things that decide whether this actually holds:
+
+- **Containment is `rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)`.** The `isAbsolute` arm is what catches a different drive: `path.win32.relative("C:\\a", "D:\\b")` returns `D:\b`, with no leading `..` at all.
+- **picomatch needs `dot: true`.** By default `*` will not cross a leading dot, so the README's own `**/*.env` misses a bare `.env` — the exact file it exists to protect. Test `src/.env`, not `src/config.env`; the difference is a passing test and a real leak.
+- **Match globs against the workspace-relative posix path**, not the absolute one, or `src/**` never matches anything.
+- **`nocase` on Windows only.** `path.win32.relative` folds case for its own comparison but returns the target's original spelling, so `SECRET.ENV` reaches the matcher verbatim and a `**/*.env` deny misses it — on a filesystem where it is the same file. Do *not* fold on POSIX, where `.env` and `.ENV` genuinely differ.
+- **No ancestor walk-up.** Testing each parent directory against the rule looks like a convenience and is a bypass: it turns an allow of `src/*` into `src/**`, because `src/deep/nested/secret.ts` has an ancestor `src/deep` that `src/*` matches. Handle bare-directory rules by expanding a glob-free rule to match both `rule` and `rule/**`.
+
 Use `picomatch` against posix-normalized paths. Windows specifics that will bite: drive-letter casing, `\` vs `/`, 8.3 short names, and symlinks/junctions — call `fs.realpath` before checking.
 
-**Done when:** tests cover `..` escape, `C:\` vs `c:\`, symlink-out-of-workspace, `**/*.env` deny beating `src/**` allow.
+**Done when:** tests cover `..` escape, `C:\` vs `c:\`, a different drive, symlink-out-of-workspace, and `**/*.env` deny beating `src/**` allow.
 
 ---
 
 # Phase 2 · The daemon spine
+
+> 🟠 **Pre-alpha.** A daemon you can `curl`. Not a product.
 
 ### Step 8 — `cuesheetd` boots and serves health
 Fastify + `@fastify/websocket`. Binds `127.0.0.1:7373`. On `EADDRINUSE`, exit with a clear message (don't silently pick another port — the CLI and app need to find it).
@@ -201,6 +274,8 @@ Keep it boringly REST. This is the same API the phone will use in M3, so no Elec
 
 # Phase 3 · Harnesses
 
+> 🟠 **Pre-alpha.** Real models run, driven by HTTP. Still no app.
+
 ### Step 13 — The `Harness` interface (`harness`)
 Implement exactly the shape in the README's "Writing a harness" section: `id`, `vendor`, `roles`, `probe()`, `usage()`, `contextFiles`, `writeConnectors()`, `run(ctx)`.
 
@@ -238,6 +313,8 @@ Keep the mapping layer thin and isolated. The README calls harness churn "the pe
 
 # Phase 4 · The Desk (web UI)
 
+> 🟠 **Pre-alpha**, ending at **Milestone A**. Usable by you, from a checkout, in a browser. No installer, so nobody else can have it.
+
 ### Step 17 — Vite + React app
 `packages/ui`. React 19, TypeScript, no UI framework yet — plain CSS modules or Tailwind, your call, but pick one and stop thinking about it. Dev server proxies `/api` and `/ws` to `:7373`.
 
@@ -258,13 +335,20 @@ The five-choice panel: harness (from `/stations` probe results — installed one
 
 Workspace picking needs a native dialog in Electron, and a typed path with server-side validation in the browser. Build the typed-path version first.
 
+Seed every new Station's `deny` with `.git/**`. The leash's `dot: true` means an allow of `**` reaches `.git/hooks/`, and nothing else in the system protects it.
+
 **Done when:** adding a Station in the UI results in a valid `[[station]]` block on disk and a new tile.
 
-> **Milestone A — the app works in a browser.** Daemon running, `claude-code` station added through the UI, real run streamed to a tile, run record on disk. Do not proceed until this is true on **both** macOS and Windows.
+> ### 🏁 Milestone A — the app works in a browser
+> *End of pre-alpha's useful phase. Not a release — there is nothing to download.*
+>
+> Daemon running, `claude-code` station added through the UI, real run streamed to a tile, run record on disk. Do not proceed until this is true on **both** macOS and Windows.
 
 ---
 
 # Phase 5 · Electron shell
+
+> 🟡 **Alpha begins here.** The moment it becomes a thing you can hand someone, the bar changes: no orphaned processes, no lost runs, no manual fixes.
 
 ### Step 21 — Main process
 `packages/desktop`. Main process:
@@ -301,6 +385,8 @@ Set aside a session for these; they are all one-line fixes that each cost an aft
 
 # Phase 6 · Packaging and CI
 
+> 🟡 **Alpha**, shipping `v0.1.0-alpha` at **Milestone B**.
+
 ### Step 25 — `electron-builder`
 Targets: `dmg` + `zip` (arm64 **and** x64) for macOS, `nsis` for Windows x64. Ensure the UI build output and the daemon's non-JS assets are in `files`; native modules, if you ever add one, need `asarUnpack`.
 
@@ -319,7 +405,10 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
 
-> **Milestone B — the app ships.** Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference.
+> ### 🏁 Milestone B — the app ships · `v0.1.0-alpha`
+> *First public tag. Alpha, and labelled alpha — the README's status badge moves from `pre-alpha` to `alpha` here and nowhere earlier.*
+>
+> Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference. Unsigned, one harness, no gates. Say all three in the release notes.
 
 ---
 
@@ -327,16 +416,16 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 
 Not in this plan; each one has a seam already cut for it:
 
-| Deferred | Seam that makes it additive |
-|---|---|
-| SQLite run store | `RunStore` interface (Step 10) |
-| `codex` / `ollama` harnesses | `Harness` interface (Step 13) |
-| Limits strip, fallback routing | `usage()` already on the interface |
-| Gates, reviewer role, verdicts | Cues are already an ordered list; a gate is a cue kind |
-| Phone pairing, tailnet | The HTTP API is transport-agnostic (Step 12) |
-| Commons, MCP recall | `contextFiles` already on the interface |
-| Caller, On-Call | Both are cuesheets + a trigger over the existing queue |
-| Linux builds | `electron-builder` target, not an architecture change |
+| Deferred | Needed by | Seam that makes it additive |
+|---|---|---|
+| SQLite run store | 🔵 beta | `RunStore` interface (Step 10) |
+| `codex` / `ollama` harnesses | 🔵 beta | `Harness` interface (Step 13) |
+| Limits strip, fallback routing | 🔵 beta | `usage()` already on the interface |
+| Gates, reviewer role, verdicts | 🔵 beta | Cues are already an ordered list; a gate is a cue kind |
+| Commons, MCP recall | 🔵 beta | `contextFiles` already on the interface |
+| Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) |
+| Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change |
+| Caller, On-Call | ⚪ post-1.0 | Both are cuesheets + a trigger over the existing queue |
 
 ---
 
@@ -348,6 +437,8 @@ Keep this next to you; every item is something that works on macOS and fails on 
 - [ ] Killing a child does not kill grandchildren on Windows — `taskkill /T /F`
 - [ ] Path separators: normalize to posix before any glob
 - [ ] Drive-letter case and `fs.realpath` before leash checks
+- [ ] Filenames are case-insensitive on Windows — glob matching needs `nocase` there, and only there
+- [ ] `symlink()` needs Developer Mode or elevation on Windows — probe and skip, don't fail
 - [ ] `EBUSY` on concurrent file writes — serialize appends
 - [ ] `\r\n` in stdout line parsers
 - [ ] `~` is not expanded by the OS on Windows
