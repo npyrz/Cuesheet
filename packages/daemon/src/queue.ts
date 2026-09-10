@@ -126,11 +126,18 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
     const started = Date.now();
     let result: RunResultSummary | null = null;
     let failure: unknown = null;
+    // Held here rather than on the summary: a patch can be megabytes, and the
+    // summary is the `done` event's payload. Stats go on the wire, the patch
+    // goes to disk.
+    let patch: string | null = null;
 
     try {
       result = await executor({
         run,
         signal: controller.signal,
+        recordDiff(text) {
+          patch = text;
+        },
         emit(event) {
           if (event.t === "cost") {
             cost.tokensIn += event.tokensIn;
@@ -186,6 +193,9 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
       await store.finish(run.id, {
         status,
         cost: finalCost,
+        // A run that died still gets whatever diff it managed to produce. The
+        // partial work is usually the most useful thing on the page.
+        ...(patch !== null && { diff: patch }),
         ...(status === "failed" && { error: message }),
       });
       emitStatus(run.id, status);
@@ -212,6 +222,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         status,
         result: resolved,
         cost: resolved.cost,
+        ...(patch !== null && { diff: patch }),
       });
       emitStatus(run.id, status);
     }

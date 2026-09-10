@@ -21,6 +21,10 @@
     "clean": "node -e \"import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))\""
   },
   "dependencies": {
-    "@cuesheet/core": "*"
+    "@cuesheet/core": "*",
+    "cross-spawn": "^7.0.6"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6"
   }
 }

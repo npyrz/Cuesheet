@@ -7,9 +7,11 @@
  * core↔harness cycle Step 5 was written to avoid — the queue depends on this
  * narrow function type.
  *
- * Step 14's `mock` harness and Step 16's `claude-code` harness are *adapted*
- * onto `RunExecutor` in `packages/harness`. Nothing in this package imports a
- * harness, so the daemon stays testable with a closure.
+ * The `mock` and `claude-code` harnesses are adapted onto `RunExecutor` by
+ * `harness-executor.ts`, which is the one composition root in this package and
+ * the only file here that imports a harness. Everything else — the queue, the
+ * store, the bus — sees nothing but this function type, so the daemon stays
+ * testable with a closure.
  */
 import type {
   Cost,
@@ -38,6 +40,19 @@ export interface ExecutionContext {
    * rejects if the run is stopped while waiting.
    */
   ask(request: Omit<StandbyRequest, "runId">): Promise<StandbyAnswer>;
+  /**
+   * Hand over the run's unified diff, to be written to `diff.patch`.
+   *
+   * Separate from the returned `RunResultSummary` on purpose. That summary is
+   * the payload of the `done` event, and a patch can be megabytes — putting it
+   * there would push a whole diff through the WebSocket to every connected
+   * client on every run. The summary carries the `DiffStat`; the patch goes to
+   * disk and is fetched on demand by `GET /runs/:id`.
+   *
+   * Last call wins, so an executor running several Stations can record once at
+   * the end rather than merging.
+   */
+  recordDiff(patch: string): void;
 }
 
 export type RunExecutor = (ctx: ExecutionContext) => Promise<RunResultSummary>;

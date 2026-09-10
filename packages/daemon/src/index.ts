@@ -7,7 +7,11 @@
  * which is why this package exports a function rather than only a binary.
  */
 export { startDaemon } from "./server.js";
-export type { StartDaemonOptions, DaemonHandle } from "./server.js";
+export type {
+  StartDaemonOptions,
+  DaemonHandle,
+  ExecutorFactoryDeps,
+} from "./server.js";
 
 export { createEventBus, DEFAULT_REPLAY_LIMIT } from "./bus.js";
 export type {
@@ -39,6 +43,16 @@ export type {
   EnqueueInput,
   StopOutcome,
 } from "./queue.js";
+
+export { harnessRuntime } from "./runtime.js";
+export type { HarnessRuntime, HarnessRuntimeOptions } from "./runtime.js";
+
+export {
+  createHarnessExecutor,
+  HarnessRunError,
+  NoStationError,
+} from "./harness-executor.js";
+export type { HarnessExecutorOptions } from "./harness-executor.js";
 
 export { noopExecutor } from "./executor.js";
 export type {

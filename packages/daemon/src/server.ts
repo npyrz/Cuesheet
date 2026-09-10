@@ -43,6 +43,19 @@ export interface StartDaemonOptions {
   /** Where to look for `cuesheet.toml`. */
   cwd?: string;
   executor?: RunExecutor;
+  /**
+   * Build the executor once the config is loaded.
+   *
+   * An executor that runs real harnesses needs to resolve a Station id to its
+   * `harness`, `model`, and leash, and the config is not read until after
+   * `startDaemon` begins. A factory hands it the *live* accessor rather than a
+   * snapshot, so `reloadConfig()` affects the next run instead of being
+   * silently ignored — which is the bug you get from passing `loaded.config`
+   * into a closure built at boot.
+   *
+   * Ignored when `executor` is given; tests pass the closure directly.
+   */
+  executorFactory?: (deps: ExecutorFactoryDeps) => RunExecutor;
   store?: RunStore;
   bus?: EventBus;
   prober?: HarnessProber;
@@ -50,6 +63,12 @@ export interface StartDaemonOptions {
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
   logger?: boolean;
+}
+
+export interface ExecutorFactoryDeps {
+  /** Reads the currently loaded config. Call per run, never cache the result. */
+  config: () => LoadedConfig;
+  env: HostEnv;
 }
 
 export interface DaemonHandle {
@@ -91,17 +110,26 @@ export async function startDaemon(
     });
   const store = options.store ?? createFileRunStore({ env });
   const standbys = createStandbyRegistry();
-  const queue = createRunQueue({
-    store,
-    bus,
-    standbys,
-    executor: options.executor ?? noopExecutor,
-  });
   const prober = options.prober ?? unprobed;
 
   // Config is loaded once and cached: `/stations` is polled by the UI and
   // re-reading TOML on every poll is a syscall storm for no benefit.
+  //
+  // Loaded *before* the queue is built, because the executor needs to be able
+  // to look Stations up. `config` is a function rather than the value so a
+  // later `reloadConfig()` reaches the executor too.
   let loaded = await loadConfig(cwd, env);
+  const config = (): LoadedConfig => loaded;
+
+  const queue = createRunQueue({
+    store,
+    bus,
+    standbys,
+    executor:
+      options.executor ??
+      options.executorFactory?.({ config, env }) ??
+      noopExecutor,
+  });
 
   const app = Fastify({ logger: options.logger ?? false });
 
@@ -129,27 +157,13 @@ export async function startDaemon(
 
   await app.register(websocket);
 
-  registerRoutes(app, {
-    bus,
-    store,
-    queue,
-    standbys,
-    prober,
-    config: () => loaded,
-  });
+  registerRoutes(app, { bus, store, queue, standbys, prober, config });
   // The same routes under `/api` as well, because Step 17's Vite dev server
   // proxies `/api` and `/ws`. One registration with a prefix beats a rewrite
   // rule in the dev config and keeps `curl :7373/health` working.
   await app.register(
     async (scope) => {
-      registerRoutes(scope, {
-        bus,
-        store,
-        queue,
-        standbys,
-        prober,
-        config: () => loaded,
-      });
+      registerRoutes(scope, { bus, store, queue, standbys, prober, config });
     },
     { prefix: "/api" },
   );

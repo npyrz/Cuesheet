@@ -52,8 +52,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **0 · Repo and toolchain** | 1–4 | 🟠 pre-alpha | ✅ Done |
 | 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done |
 | 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
-| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ⬜ Next — Step 13 |
-| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ⬜ |
+| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done |
+| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ⬜ Next — Step 17 |
 | 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ |
 | 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
 | — beyond this plan — | M2, M4, M5 | 🔵 beta | ⬜ |
@@ -272,11 +272,11 @@ Keep it boringly REST. This is the same API the phone will use in M3, so no Elec
 
 ---
 
-# Phase 3 · Harnesses
+# Phase 3 · Harnesses ✅
 
 > 🟠 **Pre-alpha.** Real models run, driven by HTTP. Still no app.
 
-### Step 13 — The `Harness` interface (`harness`)
+### Step 13 — The `Harness` interface (`harness`) ✅
 Implement exactly the shape in the README's "Writing a harness" section: `id`, `vendor`, `roles`, `probe()`, `usage()`, `contextFiles`, `writeConnectors()`, `run(ctx)`.
 
 For now `usage()` and `writeConnectors()` may return empty — but they must exist so M2 and the connector registry are additive.
@@ -285,12 +285,12 @@ For now `usage()` and `writeConnectors()` may return empty — but they must exi
 
 **Done when:** the interface compiles and a `mock` harness implementing it passes a contract test.
 
-### Step 14 — The `mock` harness
+### Step 14 — The `mock` harness ✅
 A fake harness that emits scripted events, writes one file, and returns a diff. **Build this before the real one.** It's how you develop the UI, the queue, and the run store without burning tokens or waiting on a real model.
 
 **Done when:** `POST /runs` with the mock cuesheet produces a full run record in under a second.
 
-### Step 15 — Cross-platform process spawning
+### Step 15 — Cross-platform process spawning ✅
 `packages/harness/src/spawn.ts`:
 - `cross-spawn` for execution.
 - `which`-style resolution honoring `PATHEXT` on Windows, returning the resolved absolute path so probes can report a version.
@@ -299,7 +299,7 @@ A fake harness that emits scripted events, writes one file, and returns a diff. 
 
 **Done when:** a spawned `node -e "setInterval(()=>{},1e3)"` grandchild is provably dead after `stop` on both OSes.
 
-### Step 16 — The `claude-code` harness
+### Step 16 — The `claude-code` harness ✅
 Shell out to the Claude Code CLI in headless mode with streaming JSON output. Confirm the exact flags against `claude --help` on your machine before wiring them — the surface moves. Map its stream events onto your `RunEvent` union; anything unrecognized becomes a `text` event rather than an error.
 
 - `probe()` — resolve the binary, run `--version`, and detect logged-in state.
@@ -308,6 +308,17 @@ Shell out to the Claude Code CLI in headless mode with streaming JSON output. Co
 Keep the mapping layer thin and isolated. The README calls harness churn "the permanent tax"; the tax is only cheap if it's confined to one file.
 
 **Done when:** a real prompt against a scratch git repo produces streamed text, a `diff.patch`, and a `done` event — on both OSes.
+
+### Decisions this phase settled
+
+Four things were not obvious from the step text and are worth carrying forward:
+
+- **The adapter lives in the daemon, not in `harness`.** `packages/daemon/src/harness-executor.ts` turns a `Harness` into a `RunExecutor`. Putting it beside the harnesses would mean `@cuesheet/harness` importing `@cuesheet/daemon` — the cycle Step 5 split these packages to avoid. `harnessRuntime()` is the one-liner both `main.ts` and Step 21's Electron main will spread.
+- **`startDaemon` still defaults to inert.** The no-op executor and `unprobed` remain the defaults so the daemon's own tests stay fast, offline, and free; real behaviour is opt-in via `harnessRuntime()`. A default that spawns is a test suite whose results depend on what is installed on the machine.
+- **The patch never goes on the wire.** `ExecutionContext.recordDiff` hands the queue a patch for `diff.patch`; the `done` event carries only the `DiffStat`. A diff can be megabytes and every client is subscribed.
+- **The leash is advisory for CLI-backed harnesses.** `Workspace` binds harnesses that do their own I/O. `claude-code` hands the work to a subprocess with its own Edit/Write tools, which never consult our facade — so there, the leash scopes what it can and *observes* the rest, emitting a `denial` after the fact. This is weaker than the README's "cannot write there" and is flagged in `claude-code.ts` at the point where it matters. Closing it needs the CLI's own permission hooks.
+
+The live `claude-code` test is gated behind `CUESHEET_E2E=1`, since CI has no logged-in `claude` and a test that spends tokens by default is a test people delete. The mapper is tested against a captured real stream (`fixtures/claude-code-stream.jsonl`), which runs everywhere.
 
 ---
 

@@ -89,7 +89,7 @@ describe("describeStations", () => {
     expect(response.stations.every((s) => s.probe.installed === false)).toBe(
       true,
     );
-    expect(response.stations[0]?.probe.error).toMatch(/not implemented yet/);
+    expect(response.stations[0]?.probe.error).toMatch(/No prober is wired up/);
   });
 
   it("marks a station on an unknown harness rather than dropping it", async () => {

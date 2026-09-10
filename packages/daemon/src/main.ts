@@ -9,11 +9,15 @@
  */
 import { startDaemon } from "./server.js";
 import { PortInUseError } from "./lockfile.js";
+import { harnessRuntime } from "./runtime.js";
 
 async function main(): Promise<void> {
   let handle;
   try {
-    handle = await startDaemon({ logger: true });
+    // The standalone daemon runs real harnesses. `startDaemon`'s own defaults
+    // are the inert ones its tests rely on; this is where the app's behaviour
+    // is chosen, not in the library.
+    handle = await startDaemon({ logger: true, ...harnessRuntime() });
   } catch (error) {
     if (error instanceof PortInUseError) {
       console.error(`\n${error.message}\n`);

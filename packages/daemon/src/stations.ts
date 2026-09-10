@@ -36,18 +36,19 @@ export interface StationsResponse {
 }
 
 /**
- * The default prober: everything is uninstalled.
+ * The inert default prober: everything is uninstalled.
  *
- * Honest rather than optimistic. Real probing needs process spawning, which is
- * Step 15, and the registry that answers it is Step 13 — this keeps the route
- * and its response shape settled so neither the UI nor this file changes when
- * harnesses arrive.
+ * Real probing exists — `harnessRuntime()` supplies a prober backed by the
+ * harness registry, and that is what the app and the standalone daemon use.
+ * This stays the *default* so `startDaemon`'s own tests never shell out to
+ * somebody's binary: a probe that spawns is slow, and a test suite whose
+ * results depend on what is installed on the machine is not a test suite.
  */
 export const unprobed: HarnessProber = async (harness) => ({
   harness,
   installed: false,
   authed: false,
-  error: "Harness probing is not implemented yet (Step 13).",
+  error: "No prober is wired up; pass one via `harnessRuntime()`.",
 });
 
 export async function describeStations(
