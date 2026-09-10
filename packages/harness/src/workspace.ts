@@ -11,7 +11,7 @@
  * by tests from either OS. Nothing is re-decided here; this file resolves
  * paths, calls it, and turns a `false` into a refusal the operator can see.
  */
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   expandHome,
@@ -122,10 +122,10 @@ export function createWorkspace(options: WorkspaceOptions): Workspace {
       const decision = await decide(target);
       if (!decision.allowed) return false;
       try {
-        await readFile(absolute(target));
+        await stat(absolute(target));
         return true;
-      } catch (error) {
-        return !isNotFound(error);
+      } catch {
+        return false;
       }
     },
 
@@ -150,13 +150,4 @@ export function createWorkspace(options: WorkspaceOptions): Workspace {
     const rel = p.relative(root, file);
     return rel === "" ? "." : toPosix(rel, env);
   }
-}
-
-function isNotFound(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === "ENOENT"
-  );
 }

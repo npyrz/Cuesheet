@@ -82,31 +82,43 @@ export function createHarnessExecutor(
     let error: string | undefined;
     let lastResult: RunResult | undefined;
 
-    for (const station of stations) {
-      if (ctx.signal.aborted) {
-        status = "stopped";
-        break;
-      }
+    // The loop is wrapped rather than left to reject, because the two shipped
+    // harnesses disagree about how a stop arrives: `claude-code` returns
+    // `{ status: "stopped" }` while a harness awaiting its own timers throws an
+    // `AbortError`. Both must still get their diff recorded below — a stopped
+    // run's partial work is the most useful thing on the page — so the throw is
+    // caught here and re-thrown after, unchanged.
+    let thrown: unknown = null;
+    try {
+      for (const station of stations) {
+        if (ctx.signal.aborted) {
+          status = "stopped";
+          break;
+        }
 
-      const harness = options.registry.get(station.harness);
-      if (!harness) {
-        // A typo'd harness name is a config error, and it names itself. Failing
-        // the run beats silently skipping the Station and reporting success.
-        status = "failed";
-        error = `Station "${station.id}" uses harness "${station.harness}", which is not registered.`;
-        emitError(ctx, error);
-        break;
-      }
+        const harness = options.registry.get(station.harness);
+        if (!harness) {
+          // A typo'd harness name is a config error, and it names itself.
+          // Failing the run beats silently skipping the Station and reporting
+          // success.
+          status = "failed";
+          error = `Station "${station.id}" uses harness "${station.harness}", which is not registered.`;
+          emitError(ctx, error);
+          break;
+        }
 
-      const outcome = await runStation(ctx, harness, station, env);
-      lastResult = outcome.result;
-      addCost(cost, outcome.result.cost);
+        const outcome = await runStation(ctx, harness, station, env);
+        lastResult = outcome.result;
+        addCost(cost, outcome.result.cost);
 
-      if (outcome.status !== "done") {
-        status = outcome.status;
-        error = outcome.result.error ?? outcome.error;
-        break;
+        if (outcome.status !== "done") {
+          status = outcome.status;
+          error = outcome.result.error ?? outcome.error;
+          break;
+        }
       }
+    } catch (failure) {
+      thrown = failure;
     }
 
     // The run-level diff, computed once over the run's workspace after every
@@ -119,6 +131,10 @@ export function createHarnessExecutor(
     // most useful thing on the page when you are working out what went wrong.
     const diff = await runDiff(ctx, stations, lastResult, env);
     if (diff) ctx.recordDiff(diff.patch);
+
+    // Re-thrown unchanged so the queue's `isAbort` still sees an `AbortError`
+    // and lands the run as `stopped` rather than `failed`.
+    if (thrown !== null) throw thrown;
 
     // A failure is *thrown* rather than returned, because `RunResultSummary`
     // has nowhere to put the reason — the queue reads `error` off a thrown
@@ -232,9 +248,15 @@ async function runDiff(
     // No `signal` here on purpose. The run may have been *stopped*, and a
     // stopped run's partial diff is exactly what the operator wants to see;
     // passing the aborted signal through would kill `git diff` and discard it.
+    //
+    // The budget is much shorter once the run is aborted, though. `shutdown()`
+    // awaits the executor, so on quit these git calls sit directly in the exit
+    // path — a 60s budget there is how Step 23's "clean shutdown" becomes a
+    // three-minute hang. A stopped run gets a best-effort diff, not a patient
+    // one.
     const diff = await diffWorkspace({
       cwd: resolved,
-      timeoutMs: 60_000,
+      timeoutMs: ctx.signal.aborted ? 10_000 : 60_000,
     }).catch(() => null);
     if (diff && (diff.patch !== "" || diff.stat.filesChanged > 0)) return diff;
   }

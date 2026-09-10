@@ -209,17 +209,31 @@ describe("failure", () => {
 
 describe("stop", () => {
   it("aborts a running run via the signal", async () => {
+    const abort = () =>
+      Object.assign(new Error("aborted"), { name: "AbortError" });
     const h = harness(
       (ctx) =>
         new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () =>
-            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-          );
+          // The `aborted` check has to come first. A stop can land while
+          // `runOne` is still awaiting `store.update`, in which case the signal
+          // is already aborted by the time the executor runs and the `abort`
+          // event has been and gone — an executor that only subscribes would
+          // hang forever, and so would the queue waiting on it.
+          if (ctx.signal.aborted) {
+            reject(abort());
+            return;
+          }
+          ctx.signal.addEventListener("abort", () => reject(abort()));
         }),
     );
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    await new Promise((r) => setTimeout(r, 5));
+    // Polled rather than slept: a fixed delay either flakes under load or
+    // slows every run, and `activeRunId` says exactly what we are waiting for.
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (h.queue.activeRunId() === run.id) break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
     expect(await h.queue.stop(run.id)).toBe("stopped-running");
     await h.queue.idle();
 

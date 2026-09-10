@@ -18,7 +18,11 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createMockHarness, createHarnessRegistry } from "@cuesheet/harness";
+import {
+  createMockHarness,
+  createHarnessRegistry,
+  type Harness,
+} from "@cuesheet/harness";
 import type { HostEnv, Run, RunEvent } from "@cuesheet/core";
 import { startDaemon, type DaemonHandle } from "./server.js";
 import { harnessRuntime } from "./runtime.js";
@@ -264,6 +268,63 @@ describe("GET /stations with a real prober", () => {
 });
 
 describe("stopping a run mid-flight", () => {
+  it("keeps the diff of the work done before the stop", async () => {
+    // The two shipped harnesses disagree about abort: `claude-code` returns
+    // `{ status: "stopped" }` while the mock *throws* an AbortError. A run
+    // whose harness threw must still record what it wrote — a stopped run's
+    // partial diff is exactly what the operator wants to look at.
+    const { run: spawnRun } = await import("@cuesheet/harness");
+    await spawnRun("git", ["init", "-q", "."], { cwd: workspace });
+    await spawnRun("git", ["config", "user.email", "t@example.com"], {
+      cwd: workspace,
+    });
+    await spawnRun("git", ["config", "user.name", "T"], { cwd: workspace });
+    await writeFile(path.join(workspace, "src/seed.txt"), "seed\n", "utf8");
+    await spawnRun("git", ["add", "-A"], { cwd: workspace });
+    await spawnRun("git", ["commit", "-qm", "init"], { cwd: workspace });
+
+    // Writes first, then blocks until aborted and rejects — the throwing path.
+    const writeThenHang: Harness = {
+      ...createMockHarness({ standby: false }),
+      id: "mock",
+      async run(ctx) {
+        await ctx.workspace.write("partial-work.txt", "half a thought\n");
+        await new Promise<never>((_resolve, reject) => {
+          ctx.signal.addEventListener("abort", () => {
+            const error = new Error("The run was stopped.");
+            error.name = "AbortError";
+            reject(error);
+          });
+        });
+        return {};
+      },
+    };
+
+    const { url } = await boot(
+      harnessRuntime({ registry: createHarnessRegistry([writeThenHang]) }),
+    );
+
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "start something" })
+    ).json()) as { runId: string };
+
+    await waitForStatus(url, runId, "running");
+    // Wait for the write to actually land, so the diff is not empty by timing.
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        await readFile(path.join(workspace, "partial-work.txt"), "utf8");
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    await post(`${url}/runs/${runId}/stop`);
+
+    const stored = await waitForRun(url, runId);
+    expect(stored.run.status).toBe("stopped");
+    expect(stored.diff).toContain("partial-work.txt");
+  }, 30_000);
+
   it("lands as stopped, not running", async () => {
     // Step 23's invariant, one phase early: a run must always reach a terminal
     // status. `stepMs` makes the mock slow enough to catch in the act.

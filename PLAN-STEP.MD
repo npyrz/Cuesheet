@@ -52,7 +52,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **0 · Repo and toolchain** | 1–4 | 🟠 pre-alpha | ✅ Done |
 | 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done |
 | 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
-| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done |
+| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS; Windows unverified) |
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ⬜ Next — Step 17 |
 | 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ |
 | 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
@@ -309,6 +309,8 @@ Keep the mapping layer thin and isolated. The README calls harness churn "the pe
 
 **Done when:** a real prompt against a scratch git repo produces streamed text, a `diff.patch`, and a `done` event — on both OSes.
 
+> **Verified on macOS only.** A real `claude-code` run over HTTP streamed text, wrote the file, produced `diff.patch`, and landed a `done` record with real cost; stopping a live run took the subprocess tree to zero and left the run terminal with partial events. The Windows halves of Steps 15 and 16 — `.cmd` shim resolution, `taskkill /T /F`, `\r\n` in the stream — are unit-tested with an injected `win32` host but have not been run on Windows. Phases 0–3 all carry that debt; Step 24 is where it comes due, and it is larger than that step's text implies.
+
 ### Decisions this phase settled
 
 Four things were not obvious from the step text and are worth carrying forward:
@@ -317,6 +319,8 @@ Four things were not obvious from the step text and are worth carrying forward:
 - **`startDaemon` still defaults to inert.** The no-op executor and `unprobed` remain the defaults so the daemon's own tests stay fast, offline, and free; real behaviour is opt-in via `harnessRuntime()`. A default that spawns is a test suite whose results depend on what is installed on the machine.
 - **The patch never goes on the wire.** `ExecutionContext.recordDiff` hands the queue a patch for `diff.patch`; the `done` event carries only the `DiffStat`. A diff can be megabytes and every client is subscribed.
 - **The leash is advisory for CLI-backed harnesses.** `Workspace` binds harnesses that do their own I/O. `claude-code` hands the work to a subprocess with its own Edit/Write tools, which never consult our facade — so there, the leash scopes what it can and *observes* the rest, emitting a `denial` after the fact. This is weaker than the README's "cannot write there" and is flagged in `claude-code.ts` at the point where it matters. Closing it needs the CLI's own permission hooks.
+
+Two things Phase 4 inherits rather than discovers: `runDiff` holds the whole patch in memory and `GET /runs/:id` returns it in full, so a workspace with a large untracked tree (an un-gitignored `node_modules`) yields a multi-megabyte `diff.patch` — fine for alpha, but Step 19's run view should fetch the diff lazily rather than with the run. And `git add -A -N` marks new files intent-to-add, so a run interrupted mid-flight leaves that marker in the user's index; `git reset` clears it and nothing is ever staged.
 
 The live `claude-code` test is gated behind `CUESHEET_E2E=1`, since CI has no logged-in `claude` and a test that spends tokens by default is a test people delete. The mapper is tested against a captured real stream (`fixtures/claude-code-stream.jsonl`), which runs everywhere.
 
