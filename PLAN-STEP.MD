@@ -51,8 +51,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 |---|---|---|---|
 | **0 · Repo and toolchain** | 1–4 | 🟠 pre-alpha | ✅ Done |
 | 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done |
-| 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ⬜ Next — Step 8 |
-| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ⬜ |
+| 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
+| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ⬜ Next — Step 13 |
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ⬜ |
 | 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ |
 | 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
@@ -218,25 +218,25 @@ Use `picomatch` against posix-normalized paths. Windows specifics that will bite
 
 ---
 
-# Phase 2 · The daemon spine
+# Phase 2 · The daemon spine ✅
 
 > 🟠 **Pre-alpha.** A daemon you can `curl`. Not a product.
 
-### Step 8 — `cuesheetd` boots and serves health
+### Step 8 — `cuesheetd` boots and serves health ✅
 Fastify + `@fastify/websocket`. Binds `127.0.0.1:7373`. On `EADDRINUSE`, exit with a clear message (don't silently pick another port — the CLI and app need to find it).
 
 Write a **lockfile** at `~/.cuesheet/daemon.json` with `{ pid, port, version, startedAt }` so the CLI and Electron can discover a running daemon. Delete it on clean exit; on boot, if it exists, probe `/health` before assuming it's stale.
 
 **Done when:** `curl 127.0.0.1:7373/health` returns `{ ok: true, version }` on both OSes.
 
-### Step 9 — Event bus + WebSocket fan-out
+### Step 9 — Event bus + WebSocket fan-out ✅
 An in-process `EventEmitter` wrapped in a typed `bus.emit(RunEvent)` / `bus.subscribe(fn)`. `GET /ws` upgrades and streams every `RunEvent` as JSON lines.
 
 Add a replay buffer: on connect, send the last N events for any active run so a client that connects mid-run isn't staring at nothing.
 
 **Done when:** `wscat` connected to `/ws` prints a synthetic event you emit from a test route.
 
-### Step 10 — Run store (files)
+### Step 10 — Run store (files) ✅
 ```
 ~/.cuesheet/runs/<runId>/
   run.json       prompt, stations, status, timestamps, cost totals
@@ -250,12 +250,12 @@ Run IDs: monotonic + sortable. Use a timestamp-prefixed id, not a bare counter.
 
 **Done when:** a run written on one process is fully readable by a second process, and `events.jsonl` survives a hard kill mid-write (last line may be partial — the reader must tolerate that).
 
-### Step 11 — The queue
+### Step 11 — The queue ✅
 Single-concurrency FIFO to start. `enqueue(cuesheet, prompt)` → `runId`. One run at a time, cues executed in declared order. No parallelism yet — parallel stations are a later problem and will otherwise dominate your debugging time now.
 
 **Done when:** two rapid `enqueue` calls run sequentially and both produce complete run records.
 
-### Step 12 — HTTP API surface
+### Step 12 — HTTP API surface ✅
 ```
 GET  /health
 GET  /stations           from config + live probe results
