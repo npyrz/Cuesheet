@@ -19,7 +19,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"import('node:fs').then(m=>process.platform!=='win32'&&m.chmodSync('dist/main.js',0o755))\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))\""
   },

@@ -54,7 +54,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
 | 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS; Windows unverified) |
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS; Windows unverified) |
-| 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ Next — Step 21 |
+| **5 · Electron shell** | 21–24 | 🟡 alpha | 🚧 Step 21 ✅ · next is Step 22 |
 | 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
 | — beyond this plan — | M2, M4, M5 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
@@ -389,7 +389,7 @@ Five things that were not in the step text and are worth carrying into Phase 5:
 
 > 🟡 **Alpha begins here.** The moment it becomes a thing you can hand someone, the bar changes: no orphaned processes, no lost runs, no manual fixes.
 
-### Step 21 — Main process
+### Step 21 — Main process ✅
 `packages/desktop`. Main process:
 - `app.requestSingleInstanceLock()` — second launch focuses the first window.
 - Starts the daemon **in-process** (import and call `startDaemon()`) rather than spawning a sidecar binary. One less packaging problem, one less orphaned process.
@@ -397,6 +397,23 @@ Five things that were not in the step text and are worth carrying into Phase 5:
 - `contextIsolation: true`, `nodeIntegration: false`, a minimal preload exposing only `{ platform, chooseDirectory, daemonPort }`.
 
 **Done when:** `npm run dev -w packages/desktop` opens a window running the Desk against the embedded daemon.
+
+> **Verified on macOS, by driving the app rather than typechecking it.** The window opens, `curl 127.0.0.1:7373/health` answers from a daemon living *inside* it, and the Desk reports `daemon connected`. Both load paths were checked, because they fail in different ways: from `file://` the preload's port is the only thing that can work, and the page reported `{ platform: "darwin", daemonPort: 7373, chooseDirectory: function }`; against a running Vite the same bridge appears deliberately *without* a port. A mock Station added through the daemon streamed a real run into the window — `text` → `tool` → `standby` → the **go** button clicked in the app's own UI → `done · $0.0012`, with `cuesheet-mock.md` written in the workspace. A second launch exited immediately and opened no second window. Quitting left no Electron process, a free port, no `daemon.json`, and a complete run record on disk; quitting while *attached* to a daemon it did not start left that daemon running, which is the case that matters.
+>
+> The Windows half is unverified and inherits Phases 0–4's debt. Step 24 is where it comes due.
+
+### Decisions Step 21 settled
+
+Seven things that were not in the step text, four of which are one-line fixes that each cost an afternoon when met during packaging instead:
+
+- **`packages/desktop` typechecks in bundler mode, not `nodenext`.** The package is CJS at runtime and its sources are ESM syntax that a bundler resolves — under `nodenext` those two facts collide and `verbatimModuleSyntax` errors on *every* import in the package. `"module": "preserve"` is the setting that arrangement exists for. `tsc` no longer emits here at all; `build.mjs` does, so `tsconfig.build.json` is gone rather than left as a second, stale build path.
+- **The daemon is reached through `await import()`.** A CJS file cannot statically import an ESM package, and `app.whenReady()` already supplies the async context. esbuild inlines it when bundling, so the dynamic import costs nothing at runtime.
+- **`npm run build --workspaces` runs alphabetically, not topologically.** `cli, core, daemon, desktop, harness, ui` — so `desktop` bundled before `harness` and `ui` existed, and only succeeded because a previous build had left their `dist` behind. On a fresh clone it would have failed, which is exactly where it would have been least welcome. The root `build` script now names the six packages in dependency order.
+- **Start-or-attach, not start-or-die.** `startDaemon` throws `PortInUseError` instead of exiting precisely so this caller can choose, and a dev machine routinely has `cuesheetd` already on 7373. The app attaches to a live one and records that it does not own it — `before-quit` must not take somebody else's daemon down. Verified in both directions.
+- **The dev server is given no `daemonPort`, and that is load-bearing.** `apiOrigin()` prefers the bridge's port whenever it is present, which is right for `file://` and wrong for Vite: `http://127.0.0.1:7373` is a different origin from `http://localhost:5173`, the daemon sends no CORS headers — deliberately, since a loopback daemon that answers any website is a vulnerability — and every fetch dies as `Failed to fetch` behind a window that otherwise looks correct. The dev server proxies `/api` and `/ws` so relative URLs work. Found by running it; a passing typecheck and 381 green tests had nothing to say about it.
+- **The preload's import graph must stay free of Node builtins.** A sandboxed preload has no `require`, so a single `import "node:path"` anywhere it reaches is a bridge that throws before it can expose itself — a window with no `window.cuesheet` and no error worth reading. `launch.ts` therefore imports nothing at all, and path resolution lives in `ui-entry.ts`, which only the main process touches.
+- **`npx cuesheetd` was declared and not runnable.** Found while making the README's alpha instructions true rather than plausible: Step 8 gave the daemon a `bin`, but `tsc` emits `dist/main.js` with no shebang and mode `0644`, so the linked binary answered `Permission denied`. The source carries `#!/usr/bin/env node` now and the build chmods the file — a build step, not a one-off, because every rebuild re-creates it.
+- **`ELECTRON_RUN_AS_NODE=1` is inherited from a VS Code terminal.** With it set, `electron .` runs as plain Node, `require("electron")` returns a *path string* from `node_modules`, and the app dies on `Cannot read properties of undefined (reading 'requestSingleInstanceLock')` — a message that points at your code and is not about your code. Launch with `env -u ELECTRON_RUN_AS_NODE` from an editor terminal.
 
 ### Step 22 — Tray, notifications, start-on-login
 - Tray icon: macOS wants a **template PNG** (`iconTemplate.png` + `@2x`, monochrome with alpha); Windows wants a **multi-size `.ico`**. Ship both; pick by `process.platform`.
@@ -445,7 +462,9 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
 
 > ### 🏁 Milestone B — the app ships · `v0.1.0-alpha`
-> *First public tag. Alpha, and labelled alpha — the README's status badge moves from `pre-alpha` to `alpha` here and nowhere earlier.*
+> *First public tag. Alpha, and labelled alpha.*
+>
+> **The badge moved early, deliberately.** This line used to say the README's status badge changes here "and nowhere earlier"; it was flipped to `alpha` at the end of Step 21 instead, on the grounds that Phase 5 is where the stage table already says alpha begins. The README carries the caveat the badge cannot — no installers, unsigned, one harness, macOS only — in *What actually works right now*. Do not revert it back to `pre-alpha`.
 >
 > Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference. Unsigned, one harness, no gates. Say all three in the release notes.
 

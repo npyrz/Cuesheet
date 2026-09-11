@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @cuesheet/core -w @cuesheet/harness -w @cuesheet/daemon -w @cuesheet/cli -w @cuesheet/ui -w @cuesheet/desktop",
     "clean": "npm run clean --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",

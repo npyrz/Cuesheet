@@ -7,14 +7,29 @@
 A desktop app that turns Claude Code, Codex, Ollama and whatever comes next into one crew you actually manage — models, harnesses, roles, memory, limits, and permissions on a single desk. Then hands you the whole thing on your phone.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#project-status)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#what-actually-works-right-now)
 [![Platform](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-desktop-black.svg)](#requirements)
 
 </div>
 
 ---
 
-> **Project status: pre-alpha.** Nothing here is shippable yet. This README is the design spec and the contract — it describes what Cuesheet is being built to be. See the [Roadmap](#roadmap) for what actually exists.
+> **Project status: alpha, and not yet installable.** The Desk runs, the daemon runs, and `claude-code` does real work through both — from a checkout, on macOS. There is no download yet, nothing is signed, there are no Gates, and Windows is written but unverified. This README is still the design spec and the contract: it describes what Cuesheet is being built to be, not what you can use today. [What actually works right now](#what-actually-works-right-now) is the honest list, and the [Roadmap](#roadmap) is the rest.
+
+### What actually works right now
+
+Everything below this line is either built or building. Nothing here needs `cuesheet.toml` opened by hand.
+
+| | |
+|---|---|
+| ✅ **The daemon** | `cuesheetd` on `127.0.0.1:7373` — run queue, run records, WebSocket stream. Every client, including the phone later, is a client of these routes. |
+| ✅ **The Desk** | React UI: Station tiles, live run log, `⌘K` palette, add-a-Station panel that writes your TOML for you. |
+| ✅ **`claude-code`** | Real runs: streamed output, a `diff.patch`, cost, and stop-means-stop on the whole process tree. |
+| ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar, tray and notifications still to come. |
+| 🚧 **Windows** | Written and unit-tested against an injected `win32` host. Not yet run on Windows. |
+| 📋 **Not built yet** | Gates, the Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
+
+**Concretely, today:** clone it, `npm install`, `npm run build`, `npm run dev -w packages/desktop`. One harness, one Station at a time, no gates. Run records may be discarded on upgrade and the config format can still change under you.
 
 ---
 
@@ -192,34 +207,45 @@ Twelve words and you know the system.
   - [Claude Code](https://claude.com/claude-code) — `claude login`
   - [Codex CLI](https://developers.openai.com/codex) — `codex login`
   - [Ollama](https://ollama.com) — `ollama pull qwen3-coder`
-- Node.js ≥ 22, if you want the CLI as well as the app.
+- **Node.js ≥ 22.** Required in alpha — the app is run from a checkout, not installed.
 
 **Cuesheet never sees your model credentials.** Harnesses shell out to CLIs you already logged into. There is no key to paste, no proxy in the request path, and no account to create.
 
 ### Install
 
-Download the desktop app from [Releases](../../releases) — it bundles the daemon and adds a tray icon, native notifications, and start-on-login. Open it, and the add-station panel is already showing you what's installed.
-
-Or, if you live in a terminal:
+> **Alpha: there is nothing to download yet.** No installers, no npm package, no signing — those are the next two steps of work, and this section will say so until they land. Run it from a checkout:
 
 ```bash
-npm install -g @cuesheet/cli
-cuesheet init      # writes cuesheet.toml, detects installed harnesses
-cuesheet up        # starts the daemon, opens the Desk
+git clone <this repo> && cd cuesheet
+npm install
+npm run build
+npm run dev -w packages/desktop   # the app, with the daemon inside it
 ```
+
+The window opens on the Desk. Click **add a station**, pick the harness it found on your machine, point it at a workspace, and it writes `~/.cuesheet/cuesheet.toml` for you.
+
+Prefer a browser? `npx cuesheetd` in one terminal and `npm run dev -w packages/ui` in another puts the same Desk on `http://localhost:5173` — the app and the browser are the same UI talking to the same daemon.
 
 ### Your first run
 
+Press `⌘K` (`Ctrl+K` on Windows), type what you want, and watch it stream into the tile:
+
+```
+add rate limiting to the upload endpoint
+```
+
+The run lands as a record on disk — prompt, event log, and a `diff.patch` you can read.
+
+**What this is not yet:** the flags below are the shape this is heading for, and they need Gates (M5), which are not built.
+
 ```bash
 cuesheet run "add rate limiting to the upload endpoint" \
-  --engineer opus --review codex
+  --engineer opus --review codex          # 📋 planned, not shipped
 ```
 
 ### Pair your phone
 
-```bash
-cuesheet pair      # scan the QR from your phone
-```
+📋 Planned — M3. `cuesheet pair` does not exist yet.
 
 ---
 
@@ -510,9 +536,10 @@ Every Run is a durable object: prompt, brief, diff, verdicts, tool calls, denial
 
 | Harness | Vendor | Roles | Status |
 |---|---|---|---|
-| `claude-code` | Anthropic | engineer, reviewer, caller | 🚧 In progress |
-| `codex` | OpenAI | engineer, reviewer, caller | 🚧 In progress |
-| `ollama` | local | worker | 🚧 In progress |
+| `claude-code` | Anthropic | engineer | ✅ Working — reviewer and caller need M5/M6 |
+| `mock` | none | engineer | ✅ Working — ships on purpose, for developing against without burning tokens |
+| `codex` | OpenAI | engineer, reviewer, caller | 📋 Planned — M5, and the second vendor a Gate needs |
+| `ollama` | local | worker | 📋 Planned |
 | `gemini-cli` | Google | engineer, reviewer | 📋 Planned |
 | `opencode` | community | engineer | 📋 Planned |
 | `cursor-cli` | Cursor | engineer | 📋 Planned |
@@ -687,8 +714,8 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 
 | Milestone | Contents | State |
 |---|---|---|
-| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | 🚧 |
-| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 📋 |
+| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | ✅ macOS · 🚧 Windows |
+| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 🚧 Desk and shell done; tray, packaging and signing next |
 | **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | 📋 |
 | **M3 · Pocket** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
 | **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | 📋 |

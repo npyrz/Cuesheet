@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * The `cuesheetd` entry point for running the daemon as its own process.
  *
