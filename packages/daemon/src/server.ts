@@ -11,16 +11,26 @@
  */
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
+import { stat } from "node:fs/promises";
 import {
+  addStation,
+  ConfigError,
   DEFAULT_PORT,
+  expandHome,
   hostEnv,
   loadConfig,
+  resolveUserPath,
+  stationIdTaken,
   type HostEnv,
   type LoadedConfig,
   type RunEvent,
 } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
-import { createFileRunStore, type RunStore } from "./store.js";
+import {
+  createFileRunStore,
+  type RunDetailResponse,
+  type RunStore,
+} from "./store.js";
 import { createRunQueue, type RunQueue } from "./queue.js";
 import { noopExecutor, type RunExecutor } from "./executor.js";
 import { createStandbyRegistry, type StandbyRegistry } from "./standby.js";
@@ -120,6 +130,14 @@ export async function startDaemon(
   // later `reloadConfig()` reaches the executor too.
   let loaded = await loadConfig(cwd, env);
   const config = (): LoadedConfig => loaded;
+  // One reload closure, shared by `POST /stations` and `handle.reloadConfig`.
+  // Two closures over the same `loaded` would work; two *implementations*
+  // would drift, and the route's whole job is to leave the running daemon
+  // agreeing with the file it just wrote.
+  const reload = async (): Promise<LoadedConfig> => {
+    loaded = await loadConfig(cwd, env);
+    return loaded;
+  };
 
   const queue = createRunQueue({
     store,
@@ -157,13 +175,24 @@ export async function startDaemon(
 
   await app.register(websocket);
 
-  registerRoutes(app, { bus, store, queue, standbys, prober, config });
+  const routeDeps: RouteDeps = {
+    bus,
+    store,
+    queue,
+    standbys,
+    prober,
+    config,
+    reload,
+    env,
+  };
+
+  registerRoutes(app, routeDeps);
   // The same routes under `/api` as well, because Step 17's Vite dev server
   // proxies `/api` and `/ws`. One registration with a prefix beats a rewrite
   // rule in the dev config and keeps `curl :7373/health` working.
   await app.register(
     async (scope) => {
-      registerRoutes(scope, { bus, store, queue, standbys, prober, config });
+      registerRoutes(scope, routeDeps);
     },
     { prefix: "/api" },
   );
@@ -198,10 +227,7 @@ export async function startDaemon(
     store,
     queue,
     standbys,
-    async reloadConfig() {
-      loaded = await loadConfig(cwd, env);
-      return loaded;
-    },
+    reloadConfig: reload,
     async close() {
       if (closed) return;
       closed = true;
@@ -219,10 +245,18 @@ interface RouteDeps {
   standbys: StandbyRegistry;
   prober: HarnessProber;
   config: () => LoadedConfig;
+  /**
+   * Re-read `cuesheet.toml`. The same closure that backs
+   * `DaemonHandle.reloadConfig`, not a second one — `POST /stations` writes
+   * the file and must leave the *running* daemon seeing what it just wrote,
+   * or the new tile appears and the next run cannot find its Station.
+   */
+  reload: () => Promise<LoadedConfig>;
+  env: HostEnv;
 }
 
 function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { bus, store, queue, standbys, prober, config } = deps;
+  const { bus, store, queue, standbys, prober, config, reload, env } = deps;
 
   app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
 
@@ -244,7 +278,93 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       return reply.code(400).send({ error: "Malformed run id." });
     const stored = await store.get(id);
     if (!stored) return reply.code(404).send({ error: "No such run." });
-    return stored;
+
+    // The patch is deliberately *not* in this response. A run against a
+    // workspace with a large untracked tree produces a diff measured in
+    // megabytes, and this route is what the Desk calls to open a run row.
+    // `hasDiff` is enough to decide whether to offer the button; the bytes
+    // come from `/runs/:id/diff` when someone actually asks for them.
+    const { diff, ...rest } = stored;
+    const body: RunDetailResponse = { ...rest, hasDiff: diff !== undefined };
+    return body;
+  });
+
+  /**
+   * The patch itself, as text.
+   *
+   * `text/plain` rather than JSON: a unified diff is a document, and wrapping
+   * megabytes of it in a JSON string means escaping every newline on the way
+   * out and unescaping them on the way in, for nothing.
+   */
+  app.get("/runs/:id/diff", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    if (!isRunId(id))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const diff = await store.getDiff(id);
+    if (diff === null) {
+      return reply.code(404).send({ error: "That run has no diff." });
+    }
+    return reply.type("text/plain; charset=utf-8").send(diff);
+  });
+
+  /**
+   * Add a Station — Step 20's panel, server side.
+   *
+   * Writes to `cuesheet.toml` and then reloads, so the response already
+   * reflects the new tile and the next run can resolve the Station. Validation
+   * is deliberately server-side rather than only in the UI: this is the same
+   * API the phone will call in M3, and a typed workspace path that does not
+   * exist is the mistake a person actually makes.
+   */
+  app.post("/stations", async (request, reply) => {
+    const body = request.body;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+    const draft = body as Record<string, unknown>;
+
+    const id = draft["id"];
+    if (typeof id === "string" && stationIdTaken(config(), id)) {
+      // 409 rather than the loader's "the last one wins" warning. That reading
+      // is fine for a file a human hand-edited; it is not a defensible outcome
+      // for a button, where the user would silently shadow an existing tile.
+      return reply.code(409).send({
+        error: `A station named "${id}" is already configured.`,
+      });
+    }
+
+    const workspace = draft["workspace"];
+    if (workspace !== undefined) {
+      if (typeof workspace !== "string" || workspace.trim() === "") {
+        return reply
+          .code(400)
+          .send({ error: "`workspace` must be a non-empty string." });
+      }
+      const problem = await workspaceProblem(workspace, env);
+      if (problem) return reply.code(400).send({ error: problem });
+    }
+
+    try {
+      const result = await addStation(draft, {
+        sourcePath: config().sourcePath,
+        env,
+      });
+      // Reload before responding, so the caller never sees a Station it then
+      // cannot run. `describeStations` is re-derived from the fresh config.
+      const reloaded = await reload();
+      const stations = await describeStations(reloaded, prober);
+      return reply.code(201).send({
+        station: result.station,
+        sourcePath: result.sourcePath,
+        created: result.created,
+        stations,
+      });
+    } catch (error) {
+      if (error instanceof ConfigError) {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
   });
 
   app.post("/runs", async (request, reply) => {
@@ -364,6 +484,29 @@ function resolveWorkspace(loaded: LoadedConfig, stationIds: string[]): string {
     if (station?.workspace) return station.workspace;
   }
   return loaded.config.station.find((s) => s.workspace)?.workspace ?? "";
+}
+
+/**
+ * Why a workspace path is unusable, or `null` if it is fine.
+ *
+ * `~/code/api` is the path a person types and the README's own example, and
+ * Windows will not expand it for you — so expand first, then resolve, then
+ * stat. Checking the raw string would reject a perfectly good tilde path.
+ */
+async function workspaceProblem(
+  workspace: string,
+  env: HostEnv,
+): Promise<string | null> {
+  const resolved = resolveUserPath(expandHome(workspace, env), process.cwd());
+  try {
+    const info = await stat(resolved);
+    if (!info.isDirectory()) {
+      return `Workspace ${resolved} is not a directory.`;
+    }
+    return null;
+  } catch {
+    return `Workspace ${resolved} does not exist.`;
+  }
 }
 
 function parseLimit(raw: unknown): number | undefined {

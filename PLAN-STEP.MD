@@ -53,8 +53,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done |
 | 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
 | 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS; Windows unverified) |
-| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ⬜ Next — Step 17 |
-| 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ |
+| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS; Windows unverified) |
+| 5 · Electron shell | 21–24 | 🟡 alpha | ⬜ Next — Step 21 |
 | 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
 | — beyond this plan — | M2, M4, M5 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
@@ -358,6 +358,30 @@ Seed every new Station's `deny` with `.git/**`. The leash's `dot: true` means an
 > *End of pre-alpha's useful phase. Not a release — there is nothing to download.*
 >
 > Daemon running, `claude-code` station added through the UI, real run streamed to a tile, run record on disk. Do not proceed until this is true on **both** macOS and Windows.
+
+> **Verified on macOS only, in a real browser.** The Desk was driven headless against a live daemon, not just typechecked: the app mounts and reports the daemon connected, the configured Station renders as a tile, the deferred `[gate]` table surfaces as a warning banner, `⌘K` opens the palette, and the Add a Station panel renders all five choices with `claude-code v2.1.221 ✓ logged in` listed above the greyed-out `codex` and `ollama`. Adding a Station through the panel wrote a `[[station]]` block beside a hand-written `[gate]` table that survived byte-for-byte, and produced a second tile. A prompt typed into the palette then streamed `text` → `tool` → `file` → `cost` → `done` into the tile and the log, landed as `done · $0.13 · 11s · 1 files, +1 −0`, and its patch loaded on demand from `/runs/:id/diff` — one request, only when asked for.
+>
+> The Windows half is unverified, and it inherits Phase 3's debt on top of its own.
+
+### Decisions this phase settled
+
+Five things that were not in the step text and are worth carrying into Phase 5:
+
+- **The UI imports types from `@cuesheet/core`, values from `@cuesheet/core/types`.** `types.ts` imports nothing at all; the barrel reaches `config.ts` and `leash.ts`, which pull in `node:fs`, `smol-toml`, `zod`, and `picomatch`. `import type` is erased under `verbatimModuleSyntax` and costs nothing, but the Add a Station panel needs `ROLES` as a *value* — so core gained a `./types` export subpath. The built bundle contains no Node builtins; that is asserted, not assumed.
+- **`apiOrigin()` exists before Electron does.** Step 21 loads the UI from `file://`, where a relative `fetch("/api/runs")` becomes `file:///api/runs` and fails with an error that names neither the daemon nor the port. Every fetch and the socket URL route through one module, and `base: "./"` is set in `vite.config.ts` for the same reason. Both are one line now and a scavenger hunt through finished components later.
+- **The resync order is the correctness argument, and it is load-bearing.** Attach the socket, *buffer*, fetch `/runs`, `snapshot` (which replaces, never merges), then flush the buffer in arrival order. Fetching before attaching loses events in one window; attaching without buffering loses them in the other. `RunEvent`s carry no unique id, so de-duplication is not available — ordering is the only defense, which is why nothing sorts and nothing dedupes.
+- **The config is appended to, never round-tripped.** `stringify(loaded.config)` over the whole file loses every comment and re-emits `deferred` from parsed JS values. `addStation` appends one `[[station]]` block to the existing *text*, re-parses the candidate with the loader's own `parseConfig` before anything replaces the target, then writes temp-and-rename. A user's Gates survive because they are never rewritten.
+- **`GET /runs/:id` no longer carries the patch.** Phase 3 flagged that a workspace with a large untracked tree yields a multi-megabyte `diff.patch`, and that route is what the Desk calls to open a run row. The patch moved to `GET /runs/:id/diff` as `text/plain`; the run response carries `hasDiff` so the button knows whether to offer itself.
+
+**Three bugs the browser found that the test suite could not.** Each was invisible to typecheck, lint, and 370 passing unit tests, because each only exists once the components mount against a live daemon:
+
+- **The log pane opened empty.** `snapshot` selects the newest run when nothing survived a resync, but it cannot invent that run's events — they were never on this session's socket. The Desk opened on the newest run and showed "No events." until you clicked it. `resync` now fetches that run's detail before flushing the buffer.
+- **Every run read `(no prompt)`.** The reducer invents a placeholder when events arrive for a run it has never seen, which is right — dropping them would animate tiles for a run that never appears in the list — but a placeholder has no prompt. Nothing ever fetched the real record. The hook now adopts an unknown run id on first sight, which also covers a run started from the CLI or, later, the phone.
+- **Tiles labelled a cloud model `local`.** `cost` events carry tokens; the authoritative price arrives once, on `done`, for the run as a whole. A Station's own cost therefore legitimately has tokens and no `usd` — and `money()` rendered that as `local`, so a `claude-code` tile read as free for an entire run that cost real money. Tiles now show tokens and leave the price to the run row, where it is actually known. Attributing the run's total to a tile would have been worse: with several Stations it is invented.
+
+**A bug this phase found and fixed.** The observing leash check in `claude-code.ts` compared a path the CLI had already resolved against the workspace *as configured*. On macOS `/tmp` and `/var` are symlinks into `/private`, so a Station at `/tmp/api` reported every one of its own legitimate writes as an escape — and a symlinked `~/code` does the same on any platform. `run()` now resolves the workspace once via `observedStation()`. It was cosmetic for `claude-code`, where the leash only observes; for any harness using the `Workspace` facade it would have blocked real writes.
+
+**Known limitation, carried deliberately.** `POST /runs` takes `{ prompt, cuesheet? }` and a bare prompt runs the *first* configured Station. With several Stations configured the palette cannot choose between them. That is the single-station shape Milestone A is defined by; a `station` parameter is not the fix to reach for before Gates make multi-station runs real.
 
 ---
 

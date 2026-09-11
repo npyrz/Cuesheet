@@ -47,7 +47,8 @@ export interface ExecutionContext {
    * the payload of the `done` event, and a patch can be megabytes — putting it
    * there would push a whole diff through the WebSocket to every connected
    * client on every run. The summary carries the `DiffStat`; the patch goes to
-   * disk and is fetched on demand by `GET /runs/:id`.
+   * disk and is fetched on demand by `GET /runs/:id/diff`, which is its own
+   * route for exactly this reason.
    *
    * Last call wins, so an executor running several Stations can record once at
    * the end rather than merging.

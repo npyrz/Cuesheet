@@ -1,11 +1,15 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import type { HostEnv, Run, RunEvent, Standby } from "@cuesheet/core";
+import type { HostEnv, Run, RunEvent, Standby, Station } from "@cuesheet/core";
 import { startDaemon, type DaemonHandle } from "./server.js";
-import { createFileRunStore, type StoredRun } from "./store.js";
+import {
+  createFileRunStore,
+  type RunDetailResponse,
+  type StoredRun,
+} from "./store.js";
 import { createRunIdFactory } from "./ids.js";
 import type { RunExecutor } from "./executor.js";
 import type { StopOutcome } from "./queue.js";
@@ -313,7 +317,7 @@ describe("GET /runs/:id", () => {
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "ship it" });
     await daemon.queue.idle();
 
-    const { status, body: stored } = await get<StoredRun>(
+    const { status, body: stored } = await get<RunDetailResponse>(
       url,
       `/runs/${body.runId}`,
     );
@@ -603,4 +607,225 @@ describe("close", () => {
     expect(stored?.run.finishedAt).toBeTypeOf("string");
     expect(stored?.events.length).toBeGreaterThan(0);
   }, 10_000);
+});
+
+describe("GET /runs/:id/diff", () => {
+  /**
+   * Records a patch and finishes.
+   *
+   * `recordDiff` takes only the patch — the `DiffStat` rides on the returned
+   * summary, which is what the `done` event carries. That split is the point:
+   * the stat goes on the wire, the megabytes go to disk.
+   */
+  const withDiff = (patch: string): RunExecutor => {
+    return async (ctx) => {
+      ctx.recordDiff(patch);
+      return {
+        ...(await done(ctx)),
+        diff: { filesChanged: 1, insertions: 2, deletions: 0 },
+      };
+    };
+  };
+
+  it("serves the patch as text", async () => {
+    const patch = "--- a/src/x.ts\n+++ b/src/x.ts\n@@ -1 +1,2 @@\n+added\n";
+    const { url } = await boot(withDiff(patch));
+
+    const { body } = await post<Enqueued>(url, "/runs", { prompt: "edit" });
+    await daemon.queue.idle();
+
+    const response = await fetch(`${url}/runs/${body.runId}/diff`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(await response.text()).toBe(patch);
+  });
+
+  it("keeps the patch out of GET /runs/:id, flagging it instead", async () => {
+    // A workspace with a large untracked tree yields a multi-megabyte patch,
+    // and this is the route the Desk calls to open a run row.
+    const { url } = await boot(withDiff("--- a/x\n+++ b/x\n"));
+
+    const { body } = await post<Enqueued>(url, "/runs", { prompt: "edit" });
+    await daemon.queue.idle();
+
+    const { body: stored } = await get<RunDetailResponse & { diff?: string }>(
+      url,
+      `/runs/${body.runId}`,
+    );
+    expect(stored.hasDiff).toBe(true);
+    expect(stored.diff).toBeUndefined();
+  });
+
+  it("404s when the run wrote no patch", async () => {
+    const { url } = await boot(done);
+    const { body } = await post<Enqueued>(url, "/runs", { prompt: "nothing" });
+    await daemon.queue.idle();
+
+    const { status } = await get(url, `/runs/${body.runId}/diff`);
+    expect(status).toBe(404);
+
+    const { body: stored } = await get<RunDetailResponse & { diff?: string }>(
+      url,
+      `/runs/${body.runId}`,
+    );
+    expect(stored.hasDiff).toBe(false);
+  });
+
+  it("400s a malformed id rather than reading an arbitrary path", async () => {
+    const { url } = await boot();
+    const { status } = await get(url, "/runs/..%2f..%2fetc/diff");
+    expect(status).toBe(400);
+  });
+});
+
+describe("POST /stations", () => {
+  interface Added {
+    station: Station;
+    sourcePath: string;
+    created: boolean;
+    stations: StationsResponse;
+  }
+
+  /** A real directory, because the route stats the workspace it is given. */
+  async function workspace(): Promise<string> {
+    return mkdtemp(path.join(tmpdir(), "cuesheet-ws-"));
+  }
+
+  it("writes a [[station]] block to the loaded config and returns a new tile", async () => {
+    // Step 20's done-when.
+    const { url } = await boot();
+    const ws = await workspace();
+
+    const { status, body } = await post<Added>(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: ws,
+    });
+
+    expect(status).toBe(201);
+    expect(body.sourcePath).toBe(path.join(cwd, "cuesheet.toml"));
+    expect(body.created).toBe(false);
+
+    const text = await readFile(path.join(cwd, "cuesheet.toml"), "utf8");
+    expect(text).toContain('id = "qwen"');
+    expect(body.stations.stations.map((s) => s.station.id)).toEqual([
+      "opus",
+      "sonnet",
+      "qwen",
+    ]);
+  });
+
+  it("leaves the running daemon agreeing with the file it just wrote", async () => {
+    const { url } = await boot();
+    await post(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: await workspace(),
+    });
+
+    // No reload call from the test: the route must have done it, or the tile
+    // appears and the next run cannot resolve the Station.
+    const { body } = await get<StationsResponse>(url, "/stations");
+    expect(body.stations.map((s) => s.station.id)).toContain("qwen");
+  });
+
+  it("seeds the leash with .git/** so an allow of ** cannot reach hooks", async () => {
+    const { url } = await boot();
+    const { body } = await post<Added>(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: await workspace(),
+    });
+    expect(body.station.paths).toEqual(["**"]);
+    expect(body.station.deny).toContain(".git/**");
+  });
+
+  it("preserves the deferred [gate] table the test config carries", async () => {
+    const { url } = await boot();
+    await post(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: await workspace(),
+    });
+    const text = await readFile(path.join(cwd, "cuesheet.toml"), "utf8");
+    expect(text).toContain("[gate.default]");
+    expect(text).toContain("reviewers = 2");
+  });
+
+  it("409s a duplicate id instead of silently shadowing a tile", async () => {
+    const { url } = await boot();
+    const { status } = await post<ApiError>(url, "/stations", {
+      id: "opus",
+      harness: "claude-code",
+      role: "engineer",
+      workspace: await workspace(),
+    });
+    expect(status).toBe(409);
+  });
+
+  it("400s a workspace that does not exist", async () => {
+    const { url } = await boot();
+    const { status, body } = await post<ApiError>(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: path.join(tmpdir(), "cuesheet-definitely-not-here"),
+    });
+    expect(status).toBe(400);
+    expect(body.error).toContain("does not exist");
+  });
+
+  it("400s a workspace that is a file", async () => {
+    const { url } = await boot();
+    const file = path.join(cwd, "cuesheet.toml");
+    const { status, body } = await post<ApiError>(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: file,
+    });
+    expect(status).toBe(400);
+    expect(body.error).toContain("not a directory");
+  });
+
+  it("400s an invalid role and writes nothing", async () => {
+    const { url } = await boot();
+    const before = await readFile(path.join(cwd, "cuesheet.toml"), "utf8");
+    const { status } = await post<ApiError>(url, "/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "pilot",
+      workspace: await workspace(),
+    });
+    expect(status).toBe(400);
+    expect(await readFile(path.join(cwd, "cuesheet.toml"), "utf8")).toBe(
+      before,
+    );
+  });
+
+  it("400s an id that would escape the runs directory", async () => {
+    const { url } = await boot();
+    const { status } = await post<ApiError>(url, "/stations", {
+      id: "../escape",
+      harness: "ollama",
+      role: "worker",
+      workspace: await workspace(),
+    });
+    expect(status).toBe(400);
+  });
+
+  it("is reachable under /api too, which is what the Desk calls", async () => {
+    const { url } = await boot();
+    const { status } = await post<Added>(url, "/api/stations", {
+      id: "qwen",
+      harness: "ollama",
+      role: "worker",
+      workspace: await workspace(),
+    });
+    expect(status).toBe(201);
+  });
 });

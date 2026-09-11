@@ -11,17 +11,18 @@
  * people delete.
  */
 import { readFile } from "node:fs/promises";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { Station } from "@cuesheet/core";
+import { checkPath, type Station } from "@cuesheet/core";
 import {
   buildArgs,
   claudeCodeHarness,
   createStreamState,
+  observedStation,
   mapRateLimit,
   mapStreamEvent,
   parseVersion,
@@ -225,6 +226,37 @@ describe("mapping a captured stream", () => {
     expect(events.find((e) => e.t === "denial")).toBeDefined();
   });
 
+  it("does not report a write inside a workspace reached through a symlink", () => {
+    // The regression this guards: the CLI reports paths it has already
+    // resolved, so a workspace at `/tmp/api` — where `/tmp` is a symlink to
+    // `/private/tmp` on macOS — saw every one of its own writes arrive as
+    // `/private/tmp/api/...` and flagged each as an escape. A symlinked
+    // `~/code` does the same on any platform. `run()` resolves the workspace
+    // once so the synchronous check compares like with like; this asserts the
+    // resolved form is what makes the difference.
+    const resolved = createStreamState(
+      station({ workspace: "/private/tmp/scratch" }),
+    );
+    const events = mapStreamEvent(
+      {
+        type: "assistant",
+        message: {
+          id: "m-symlink",
+          content: [
+            {
+              type: "tool_use",
+              name: "Write",
+              input: { file_path: "/private/tmp/scratch/hello.md" },
+            },
+          ],
+        },
+      },
+      resolved,
+    );
+    expect(events.find((e) => e.t === "file")).toBeDefined();
+    expect(events.find((e) => e.t === "denial")).toBeUndefined();
+  });
+
   it("turns an unrecognised event into text rather than an error", () => {
     // A new event type in the next CLI release must degrade to a visible line,
     // not a failed run. The README calls harness churn the permanent tax.
@@ -304,4 +336,59 @@ live("claude-code end to end", () => {
     expect(report.result.diff?.patch).toContain("greeting.txt");
     expect(report.result.cost?.tokensOut).toBeGreaterThan(0);
   }, 300_000);
+});
+
+describe("observedStation", () => {
+  /** A directory reached through a symlink, like macOS's /tmp. */
+  async function linkedWorkspace(): Promise<{ real: string; link: string }> {
+    const real = await mkdtemp(path.join(tmpdir(), "cuesheet-real-"));
+    const link = path.join(
+      await mkdtemp(path.join(tmpdir(), "cuesheet-link-")),
+      "ws",
+    );
+    await symlink(real, link, "dir");
+    return { real: await realpath(real), link };
+  }
+
+  it("resolves the workspace, which is what stops the false denial", async () => {
+    // The fix itself, not a hand-resolved stand-in: `run()` calls this and
+    // hands the result to the stream mapper.
+    const { real, link } = await linkedWorkspace();
+    const observed = await observedStation(station({ workspace: link }), link);
+    expect(observed.workspace).toBe(real);
+  });
+
+  it("turns a would-be escape into an allowed write", async () => {
+    const { real, link } = await linkedWorkspace();
+    const configured = station({ workspace: link });
+    const fileInside = path.join(real, "hello.md");
+
+    // Before: the configured workspace is the symlink, the CLI reports the
+    // resolved path, and a file plainly inside the workspace reads as an
+    // escape. This is the bug, asserted so it cannot come back quietly.
+    expect(checkPath(configured, fileInside).allowed).toBe(false);
+
+    // After.
+    const observed = await observedStation(configured, link);
+    expect(checkPath(observed, fileInside).allowed).toBe(true);
+  });
+
+  it("falls back to the given path when it cannot be resolved", async () => {
+    const missing = path.join(tmpdir(), "cuesheet-not-here-xyz");
+    const observed = await observedStation(
+      station({ workspace: missing }),
+      missing,
+    );
+    expect(observed.workspace).toBe(missing);
+  });
+
+  it("leaves the rest of the Station alone", async () => {
+    const { link } = await linkedWorkspace();
+    const observed = await observedStation(
+      station({ workspace: link, deny: ["**/*.env"] }),
+      link,
+    );
+    expect(observed.id).toBe(station().id);
+    expect(observed.deny).toEqual(["**/*.env"]);
+  });
 });

@@ -94,6 +94,20 @@ async function post(url: string, body?: unknown): Promise<Response> {
   });
 }
 
+/**
+ * The patch, from the route that serves it.
+ *
+ * `GET /runs/:id` deliberately no longer carries the diff — a run against a
+ * workspace with a large untracked tree writes megabytes, and that route is
+ * what the Desk calls to open a run row. The bytes live at `/runs/:id/diff`.
+ */
+async function fetchDiff(url: string, runId: string): Promise<string | null> {
+  const response = await fetch(`${url}/runs/${runId}/diff`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`diff fetch failed: ${response.status}`);
+  return response.text();
+}
+
 async function waitForRun(url: string, runId: string): Promise<StoredRun> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     const response = await fetch(`${url}/runs/${runId}`);
@@ -181,7 +195,7 @@ describe("POST /runs against a real harness", () => {
     ).json()) as { runId: string };
     const stored = await waitForRun(url, runId);
 
-    expect(stored.diff).toContain("cuesheet-mock.md");
+    expect(await fetchDiff(url, runId)).toContain("cuesheet-mock.md");
     expect(stored.run.result?.diff?.filesChanged).toBeGreaterThan(0);
     // The patch stays on disk; the wire event carries only the stat, because a
     // diff can be megabytes and every client is subscribed.
@@ -322,7 +336,7 @@ describe("stopping a run mid-flight", () => {
 
     const stored = await waitForRun(url, runId);
     expect(stored.run.status).toBe("stopped");
-    expect(stored.diff).toContain("partial-work.txt");
+    expect(await fetchDiff(url, runId)).toContain("partial-work.txt");
   }, 30_000);
 
   it("lands as stopped, not running", async () => {

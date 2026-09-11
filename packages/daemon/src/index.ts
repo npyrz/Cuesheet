@@ -30,6 +30,7 @@ export {
 export type {
   RunStore,
   StoredRun,
+  RunDetailResponse,
   CreateRunInput,
   FinishRunInput,
   RunUpdate,

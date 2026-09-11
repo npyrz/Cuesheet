@@ -63,6 +63,21 @@ export interface StoredRun {
   diff?: string;
 }
 
+/**
+ * What `GET /runs/:id` answers with.
+ *
+ * Deliberately not `StoredRun`: the patch is omitted and replaced by a flag.
+ * Named and exported so the Desk and the route's own tests share one
+ * declaration — this shape has already moved once, and two hand-maintained
+ * copies of a moving contract is how a client drifts from its server.
+ */
+export interface RunDetailResponse {
+  run: Run;
+  events: RunEvent[];
+  /** Whether `GET /runs/:id/diff` will return a patch. */
+  hasDiff: boolean;
+}
+
 /** Fields a non-terminal transition may set. */
 export interface RunUpdate {
   status?: RunStatus;
@@ -83,6 +98,15 @@ export interface RunStore {
   create(input: CreateRunInput): Promise<Run>;
   append(runId: RunId, event: RunEvent): Promise<void>;
   get(runId: RunId): Promise<StoredRun | null>;
+  /**
+   * Just `diff.patch`, without reading the event log.
+   *
+   * The run view fetches the diff separately from the run: a workspace with a
+   * large untracked tree produces a patch measured in megabytes, and pushing
+   * that through `GET /runs/:id` makes opening a run row expensive for a
+   * document most viewings never expand. `null` means the run wrote no patch.
+   */
+  getDiff(runId: RunId): Promise<string | null>;
   /** Newest first. */
   list(limit?: number): Promise<Run[]>;
   finish(runId: RunId, input: FinishRunInput): Promise<Run>;
@@ -263,6 +287,11 @@ export function createFileRunStore(
       const events = await readEvents(join(dir(runId), "events.jsonl"));
       const diff = await readOptional(join(dir(runId), "diff.patch"));
       return { run, events, ...(diff !== undefined && { diff }) };
+    },
+
+    async getDiff(runId) {
+      if (!isRunId(runId)) return null;
+      return (await readOptional(join(dir(runId), "diff.patch"))) ?? null;
     },
 
     async list(limit) {

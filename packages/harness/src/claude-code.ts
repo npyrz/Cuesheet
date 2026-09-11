@@ -25,6 +25,7 @@
  * down here rather than left to be discovered. Closing it properly needs the
  * CLI's own permission hooks, which is its own step.
  */
+import { realpath } from "node:fs/promises";
 import {
   checkPath,
   type HarnessProbe,
@@ -126,7 +127,12 @@ export function createClaudeCodeHarness(
       const binPath = (await which(bin)) ?? bin;
       const args = buildArgs(ctx.station, options.permissionMode);
 
-      const state = createStreamState(ctx.station, (event) => ctx.emit(event));
+      // The Station the *observer* checks against, which is not quite the
+      // configured one — see `observedStation`.
+      const state = createStreamState(
+        await observedStation(ctx.station, ctx.workspace.path),
+        (event) => ctx.emit(event),
+      );
 
       const reader = jsonLineReader(
         (value) => {
@@ -382,6 +388,35 @@ function mapAssistant(
  * report rather than a prevention. Reporting it is still worth doing: it is
  * how an operator finds out a Station is reaching somewhere it should not.
  */
+/**
+ * The Station, with its workspace resolved through `realpath`.
+ *
+ * The observing check in {@link fileEvents} runs inside the synchronous
+ * stream mapper, so it uses the lexical `checkPath` rather than the async
+ * `resolveAndCheck` — which means both sides of the comparison have to
+ * already be resolved, or it compares a resolved path against an unresolved
+ * one and denies a file that is plainly inside the workspace.
+ *
+ * That is not a hypothetical. The CLI reports absolute paths it has already
+ * resolved, and on macOS `/tmp` and `/var` are symlinks into `/private`, so a
+ * workspace at `/tmp/api` sees every one of its own writes arrive as
+ * `/private/tmp/api/...` and reported as an escape. A symlinked `~/code` does
+ * the same thing on any platform. Resolving once, here, costs one syscall per
+ * run and makes every later comparison like-for-like.
+ */
+export async function observedStation(
+  station: Station,
+  workspacePath: string,
+): Promise<Station> {
+  try {
+    return { ...station, workspace: await realpath(workspacePath) };
+  } catch {
+    // A workspace that cannot be resolved is a problem the run will hit on
+    // its own terms; the observer falls back to the configured path.
+    return { ...station, workspace: workspacePath };
+  }
+}
+
 function fileEvents(
   name: string,
   input: unknown,
