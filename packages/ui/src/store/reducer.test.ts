@@ -423,7 +423,7 @@ describe("done and error", () => {
 });
 
 describe("run-detail", () => {
-  it("replaces that run's events and folds them into tiles", () => {
+  it("replaces a finished run's events without replaying them", () => {
     const events: RunEvent[] = [
       {
         t: "file",
@@ -445,10 +445,70 @@ describe("run-detail", () => {
         },
       },
     ]);
+
+    // The log pane gets everything — it reads `events`, which is replaced
+    // wholesale either way.
     expect(state.events["r1"]).toHaveLength(2);
-    // An opened historical run populates tiles the same way a live one does.
+    // But a finished run lights no tiles. This used to fold, which put the
+    // last file a dead run touched onto a Station that is doing nothing, and
+    // disagreed with `snapshot` — where `activityFromRuns` has always skipped
+    // terminal runs for exactly that reason.
+    expect(state.stationActivity["opus"]).toBeUndefined();
+  });
+
+  it("still folds a run that is genuinely still going", () => {
+    // The case folding exists for: opening a live run has to show what its
+    // Stations are doing right now.
+    const events: RunEvent[] = [
+      {
+        t: "file",
+        at: AT,
+        runId: "r1",
+        stationId: "opus",
+        path: "src/x.ts",
+        op: "write",
+      },
+    ];
+    const state = reduce([
+      {
+        type: "run-detail",
+        detail: {
+          run: run({ id: "r1", status: "running" }),
+          events,
+          hasDiff: false,
+        },
+      },
+    ]);
+
     expect(state.stationActivity["opus"]?.currentFile).toBe("src/x.ts");
-    expect(state.stationActivity["opus"]?.status).toBe("idle");
+    expect(state.stationActivity["opus"]?.status).toBe("working");
+  });
+
+  it("does not re-open a standby belonging to a run that has ended", () => {
+    // The bug a force-quit found: the app was killed mid-standby, the daemon
+    // correctly reconciled the run to `interrupted` on the next boot, and the
+    // Desk replayed the old `standby` event and asked the question again —
+    // with go/no buttons wired to a registry that no longer exists.
+    const state = reduce([
+      {
+        type: "run-detail",
+        detail: {
+          run: run({ id: "r1", status: "interrupted" }),
+          events: [
+            {
+              t: "standby",
+              at: AT,
+              runId: "r1",
+              standbyId: "s1",
+              ask: "Write the file?",
+            },
+          ],
+          hasDiff: false,
+        },
+      },
+    ]);
+
+    expect(state.standbys).toEqual([]);
   });
 
   it("does not append the fetched log to a log it already had", () => {
@@ -496,5 +556,74 @@ describe("selectors", () => {
       { type: "snapshot", runs: [run({ id: "a", status: "done" })] },
     ]);
     expect(activeRun(state)).toBeNull();
+  });
+});
+
+describe("standby lifecycle", () => {
+  const ASK: RunEvent = {
+    t: "standby",
+    at: AT,
+    runId: "r1",
+    standbyId: "s1",
+    ask: "Write the file?",
+  };
+
+  it("closes the question once the run moves off standby", () => {
+    // Answering a standby is what produces this status change. Nothing used
+    // to remove the standby, so the buttons stayed on screen after the answer
+    // had already been given.
+    const state = reduce([
+      { type: "snapshot", runs: [run({ id: "r1", status: "running" })] },
+      { type: "event", event: ASK },
+      {
+        type: "event",
+        event: { t: "status", at: AT, runId: "r1", status: "running" },
+      },
+    ]);
+
+    expect(state.standbys).toEqual([]);
+  });
+
+  it("keeps it open while the run is still waiting", () => {
+    const state = reduce([
+      { type: "snapshot", runs: [run({ id: "r1", status: "running" })] },
+      { type: "event", event: ASK },
+      {
+        type: "event",
+        event: { t: "status", at: AT, runId: "r1", status: "standby" },
+      },
+    ]);
+
+    expect(state.standbys).toHaveLength(1);
+  });
+
+  it("closes it when the run is stopped mid-question", () => {
+    const state = reduce([
+      { type: "snapshot", runs: [run({ id: "r1", status: "running" })] },
+      { type: "event", event: ASK },
+      {
+        type: "event",
+        event: { t: "status", at: AT, runId: "r1", status: "stopped" },
+      },
+    ]);
+
+    expect(state.standbys).toEqual([]);
+  });
+
+  it("drops one whose run ended while the app was not running", () => {
+    // The resync half of the same guarantee: the daemon's records are the
+    // authority on what is still waiting for an answer.
+    const withStandby = reduce([
+      { type: "snapshot", runs: [run({ id: "r1", status: "running" })] },
+      { type: "event", event: ASK },
+    ]);
+    expect(withStandby.standbys).toHaveLength(1);
+
+    const after = reduce(
+      [{ type: "snapshot", runs: [run({ id: "r1", status: "interrupted" })] }],
+      withStandby,
+    );
+
+    expect(after.standbys).toEqual([]);
   });
 });

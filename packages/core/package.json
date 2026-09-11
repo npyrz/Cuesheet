@@ -1,6 +1,6 @@
 {
   "name": "@cuesheet/core",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "description": "Domain types, config schema, leash enforcement, cross-platform paths.",
   "type": "module",

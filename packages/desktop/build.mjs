@@ -17,9 +17,6 @@
  * derives it from the dependency graph in each `package.json`.
  */
 import { build } from "esbuild";
-// Imported rather than assumed global: this file is ESM, and eslint treats a
-// bare `process` in a plain .mjs as undefined — correctly.
-import process from "node:process";
 
 const dev = process.argv.includes("--dev");
 

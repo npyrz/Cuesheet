@@ -1,6 +1,6 @@
 {
   "name": "cuesheet",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "type": "module",
   "description": "The control room for every AI that writes your code.",
@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "version:set": "node scripts/set-version.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

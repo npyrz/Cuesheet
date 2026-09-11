@@ -1,0 +1,71 @@
+# The matrix that makes the Windows half real.
+#
+# Every Windows-specific decision in this repo — `.cmd` shim resolution,
+# `taskkill /T /F`, drive-letter casing, `\r\n` in stdout — is unit-tested
+# against an *injected* `win32` host and has never run on Windows. This
+# workflow is where that stops being true, and the first red run on
+# `windows-latest` is the point of it, not a setback.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Both halves always run. Cancelling the Windows job because macOS went
+      # red is exactly backwards for this project — the Windows result is the
+      # one nobody has seen yet.
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # The workspace's floor, and what `tsconfig.base.json` targets.
+          node-version: 22
+          cache: npm
+
+      # `npm ci` rather than `npm install`: the lockfile is the point of a CI
+      # run, and a silent dependency drift would make a red build unreadable.
+      - name: Install
+        run: npm ci
+        env:
+          # None of the checks below launch Electron — typecheck reads its
+          # .d.ts from the npm package, and the build is esbuild. Skipping the
+          # ~100 MB binary download takes the single flakiest step out of both
+          # jobs; the release workflow, which actually packages an app, does
+          # not skip it.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Test
+        run: npm test
+
+      # Builds every package in dependency order, including the esbuild bundle
+      # of the Electron main process. Not a packaged installer — that is the
+      # release workflow's job, and it needs a tag.
+      - name: Build
+        run: npm run build

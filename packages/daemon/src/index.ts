@@ -37,6 +37,13 @@ export type {
   FileRunStoreOptions,
 } from "./store.js";
 
+export {
+  reconcileInterruptedRuns,
+  INTERRUPTED_REASON,
+  RECONCILE_SCAN_LIMIT,
+} from "./reconcile.js";
+export type { ReconcileOptions } from "./reconcile.js";
+
 export { createRunQueue } from "./queue.js";
 export type {
   RunQueue,

@@ -19,15 +19,46 @@
  *   renderer. Creating the window first and pushing the port in later means a
  *   first paint that fetches from nowhere.
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  shell,
+  Tray,
+} from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { EventBus } from "@cuesheet/daemon";
 import {
   bridgeArguments,
   CHOOSE_DIRECTORY_CHANNEL,
   devServerUrl,
 } from "./launch.js";
-import { uiIndexCandidates } from "./ui-entry.js";
+import {
+  assetCandidates,
+  trayIconName,
+  uiIndexCandidates,
+} from "./resources.js";
+import { summarise } from "./summary.js";
+
+/**
+ * The app's identity, and it must equal `appId` in `electron-builder.yml`.
+ *
+ * Windows routes notifications through the AppUserModelID and silently drops
+ * every `new Notification()` from a process that has not set one — no error,
+ * no warning, just nothing on screen. Set at module scope so it is in place
+ * before anything can try to notify, and written down in exactly two files so
+ * a mismatch is a one-line diff rather than an afternoon.
+ */
+const APP_ID = "io.github.npyrz.cuesheet";
+
+/** How long a clean shutdown gets before the app quits regardless. */
+const SHUTDOWN_TIMEOUT_MS = 5_000;
+app.setAppUserModelId(APP_ID);
 
 /**
  * The daemon this window talks to.
@@ -41,11 +72,21 @@ interface DaemonConnection {
   port: number;
   url: string;
   owned: boolean;
+  /**
+   * The in-process event stream, when this daemon is ours.
+   *
+   * `null` for an attached daemon: its events exist in another process, and
+   * the honest options there are a WebSocket client or nothing. Nothing, for
+   * now — notifications from an attached daemon are a dev-loop nicety, and
+   * the window itself is already subscribed over `/ws`.
+   */
+  bus: EventBus | null;
   close(): Promise<void>;
 }
 
 let daemon: DaemonConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let quitting = false;
 
 /**
@@ -70,6 +111,7 @@ async function connectDaemon(): Promise<DaemonConnection> {
       port: handle.port,
       url: handle.url,
       owned: true,
+      bus: handle.bus,
       close: () => handle.close(),
     };
   } catch (error) {
@@ -82,6 +124,7 @@ async function connectDaemon(): Promise<DaemonConnection> {
       port: existing.port,
       url: `http://127.0.0.1:${existing.port}`,
       owned: false,
+      bus: null,
       close: async () => {
         // Not ours. Leaving it running is the point.
       },
@@ -120,6 +163,16 @@ async function createWindow(port: number): Promise<void> {
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     mainWindow = null;
+  });
+
+  // Close-to-tray on Windows, where closing a window is not expected to end
+  // the app — but only while there is a tray to get it back from. Without
+  // that guard a missing icon leaves a running app with no window and no way
+  // to reach it, which is the worst outcome of the three.
+  window.on("close", (event) => {
+    if (quitting || process.platform !== "win32" || tray === null) return;
+    event.preventDefault();
+    window.hide();
   });
 
   // A link to the Anthropic docs must not replace the Desk with a web page,
@@ -177,10 +230,128 @@ async function resolveUiSource(): Promise<UiSource | null> {
   return null;
 }
 
-function focusWindow(): void {
-  if (mainWindow === null) return;
+/**
+ * The tray, and the menu behind it.
+ *
+ * Built once the daemon is up, because the menu reports the port it bound —
+ * which is the fastest way to answer "is the thing even running" without
+ * opening a window.
+ */
+function createTray(port: number): void {
+  const file = assetCandidates(
+    {
+      packaged: app.isPackaged,
+      dirname: __dirname,
+      resourcesPath: process.resourcesPath,
+    },
+    trayIconName(process.platform),
+  ).find((candidate) => existsSync(candidate));
+
+  if (file === undefined) {
+    // Not fatal, but it changes what quitting means on Windows, so it is not
+    // swallowed either — `window-all-closed` checks for a tray before it
+    // decides to keep the app alive with no window.
+    console.error("[cuesheet] no tray icon found; continuing without a tray.");
+    return;
+  }
+
+  const image = nativeImage.createFromPath(file);
+  // The bit that makes a macOS menu bar icon look native rather than pasted
+  // on: the OS inverts a template image for dark menu bars and for the
+  // highlighted state.
+  if (process.platform === "darwin") image.setTemplateImage(true);
+
+  tray = new Tray(image);
+  tray.setToolTip(`Cuesheet — daemon on 127.0.0.1:${port}`);
+  refreshTrayMenu(port);
+
+  // Windows convention: a left click opens the app. macOS opens the menu on
+  // either button, so binding a click there would fight the platform.
+  if (process.platform === "win32") {
+    tray.on("click", showWindow);
+  }
+}
+
+function refreshTrayMenu(port: number): void {
+  if (tray === null) return;
+
+  // The OS is the store for this preference — `getLoginItemSettings` reads
+  // the real registry key or login item, so there is no preferences file to
+  // write, migrate, or get out of step with what the system actually does.
+  const openAtLogin = app.getLoginItemSettings().openAtLogin;
+
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: `Daemon on 127.0.0.1:${port}`, enabled: false },
+      { type: "separator" },
+      { label: "Open the Desk", click: showWindow },
+      {
+        label: "Hide",
+        click: () => mainWindow?.hide(),
+        enabled: mainWindow !== null && mainWindow.isVisible(),
+      },
+      { type: "separator" },
+      {
+        label: "Start at login",
+        type: "checkbox",
+        checked: openAtLogin,
+        click: (item) => {
+          app.setLoginItemSettings({ openAtLogin: item.checked });
+          refreshTrayMenu(port);
+        },
+      },
+      { type: "separator" },
+      { label: "Quit Cuesheet", click: () => app.quit() },
+    ]),
+  );
+}
+
+function showWindow(): void {
+  if (mainWindow === null) {
+    if (daemon !== null) void createWindow(daemon.port);
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
   mainWindow.focus();
+}
+
+/**
+ * Tell the user what happened while they were looking at something else.
+ *
+ * Deliberately quiet when the Desk is in front of them: a run finishing is
+ * already visible on the tile, and a notification for it is noise that
+ * teaches people to dismiss notifications without reading them — which is
+ * exactly the habit a standby must not run into.
+ */
+function watchForNotifications(bus: EventBus): void {
+  if (!Notification.isSupported()) return;
+
+  bus.attach((event) => {
+    if (event.t === "done") {
+      notify("Run finished", summarise(event.result));
+    } else if (event.t === "error") {
+      notify("Run failed", event.message);
+    } else if (event.t === "standby") {
+      // The one that is genuinely waiting on a human. Nothing moves until
+      // this is answered, so it interrupts even a focused window.
+      notify("Waiting on you", event.ask, { force: true });
+    }
+  });
+}
+
+function notify(
+  title: string,
+  body: string,
+  options: { force?: boolean } = {},
+): void {
+  const focused =
+    mainWindow !== null && mainWindow.isVisible() && mainWindow.isFocused();
+  if (focused && options.force !== true) return;
+
+  const notification = new Notification({ title, body });
+  notification.on("click", showWindow);
+  notification.show();
 }
 
 async function boot(): Promise<void> {
@@ -201,6 +372,8 @@ async function boot(): Promise<void> {
   }
 
   ipcMain.handle(CHOOSE_DIRECTORY_CHANNEL, chooseDirectory);
+  createTray(daemon.port);
+  if (daemon.bus !== null) watchForNotifications(daemon.bus);
   await createWindow(daemon.port);
 }
 
@@ -235,12 +408,17 @@ async function chooseDirectory(): Promise<string | null> {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", focusWindow);
+  app.on("second-instance", showWindow);
 
   app.on("window-all-closed", () => {
-    // macOS keeps the app in the dock; Windows and Linux expect the quit.
-    // Step 22 replaces this with close-to-tray.
-    if (process.platform !== "darwin") app.quit();
+    // Three platforms, one rule: the app outlives its window when there is
+    // somewhere to get it back from. macOS has the dock, and a tray is the
+    // same promise everywhere else — a daemon that keeps running standbys
+    // and streams is the point of the app, not an accident of it.
+    //
+    // With no tray, the window *was* the app, so closing it quits.
+    if (process.platform === "darwin" || tray !== null) return;
+    app.quit();
   });
 
   app.on("activate", () => {
@@ -257,14 +435,51 @@ if (!app.requestSingleInstanceLock()) {
    * be skipped. Quitting without it is what leaves a stale lockfile pointing
    * at a dead port.
    */
+  /**
+   * The shutdown path, and the promise behind it: no orphaned processes, no
+   * run left `running` forever, no stale lockfile pointing at a dead port.
+   *
+   * `handle.close()` is what does the work — it stops the queue, aborts the
+   * active run (which takes its subprocess tree with it), marks that run and
+   * every queued one `interrupted`, flushes the store, and removes
+   * `daemon.json`. Quitting without it is what leaves the next boot probing a
+   * port nobody is on.
+   *
+   * The half this cannot cover is a force-quit, where no handler runs at all.
+   * That is why `reconcileInterruptedRuns` exists in the daemon: the next
+   * boot repairs what a kill left behind.
+   */
   app.on("before-quit", (event) => {
-    if (quitting || daemon === null || !daemon.owned) return;
-    event.preventDefault();
+    if (quitting) return;
     quitting = true;
-    daemon
-      .close()
+
+    // Never leave a tray icon behind on Windows, where a ghost lingers until
+    // the user mouses over it.
+    tray?.destroy();
+    tray = null;
+
+    if (daemon === null || !daemon.owned) return;
+
+    event.preventDefault();
+    const connection = daemon;
+
+    // A close that hangs must not become an app that cannot be quit. Five
+    // seconds is far longer than a clean shutdown takes and far shorter than
+    // a person's patience with a window that will not go away.
+    const deadline = new Promise<"timeout">((resolve) =>
+      setTimeout(() => resolve("timeout"), SHUTDOWN_TIMEOUT_MS),
+    );
+
+    void Promise.race([connection.close(), deadline])
+      .then((outcome) => {
+        if (outcome === "timeout") {
+          console.error(
+            `[cuesheet] daemon did not shut down within ${SHUTDOWN_TIMEOUT_MS}ms; quitting anyway.`,
+          );
+        }
+      })
       .catch((error: unknown) => {
-        console.error("Unclean daemon shutdown:", error);
+        console.error("[cuesheet] unclean daemon shutdown:", error);
       })
       .finally(() => app.quit());
   });

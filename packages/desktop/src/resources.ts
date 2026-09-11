@@ -1,5 +1,6 @@
 /**
- * Where the built Desk lives — main-process only, because it touches paths.
+ * Where the files that ship beside the app live — main-process only, because
+ * it touches paths.
  *
  * Injectable `path` for the same reason `paths.ts` in core takes one: the
  * Windows answer has to be assertable from a Mac, and mocking
@@ -48,6 +49,43 @@ export function uiIndexCandidates(host: UiEntryHost): string[] {
     candidates.push(
       path.join(host.dirname, "..", "..", "ui", "dist", "index.html"),
     );
+  }
+
+  return candidates;
+}
+
+/**
+ * The tray icon for this platform.
+ *
+ * macOS wants a **template** image: black plus alpha, which the OS recolours
+ * for a light menu bar, a dark one, and the highlighted state. Windows wants
+ * an `.ico`, because a PNG resamples badly at the DPI scales a Windows
+ * taskbar actually uses. Shipping both and choosing here is the whole of it.
+ *
+ * `@2x` is not named: macOS picks the retina variant itself as long as it
+ * sits beside the 1x file, which is why the generator writes both.
+ */
+export function trayIconName(platform: string): string {
+  return platform === "win32" ? "tray.ico" : "iconTemplate.png";
+}
+
+/**
+ * Where a file from `assets/` could be, best first.
+ *
+ * These travel as `extraResources` rather than inside the asar: reading an
+ * image out of an archive works, mostly, and "mostly" is not a thing to
+ * discover from a bug report about a missing tray icon.
+ */
+export function assetCandidates(host: UiEntryHost, file: string): string[] {
+  const path = host.path ?? nodePath;
+  const candidates: string[] = [];
+
+  if (host.packaged && host.resourcesPath !== undefined) {
+    candidates.push(path.join(host.resourcesPath, "assets", file));
+  }
+  if (!host.packaged) {
+    // From a checkout: packages/desktop/dist → packages/desktop/assets.
+    candidates.push(path.join(host.dirname, "..", "assets", file));
   }
 
   return candidates;

@@ -25,7 +25,8 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ✅ **The daemon** | `cuesheetd` on `127.0.0.1:7373` — run queue, run records, WebSocket stream. Every client, including the phone later, is a client of these routes. |
 | ✅ **The Desk** | React UI: Station tiles, live run log, `⌘K` palette, add-a-Station panel that writes your TOML for you. |
 | ✅ **`claude-code`** | Real runs: streamed output, a `diff.patch`, cost, and stop-means-stop on the whole process tree. |
-| ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar, tray and notifications still to come. |
+| ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar. Tray menu, native notifications, start-at-login, and a shutdown that never leaves a run stuck `running`. |
+| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, built by CI on a tag into a draft release. Unsigned. None published yet. |
 | 🚧 **Windows** | Written and unit-tested against an injected `win32` host. Not yet run on Windows. |
 | 📋 **Not built yet** | Gates, the Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
 
@@ -213,7 +214,7 @@ Twelve words and you know the system.
 
 ### Install
 
-> **Alpha: there is nothing to download yet.** No installers, no npm package, no signing — those are the next two steps of work, and this section will say so until they land. Run it from a checkout:
+> **Alpha: nothing is published yet.** The installers build — `dmg` and `zip` for Apple Silicon and Intel, an `nsis` installer for Windows — and a tagged build drafts a GitHub Release, but no release has been published, and the app still needs its tray and clean-shutdown work first. Until then, run it from a checkout:
 
 ```bash
 git clone <this repo> && cd cuesheet
@@ -225,6 +226,24 @@ npm run dev -w packages/desktop   # the app, with the daemon inside it
 The window opens on the Desk. Click **add a station**, pick the harness it found on your machine, point it at a workspace, and it writes `~/.cuesheet/cuesheet.toml` for you.
 
 Prefer a browser? `npx cuesheetd` in one terminal and `npm run dev -w packages/ui` in another puts the same Desk on `http://localhost:5173` — the app and the browser are the same UI talking to the same daemon.
+
+<details>
+<summary><b>When the first installers land, they will be unsigned.</b> Here is what that looks like.</summary>
+
+Code signing costs money and a developer account; neither is worth blocking an alpha on. What it is *not* worth doing is pretending the friction is not there:
+
+- **macOS** — the app is not signed or notarized, so Gatekeeper quarantines it. Right-click the app and choose **Open**, or `xattr -d com.apple.quarantine /Applications/Cuesheet.app`.
+- **Windows** — the installer is not signed, so SmartScreen warns. **More info** → **Run anyway**.
+
+Signing and notarization are on the list for beta. Until then, every release says all of this in its own notes as well.
+
+</details>
+
+Building them yourself, if you want to see what a release contains:
+
+```bash
+npm run dist -w packages/desktop   # builds everything, installers land in packages/desktop/release
+```
 
 ### Your first run
 

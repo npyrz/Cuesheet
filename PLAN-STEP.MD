@@ -54,8 +54,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
 | 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS; Windows unverified) |
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS; Windows unverified) |
-| **5 · Electron shell** | 21–24 | 🟡 alpha | 🚧 Step 21 ✅ · next is Step 22 |
-| 6 · Packaging and CI | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ⬜ |
+| **5 · Electron shell** | 21–24 | 🟡 alpha | 🚧 21–23 ✅ · Step 24 awaits a Windows machine |
+| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Built and proven on macOS · the tag waits on Steps 22–24 |
 | — beyond this plan — | M2, M4, M5 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
 
@@ -415,7 +415,7 @@ Seven things that were not in the step text, four of which are one-line fixes th
 - **`npx cuesheetd` was declared and not runnable.** Found while making the README's alpha instructions true rather than plausible: Step 8 gave the daemon a `bin`, but `tsc` emits `dist/main.js` with no shebang and mode `0644`, so the linked binary answered `Permission denied`. The source carries `#!/usr/bin/env node` now and the build chmods the file — a build step, not a one-off, because every rebuild re-creates it.
 - **`ELECTRON_RUN_AS_NODE=1` is inherited from a VS Code terminal.** With it set, `electron .` runs as plain Node, `require("electron")` returns a *path string* from `node_modules`, and the app dies on `Cannot read properties of undefined (reading 'requestSingleInstanceLock')` — a message that points at your code and is not about your code. Launch with `env -u ELECTRON_RUN_AS_NODE` from an editor terminal.
 
-### Step 22 — Tray, notifications, start-on-login
+### Step 22 — Tray, notifications, start-on-login ✅ (macOS)
 - Tray icon: macOS wants a **template PNG** (`iconTemplate.png` + `@2x`, monochrome with alpha); Windows wants a **multi-size `.ico`**. Ship both; pick by `process.platform`.
 - Native notification when a run finishes or raises a standby.
 - `app.setLoginItemSettings({ openAtLogin })` behind a preference. Works on both targets.
@@ -423,12 +423,31 @@ Seven things that were not in the step text, four of which are one-line fixes th
 
 **Done when:** the tray menu can show/hide the window and quit cleanly, leaving no stray process (check Activity Monitor / Task Manager).
 
-### Step 23 — Clean shutdown
+> **Built and running on macOS; the icon itself is a human check.** The tray is created from a generated template image, the menu reports the bound port, *Start at login* reads and writes the real OS setting rather than a preferences file of our own, and quitting from it leaves nothing behind. Screen capture is not permitted in this environment, so nobody has *looked* at the menu bar — that, and the Windows `.ico`, are eyes-on checks.
+
+### Step 23 — Clean shutdown ✅
 `before-quit` → stop the queue → kill every child process group → flush the run store → remove `daemon.json`. Any run interrupted this way is marked `interrupted`, not left `running` forever.
 
 **Done when:** force-quitting mid-run and relaunching shows that run as `interrupted` with its partial events intact.
 
-### Step 24 — Windows-specific pass
+> **Done, and verified the only way it can be: by killing it.** A mock run was parked on a standby and the Electron main process `kill -9`'d — no handler of any kind runs on that path. The record on disk said `running`, with a stale `daemon.json` beside it. On relaunch the run reads `interrupted`, carries the reason, keeps all nine of its events, and the Desk shows the Station `idle` and **no standby buttons**.
+
+### Decisions Steps 22–23 settled
+
+- **The repair belongs to the daemon, not the shell.** `before-quit` cannot help with a force-quit, a panic, or a power cut, and `cuesheetd` and the CLI are killed the same way — a fix in the Electron main would have left the bug in every other entry point. `reconcileInterruptedRuns` runs inside `startDaemon`, and **the port is its safety argument**: the daemon refuses to boot while a live one holds it, so anything still marked non-terminal by then belongs to a process that is gone. An attach mode or a shared runs directory would break that, which is why it is written down in the file.
+- **It scans the newest 200 runs, not all of them.** `RunStore` has no "give me the unfinished ones" query, so this is the second place the file store's scaling shows through — after `list()` — and the second reason SQLite is a beta item. A run left `running` further back than that is already old and already wrong; a slower launch does not fix it.
+- **The partial event log is never tidied.** No synthetic `done` is appended and the torn last line of `events.jsonl` is left exactly as the kill left it. Reconciliation writes a status, a reason, and nothing else — the accumulated cost included, because a run that burned tokens before dying still burned them.
+- **The OS stores the login-item preference.** `app.getLoginItemSettings()` reads the real login item or registry key, so there is no preferences file to write, migrate, or let drift out of step with what the system actually does.
+- **The tray changes what closing a window means, so all three handlers move together.** Close-to-tray on Windows, keep-in-dock on macOS, and `window-all-closed` quits only when there is *no* tray — because a missing icon plus close-to-tray is a running app with no window and no way back to it, which is worse than either alternative.
+- **Shutdown has a deadline.** `handle.close()` gets five seconds before the app quits anyway. A close that hangs must not become an app that cannot be quit.
+- **Notifications interrupt only for a standby.** A finished run is already visible on its tile, and notifying for it teaches people to dismiss notifications unread — the exact habit that must not meet a standby, which is the one event where nothing moves until a human answers.
+
+**Two bugs the crash test found in the Desk, which no unit test could have.** Both are the same shape: the daemon's record was right and the *screen* was lying.
+
+- **A standby was never closed.** Nothing in the reducer ever removed one — not on an answer, not on `done`, not on a stop. Answering left the buttons on screen until a reload, and the crash left a question with **go**/**no** wired to a registry that no longer existed. A standby is now open only while its run's status is `standby`, and a resync drops the rest.
+- **Opening a finished run replayed it as though it were live.** `run-detail` folded a historical log through the same path as live events, which re-opened that standby, re-lit a tile for work that had stopped, and added the run's `cost` events on top of the total already in its record. It also contradicted `snapshot`, where `activityFromRuns` has always skipped terminal runs for exactly this reason. Terminal runs are no longer replayed; the log pane is unaffected, because it reads the events the fetch replaced wholesale.
+
+### Step 24 — Windows-specific pass 🚧 (code landed; the machine is the test)
 Set aside a session for these; they are all one-line fixes that each cost an afternoon if discovered during packaging:
 - Long paths (>260 chars) in `node_modules` — enable long paths or keep the install path shallow.
 - `app.setAppUserModelId()` or notifications silently don't appear.
@@ -437,18 +456,26 @@ Set aside a session for these; they are all one-line fixes that each cost an aft
 
 **Done when:** a fresh Windows VM runs the dev build with no manual fixes.
 
+> **The code half is in; the verification half needs the machine.** `app.setAppUserModelId()` is set at module scope to the same string as `appId` in `electron-builder.yml` — Windows silently drops every notification from a process without one, and a mismatch between those two files is the version of this bug that looks like "notifications just don't work". `⌘` vs `Ctrl` was settled in Phase 4's `format.ts`, and the harness probe already carries a 20s timeout, so the antivirus item is mostly covered. Left for a Windows session:
+>
+> - Long paths in `node_modules` — enable long paths, or keep the checkout shallow.
+> - Whether the generated `tray.ico` renders, and whether close-to-tray gets the window back.
+> - Whether `app.getLoginItemSettings().openAtLogin` round-trips: on Windows it writes a registry key rather than a login item, and it is the one Step 22 feature whose macOS verification proves nothing about the other platform.
+> - Whether a notification actually appears, which is what `setAppUserModelId` is for.
+> - The first CI run on `windows-latest`, which is where Phases 0–4's Windows debt all comes due at once.
+
 ---
 
 # Phase 6 · Packaging and CI
 
 > 🟡 **Alpha**, shipping `v0.1.0-alpha` at **Milestone B**.
 
-### Step 25 — `electron-builder`
+### Step 25 — `electron-builder` ✅ (macOS proven; Windows unverified)
 Targets: `dmg` + `zip` (arm64 **and** x64) for macOS, `nsis` for Windows x64. Ensure the UI build output and the daemon's non-JS assets are in `files`; native modules, if you ever add one, need `asarUnpack`.
 
 **Done when:** `npm run build -w packages/desktop` produces an installer on each OS that launches from a path with a space in it (`/Applications`, `C:\Program Files`).
 
-### Step 26 — Signing, honestly
+### Step 26 — Signing, honestly ✅ (documented, still unsigned)
 - **macOS:** unsigned builds get quarantined; users need `xattr -d com.apple.quarantine` or right-click-open. Fine for pre-alpha — document it. Notarization when you have a Developer ID.
 - **Windows:** unsigned installers hit SmartScreen. Also fine for now — document it.
 
@@ -456,10 +483,25 @@ Don't let signing block Milestone B. Just don't pretend it isn't there.
 
 **Done when:** README install notes match what a stranger actually experiences.
 
-### Step 27 — CI matrix
+### Step 27 — CI matrix 🚧 (written; unproven until it runs)
 GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck → test → build the app. Upload installers as artifacts on tags.
 
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
+
+> **The macOS half is proven; nothing has run on a runner yet.** `npm run dist -w packages/desktop` produced `Cuesheet-0.1.0-alpha-arm64.dmg`, the x64 `.dmg`, and both `.zip`s. The arm64 dmg mounts, and the app inside it reports `CFBundleShortVersionString 0.1.0-alpha`, `io.github.npyrz.cuesheet`, and the generated `icon.icns`. Copied into a directory with a space in its name and launched, it boots its embedded daemon — `/health` answers `{"ok":true,"version":"0.1.0-alpha"}`, the version having travelled from `package.json` through `DAEMON_VERSION` to the wire — loads the Desk from `Contents/Resources/ui/index.html`, reports `daemon connected`, and quits leaving no process, no lockfile, and a free port.
+>
+> The `nsis` half cannot be built here (it needs Windows or wine), and neither workflow has ever run. Both are unproven until the first push.
+
+### Decisions Phase 6 settled
+
+- **One command sets the version; a test keeps it set.** `DAEMON_VERSION` is a literal so it survives bundling into an asar, which means nothing makes it track `package.json` — `/health` would answer `0.0.0` from a `0.1.0-alpha` build, and the first bug report would carry the wrong version. `node scripts/set-version.mjs <version>` writes all seven `package.json`s and the literal; `packages/daemon/src/version.test.ts` fails the build if they ever disagree. Generating `version.ts` at build time was the alternative and it is worse: a fresh clone would not typecheck until something had been built.
+- **The tag is checked against the tree.** `release.yml` refuses to build when `v0.1.0-alpha` does not match the version in `packages/desktop/package.json`. The version test proves the copies agree with *each other*; only this proves they agree with what you tagged.
+- **The release is a draft, always.** The workflow uploads installers and stops. Publishing is a person pressing a button, which for an unsigned alpha is the difference between a release and an accident.
+- **`extraResources` and `uiIndexCandidates` are one decision in two files.** The builder puts the Desk at `<resourcesPath>/ui`, which is the first path `src/ui-entry.ts` looks for. If they ever stop agreeing, the packaged app opens the "Desk has not been built" dialog — verified by mounting the dmg, not by reading the config.
+- **The asar holds two files.** `main.cjs` and `preload.cjs`, because `build.mjs` already bundled the daemon, fastify and ws into them. `node_modules` is excluded *explicitly*: this is a workspace, so `node_modules/@cuesheet/*` are symlinks, and symlinks in an asar fail only once packaged. For the same reason the three `@cuesheet/*` entries moved to `devDependencies` — after bundling they are build-time inputs, and electron-builder should not be trying to package them.
+- **Electron is pinned exactly.** `electron-builder` refuses a range outright: it downloads platform binaries for one specific release. A reproducible installer wants a reproducible runtime anyway.
+- **CI skips the Electron binary download.** Nothing in the check matrix launches Electron — typecheck reads the `.d.ts` from the npm package and the build is esbuild — so the ~100 MB download is removed from the flakiest step of the Windows job. The release workflow, which packages a real app, keeps it.
+- **`npm run build -w packages/desktop` is the bundle, not the installer.** Step 25's text above assumes one script does both; splitting them keeps `npm run build` fast and offline. The installer is `npm run dist -w packages/desktop`, and `pack:dir` gives you an unpacked `.app` in seconds when you only need to check the layout.
 
 > ### 🏁 Milestone B — the app ships · `v0.1.0-alpha`
 > *First public tag. Alpha, and labelled alpha.*
@@ -467,6 +509,12 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 > **The badge moved early, deliberately.** This line used to say the README's status badge changes here "and nowhere earlier"; it was flipped to `alpha` at the end of Step 21 instead, on the grounds that Phase 5 is where the stage table already says alpha begins. The README carries the caveat the badge cannot — no installers, unsigned, one harness, macOS only — in *What actually works right now*. Do not revert it back to `pre-alpha`.
 >
 > Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference. Unsigned, one harness, no gates. Say all three in the release notes.
+>
+> **Not reached.** The machinery is in place and the macOS installer is real, but three things stand between here and a published tag, and none of them is packaging:
+>
+> 1. **Step 24.** Steps 22 and 23 are done — tray, notifications, start-on-login, and a shutdown path whose force-quit half is covered by boot reconciliation. What remains is Windows itself: nothing in this repo has ever run there.
+> 2. **CI green on Windows.** Never once run. Phases 0–4's Windows debt all comes due in the same first red build.
+> 3. **A human pressing publish** on the draft the tag produces.
 
 ---
 

@@ -7,7 +7,11 @@ import {
   devServerUrl,
   parseDaemonPort,
 } from "./launch.js";
-import { uiIndexCandidates } from "./ui-entry.js";
+import {
+  assetCandidates,
+  trayIconName,
+  uiIndexCandidates,
+} from "./resources.js";
 
 describe("daemon port hand-off", () => {
   it("round-trips the bound port through argv", () => {
@@ -129,5 +133,45 @@ describe("bridgeArguments", () => {
     // so every fetch fails as "Failed to fetch" behind a window that looks
     // fine. Relative URLs go through Vite's proxy and work.
     expect(bridgeArguments("dev-server", 7373)).toEqual([]);
+  });
+});
+
+describe("tray assets", () => {
+  it("asks for a template image on macOS and an .ico on Windows", () => {
+    // macOS recolours a template for light, dark, and highlighted menu bars;
+    // Windows has no such convention and resamples a PNG badly at the DPI
+    // scales its taskbar actually uses.
+    expect(trayIconName("darwin")).toBe("iconTemplate.png");
+    expect(trayIconName("linux")).toBe("iconTemplate.png");
+    expect(trayIconName("win32")).toBe("tray.ico");
+  });
+
+  it("finds assets beside the package in a checkout", () => {
+    expect(
+      assetCandidates(
+        {
+          packaged: false,
+          dirname: "/repo/packages/desktop/dist",
+          path: path.posix,
+        },
+        "iconTemplate.png",
+      ),
+    ).toEqual(["/repo/packages/desktop/assets/iconTemplate.png"]);
+  });
+
+  it("looks only in resources once packaged", () => {
+    // Same trap as the Desk's own entry: `process.resourcesPath` exists in a
+    // dev run too, pointing inside Electron's own bundle.
+    expect(
+      assetCandidates(
+        {
+          packaged: true,
+          dirname: "/App/Contents/Resources/app.asar/dist",
+          resourcesPath: "/App/Contents/Resources",
+          path: path.posix,
+        },
+        "tray.ico",
+      ),
+    ).toEqual(["/App/Contents/Resources/assets/tray.ico"]);
   });
 });

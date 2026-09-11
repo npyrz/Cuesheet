@@ -1,0 +1,155 @@
+# Installers, built on a tag, published by a human.
+#
+# The release is created as a **draft**. Nothing becomes downloadable because
+# a workflow decided it should be: you look at the artifacts, you edit the
+# notes, and you press publish. For an unsigned alpha that is not caution, it
+# is the difference between a release and an accident.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Buildable without tagging, so the packaging path can be exercised without
+  # committing to a version. A manual run uploads artifacts and creates no
+  # release at all.
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            # arm64 *and* x64, because an Intel Mac cannot run an arm64 build
+            # and the download page has no way to explain that to someone who
+            # picked the wrong one.
+            builder: --mac --arm64 --x64
+            artifact: macos
+          - os: windows-latest
+            builder: --win --x64
+            artifact: windows
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The guard that stops `v0.1.0-alpha` shipping installers named `0.0.0`.
+      # `scripts/set-version.mjs` writes the version into every package.json
+      # and into the daemon's `DAEMON_VERSION`; `version.test.ts` proves those
+      # agree with each other, and this proves they agree with the tag.
+      - name: Tag matches the version in the tree
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./packages/desktop/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $pkg."
+            echo "Run: node scripts/set-version.mjs $tag"
+            exit 1
+          fi
+          echo "Building version $pkg"
+
+      # Same checks as CI. A tag that ships a red build is worse than a tag
+      # that fails, and this workflow can be run on a branch that CI never saw.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        working-directory: packages/desktop
+        run: npx electron-builder ${{ matrix.builder }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.artifact }}
+          # The installers themselves. `.blockmap` and `latest*.yml` belong to
+          # an auto-updater this app does not have yet.
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.zip
+            packages/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    name: Draft release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      # The only write this workflow needs, and it is scoped to this job.
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: installers
+
+      # `if-no-files-found: error` guards the upload, not the download. An
+      # empty directory here would make `gh` treat `installers/*` as a literal
+      # filename and fail with something that reads like a gh bug.
+      - name: There are installers to attach
+        run: |
+          ls -la installers
+          test -n "$(ls -A installers)" || {
+            echo "::error::No installers were downloaded."; exit 1;
+          }
+
+      # `gh` ships on the runner, so there is no third-party action in the
+      # path that has permission to write releases.
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --draft \
+            --prerelease \
+            --notes "$(cat <<'NOTES'
+          **Alpha. Unsigned. One harness, one Station at a time, no Gates.**
+
+          ### Installing
+
+          - **macOS** — the app is not signed or notarized, so Gatekeeper will
+            quarantine it. Right-click the app and choose *Open*, or run
+            `xattr -d com.apple.quarantine /Applications/Cuesheet.app`.
+          - **Windows** — the installer is not signed, so SmartScreen will warn.
+            *More info* → *Run anyway*.
+
+          ### What works
+
+          The Desk, the daemon, and the `claude-code` harness: add a Station,
+          type a prompt, watch it stream, keep the run record and its diff.
+
+          ### What does not
+
+          No Gates, no Commons, no usage limits, no phone pairing. Config may
+          change without migration and run records may be discarded on upgrade.
+          NOTES
+          )" \
+            installers/*
+          echo "Draft created. Review the artifacts, then publish it yourself."

@@ -43,6 +43,7 @@ import {
   removeLock,
   writeLock,
 } from "./lockfile.js";
+import { reconcileInterruptedRuns } from "./reconcile.js";
 import { DAEMON_VERSION } from "./version.js";
 
 export interface StartDaemonOptions {
@@ -72,6 +73,12 @@ export interface StartDaemonOptions {
   replayLimit?: number;
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
+  /**
+   * Mark runs left non-terminal by a crash as `interrupted` on boot. On by
+   * default — it is a correctness guarantee, not a feature — and off only for
+   * tests that want to assert on an unreconciled store.
+   */
+  reconcile?: boolean;
   logger?: boolean;
 }
 
@@ -112,6 +119,7 @@ export async function startDaemon(
   const requestedPort = options.port ?? DEFAULT_PORT;
   const cwd = options.cwd ?? process.cwd();
   const writeLockFile = options.writeLockFile ?? true;
+  const reconcile = options.reconcile ?? true;
 
   const bus =
     options.bus ??
@@ -215,6 +223,21 @@ export async function startDaemon(
 
   if (writeLockFile) {
     await writeLock(currentLock(boundPort), env);
+  }
+
+  // Only now — the port is bound, so any run still marked `running` on disk
+  // belongs to a process that is gone. See `reconcile.ts` for why that is the
+  // whole safety argument. Awaited rather than fired off, so the Desk's first
+  // `GET /runs` shows the corrected records instead of a live-looking run
+  // with nothing behind it.
+  if (reconcile) {
+    const repaired = await reconcileInterruptedRuns({ store });
+    if (repaired.length > 0 && options.logger === true) {
+      app.log.info(
+        { runs: repaired },
+        `Marked ${repaired.length} run(s) interrupted: they were still open when Cuesheet last stopped.`,
+      );
+    }
   }
 
   let closed = false;

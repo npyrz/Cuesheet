@@ -6,4 +6,4 @@
  * where reading a sibling `package.json` at runtime is a packaging problem
  * rather than a one-liner. A literal survives bundling untouched.
  */
-export const DAEMON_VERSION = "0.0.0";
+export const DAEMON_VERSION = "0.1.0-alpha";

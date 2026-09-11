@@ -121,7 +121,23 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
       // since finished is the exact lie a resync exists to correct.
       const stationActivity = activityFromRuns(runs);
 
-      return { ...state, runs, events, selectedRunId, stationActivity };
+      // And the same argument for standbys, which are the louder lie: a
+      // question with **go** and **no** buttons, for a run that ended while
+      // the app was not running. The daemon's status is the authority —
+      // a standby is open only while its run is waiting on one.
+      const standbys = state.standbys.filter(
+        (open) =>
+          runs.find((run) => run.id === open.runId)?.status === "standby",
+      );
+
+      return {
+        ...state,
+        runs,
+        events,
+        selectedRunId,
+        stationActivity,
+        standbys,
+      };
     }
 
     case "run-detail": {
@@ -132,10 +148,18 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
         events: { ...state.events, [run.id]: events },
       };
       // Replay the fetched log through the same folding the live path uses,
-      // so an opened historical run populates tiles identically to a live one
-      // — but through `foldEvent`, not `applyEvent`: the events are already
-      // in place, and re-appending them would double the log every time a run
-      // is opened.
+      // so an opened *live* run populates tiles identically — but through
+      // `foldEvent`, not `applyEvent`: the events are already in place, and
+      // re-appending them would double the log every time a run is opened.
+      //
+      // A run that has already ended is never replayed. Its record is the
+      // authority on everything folding would produce, and folding it anyway
+      // is how opening a finished run re-opens a standby nobody can answer,
+      // re-lights a tile for work that stopped, and adds its `cost` events on
+      // top of the total already in the record. Found by force-quitting the
+      // app mid-standby and relaunching: the run was correctly `interrupted`
+      // on disk and the Desk showed it waiting for an answer.
+      if (isTerminalStatus(run.status)) return next;
       return events.reduce(foldEvent, next);
     }
 
@@ -183,6 +207,14 @@ function foldEvent(state: DeskState, event: RunEvent): DeskState {
         ...(event.status === "running" &&
           run.startedAt === undefined && { startedAt: event.at }),
       }));
+      // Leaving `standby` closes the question, whatever it left for. Nothing
+      // else ever removed one: an answered standby's buttons stayed on screen
+      // until the next reload, and a run stopped while waiting kept asking
+      // forever.
+      if (event.status !== "standby") {
+        next = closeStandbys(next, event.runId);
+      }
+
       // A run entering a terminal state releases every tile it held, whether
       // or not a `done` event follows — `stopped` and `interrupted` arrive as
       // a bare status change.
@@ -238,6 +270,13 @@ function foldEvent(state: DeskState, event: RunEvent): DeskState {
     }
 
     case "standby": {
+      // A late standby for a run that has already ended opens a question with
+      // nothing behind it: the registry that would answer it is gone.
+      const current = next.runs.find((run) => run.id === event.runId);
+      if (current !== undefined && isTerminalStatus(current.status)) {
+        return next;
+      }
+
       const standby: Standby = {
         id: event.standbyId,
         runId: event.runId,
@@ -264,6 +303,7 @@ function foldEvent(state: DeskState, event: RunEvent): DeskState {
       return next;
 
     case "done": {
+      next = closeStandbys(next, event.runId);
       const finished = patchRun(next, event.runId, (run) => ({
         ...run,
         status: event.result.status,
@@ -406,6 +446,15 @@ function releaseStations(
  * tiles lit, but without a current file until the next event says otherwise —
  * claiming the last file we happened to see would be inventing state.
  */
+/** Every open question belonging to one run, closed. */
+function closeStandbys(state: DeskState, runId: string): DeskState {
+  if (!state.standbys.some((open) => open.runId === runId)) return state;
+  return {
+    ...state,
+    standbys: state.standbys.filter((open) => open.runId !== runId),
+  };
+}
+
 function activityFromRuns(runs: Run[]): Record<string, StationActivity> {
   const activity: Record<string, StationActivity> = {};
   // Oldest first, so a Station claimed by two runs ends up owned by the newer.
