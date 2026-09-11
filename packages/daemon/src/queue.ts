@@ -223,6 +223,10 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         result: resolved,
         cost: resolved.cost,
         ...(patch !== null && { diff: patch }),
+        // A run that ended without throwing can still have something to say:
+        // a Gate's Hold is the case, and "held" with no reason on the record
+        // is the half of the feature people would actually complain about.
+        ...(resolved.error !== undefined && { error: resolved.error }),
       });
       emitStatus(run.id, status);
     }

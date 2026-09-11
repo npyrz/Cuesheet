@@ -105,6 +105,8 @@ function RunDetail({
 
       {run.error && <p className="field-error">{run.error}</p>}
 
+      <Gates run={run} />
+
       <EventList events={events} follow={running} />
       <Diff runId={run.id} load={loadDiff} />
     </>
@@ -178,9 +180,75 @@ function describe(event: RunEvent): string {
         : "no changes";
       return `${event.result.status} · ${shape} · ${duration(durationMs)}`;
     }
+    case "verdict": {
+      const { decision, findings, vendor } = event.verdict;
+      // The findings are the useful half: "fail" without the reason sends you
+      // hunting through the transcript for what the reviewer objected to.
+      const detail =
+        findings.length === 0
+          ? "no findings"
+          : findings
+              .map((finding) => `${finding.category}: ${finding.summary}`)
+              .join("; ");
+      return `${vendor} ${decision} — ${detail}`;
+    }
     case "error":
       return event.message;
   }
+}
+
+/**
+ * What the Gates decided, and what the reviewers found.
+ *
+ * A Hold's reasons are on the run record, but the *findings* are on the
+ * verdicts — and "held: 1 blocking finding" without the finding sends you
+ * hunting through the transcript for what was actually wrong. Both, or this
+ * panel is not worth the space.
+ *
+ * Renders nothing for a run with no gates and no verdicts, which is every run
+ * from a plain prompt.
+ */
+function Gates({ run }: { run: Run }): React.JSX.Element | null {
+  const gates = run.result?.gates ?? [];
+  const verdicts = run.result?.verdicts ?? [];
+  if (gates.length === 0 && verdicts.length === 0) return null;
+
+  return (
+    <div className="gates">
+      {gates.map((gate) => (
+        <p key={gate.gate} className="gate-line">
+          <span className={`gate-outcome gate-${gate.outcome}`}>
+            {gate.outcome === "hold" && gate.overridden
+              ? "overridden"
+              : gate.outcome}
+          </span>
+          <span className="gate-name">gate “{gate.gate}”</span>
+          <span className="hint">{gate.reasons.join(" ")}</span>
+        </p>
+      ))}
+
+      {verdicts.map((verdict) => (
+        <div key={verdict.id} className="verdict">
+          <p className="gate-line">
+            <span className={`gate-outcome gate-${verdict.decision}`}>
+              {verdict.decision}
+            </span>
+            <span className="gate-name">
+              {verdict.stationId} · {verdict.vendor}
+            </span>
+          </p>
+          {verdict.findings.map((finding, index) => (
+            <p key={`${verdict.id}-${index}`} className="finding">
+              <span className={`sev sev-${finding.severity}`}>
+                {finding.category}
+              </span>
+              {finding.summary}
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**

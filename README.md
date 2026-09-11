@@ -28,7 +28,8 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar. Tray menu, native notifications, start-at-login, and a shutdown that never leaves a run stuck `running`. |
 | ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, built by CI on a tag into a draft release. Unsigned. None published yet. |
 | 🚧 **Windows** | Written and unit-tested against an injected `win32` host. Not yet run on Windows. |
-| 📋 **Not built yet** | Gates, the Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
+| ✅ **Gates** | A `{ gate = … }` cue runs a real second-opinion check: the reviewer gets the diff, its verdict is parsed, and a failed gate holds the run with the findings attached. Needs two harnesses from different vendors. |
+| 📋 **Not built yet** | The Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
 
 **Concretely, today:** clone it, `npm install`, `npm run build`, `npm run dev -w packages/desktop`. One harness, one Station at a time, no gates. Run records may be discarded on upgrade and the config format can still change under you.
 
@@ -367,6 +368,8 @@ blocking           = ["security", "correctness", "data-loss"]
 ```
 
 A Run that fails its gate is **held**, with the finding attached, and lands as a standby on whatever device you are holding.
+
+**This works today**, with one caveat: it needs two harnesses from different vendors, and `codex` is not written yet — so for now the second opinion has to come from another installed CLI. An unreadable review counts as an abstention, never as approval; a reviewer that crashes cannot wave anything through.
 
 ### 🚨 On-Call — a reviewed patch waiting for you when the pager goes off
 
@@ -738,7 +741,7 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 | **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | 📋 |
 | **M3 · Pocket** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
 | **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | 📋 |
-| **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | 📋 |
+| **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | 🚧 Gates, verdicts and Holds work; `codex` still to come |
 | **M6 · Caller** | `caller` role, `cuesheet plan`, proposal review, save-as-cuesheet | 📋 |
 | **M7 · On-Call** | Triggers, triage/patch/review cuesheet, hotfix gate, storm control, incident records | 📋 |
 | **M8 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |

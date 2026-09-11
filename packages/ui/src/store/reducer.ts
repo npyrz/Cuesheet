@@ -302,6 +302,28 @@ function foldEvent(state: DeskState, event: RunEvent): DeskState {
       // continues. It belongs in the log, which `events` already has.
       return next;
 
+    case "verdict":
+      // Kept on the run so a row can say "held by codex" without walking the
+      // event log. The `done` event carries the same list, but a gate can hold
+      // a run *before* that arrives, and the standby it raises is the moment
+      // the operator most needs to see what the reviewer said.
+      return patchRun(next, event.runId, (run) => ({
+        ...run,
+        result: {
+          ...(run.result ?? {
+            status: run.status,
+            cost: run.cost,
+            durationMs: 0,
+          }),
+          verdicts: [
+            ...(run.result?.verdicts ?? []).filter(
+              (existing) => existing.id !== event.verdict.id,
+            ),
+            event.verdict,
+          ],
+        },
+      }));
+
     case "done": {
       next = closeStandbys(next, event.runId);
       const finished = patchRun(next, event.runId, (run) => ({

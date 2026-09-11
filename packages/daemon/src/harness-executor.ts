@@ -24,15 +24,24 @@ import {
   type RunResult,
 } from "@cuesheet/harness";
 import {
+  describeGate,
+  evaluateGate,
   expandHome,
   hostEnv,
+  isGateRef,
+  parseVerdict,
+  REVIEW_INSTRUCTIONS,
   type Cost,
+  type DiffStat,
+  type GateParticipant,
+  type GateReport,
   type HostEnv,
   type LoadedConfig,
   type RunEvent,
   type RunResultSummary,
   type RunStatus,
   type Station,
+  type Verdict,
 } from "@cuesheet/core";
 import type { ExecutionContext, RunExecutor } from "./executor.js";
 import { ZERO_COST } from "./executor.js";
@@ -67,7 +76,10 @@ export function createHarnessExecutor(
   return async (ctx: ExecutionContext): Promise<RunResultSummary> => {
     const started = Date.now();
     const loaded = options.config();
-    const stations = resolveStations(loaded, ctx.run.stationIds);
+    const steps = planSteps(loaded, ctx.run);
+    const stations = steps
+      .filter((step) => step.kind === "station")
+      .map((step) => step.station);
 
     if (stations.length === 0) {
       throw new NoStationError(
@@ -82,6 +94,13 @@ export function createHarnessExecutor(
     let error: string | undefined;
     let lastResult: RunResult | undefined;
 
+    // What the Gates will read. `participants` is every Station that actually
+    // acted — author included — because `distinct_vendors` counts who did the
+    // work and who checked it, not who filed a verdict.
+    const verdicts: Verdict[] = [];
+    const participants: GateParticipant[] = [];
+    const gates: GateReport[] = [];
+
     // The loop is wrapped rather than left to reject, because the two shipped
     // harnesses disagree about how a stop arrives: `claude-code` returns
     // `{ status: "stopped" }` while a harness awaiting its own timers throws an
@@ -90,12 +109,70 @@ export function createHarnessExecutor(
     // caught here and re-thrown after, unchanged.
     let thrown: unknown = null;
     try {
-      for (const station of stations) {
+      for (const step of steps) {
         if (ctx.signal.aborted) {
           status = "stopped";
           break;
         }
 
+        if (step.kind === "gate") {
+          const gate = loaded.config.gate[step.name];
+          if (gate === undefined) {
+            // A cue naming a gate that does not exist must never read as
+            // satisfied. The config loader warns about this; here it stops
+            // the run, because "the check did not run" and "the check passed"
+            // have to look different.
+            status = "failed";
+            error = `This cuesheet references gate "${step.name}", which is not configured. Add a [gate.${step.name}] table.`;
+            emitError(ctx, error);
+            break;
+          }
+
+          // The diff *at this cue*, not the run's final one: a gate placed
+          // mid-cuesheet has to judge what exists when it runs, and
+          // `skip_if_diff_under` is meaningless against a diff computed after
+          // every Station has finished.
+          const diff = await gateDiff(ctx, stations, env);
+          const result = evaluateGate(gate, {
+            verdicts,
+            participants,
+            ...(diff !== undefined && { diff }),
+          });
+
+          if (result.outcome !== "hold") {
+            gates.push({
+              gate: step.name,
+              outcome: result.outcome,
+              reasons: result.reasons,
+            });
+            continue;
+          }
+
+          // A held run asks before it stops. This is the README's "lands as a
+          // standby on whatever device you are holding" — and it is the
+          // existing standby machinery, so it already notifies, already shows
+          // go/no in the Desk, and already reaches the phone in M3.
+          const answer = await ctx.ask({
+            ask: `${describeGate(step.name, result)} Override and continue?`,
+            kind: "hold",
+          });
+
+          gates.push({
+            gate: step.name,
+            outcome: result.outcome,
+            reasons: result.reasons,
+            ...(answer === "go" && { overridden: true }),
+          });
+
+          if (answer === "no") {
+            status = "held";
+            error = describeGate(step.name, result);
+            break;
+          }
+          continue;
+        }
+
+        const station = step.station;
         const harness = options.registry.get(station.harness);
         if (!harness) {
           // A typo'd harness name is a config error, and it names itself.
@@ -107,9 +184,37 @@ export function createHarnessExecutor(
           break;
         }
 
-        const outcome = await runStation(ctx, harness, station, env);
+        const reviewing = station.role === "reviewer";
+        const brief = reviewing
+          ? await reviewBrief(ctx, stations, env)
+          : ctx.run.prompt;
+
+        const outcome = await runStation(ctx, harness, station, env, brief);
         lastResult = outcome.result;
         addCost(cost, outcome.result.cost);
+        participants.push({
+          stationId: station.id,
+          harness: harness.id,
+          vendor: harness.vendor,
+        });
+
+        if (reviewing) {
+          for (const verdict of collectVerdicts(
+            ctx,
+            station,
+            harness,
+            outcome,
+          )) {
+            verdicts.push(verdict);
+            ctx.emit({
+              t: "verdict",
+              at: verdict.at,
+              runId: ctx.run.id,
+              stationId: station.id,
+              verdict,
+            });
+          }
+        }
 
         if (outcome.status !== "done") {
           status = outcome.status;
@@ -144,14 +249,24 @@ export function createHarnessExecutor(
       throw new HarnessRunError(error ?? "The harness reported a failure.");
     }
 
+    // A Hold is *returned*, not thrown. The queue reads `summary.status`, and
+    // a held run's whole value is the record it leaves behind — the verdicts,
+    // the findings, and the gate's reasons. Throwing would land it as `failed`
+    // with a message and none of that.
     return {
       status,
       cost,
       durationMs: Date.now() - started,
       ...(diff && diff.stat.filesChanged > 0 && { diff: diff.stat }),
-      ...(lastResult?.verdicts !== undefined && {
-        verdicts: lastResult.verdicts,
-      }),
+      ...(verdicts.length > 0
+        ? { verdicts }
+        : lastResult?.verdicts !== undefined && {
+            verdicts: lastResult.verdicts,
+          }),
+      ...(gates.length > 0 && { gates }),
+      // A Hold's reason. `failed` throws instead, and the queue reads that
+      // message off the thrown value.
+      ...(status === "held" && error !== undefined && { error }),
     };
   };
 }
@@ -167,6 +282,8 @@ export class HarnessRunError extends Error {
 interface StationOutcome {
   status: RunStatus;
   result: RunResult;
+  /** Everything the Station streamed as text, for reading a verdict out of. */
+  transcript: string;
   error?: string;
 }
 
@@ -175,10 +292,19 @@ async function runStation(
   harness: Harness,
   station: Station,
   env: HostEnv,
+  brief: string,
 ): Promise<StationOutcome> {
   // Stamped centrally: a harness emits `{ t: "text", chunk }` and cannot
   // misattribute it to another run or another Station.
+  // A reviewer's verdict usually arrives as prose, so this Station's text is
+  // accumulated as it streams. Capped, because a chatty reviewer should not be
+  // able to grow the executor's memory without bound — and a verdict that is
+  // not in the first megabyte is not going to be found by scrolling further.
+  let transcript = "";
   const emit = (event: HarnessEvent): void => {
+    if (event.t === "text" && transcript.length < TRANSCRIPT_LIMIT) {
+      transcript += event.chunk;
+    }
     ctx.emit({
       ...event,
       at: new Date().toISOString(),
@@ -199,7 +325,7 @@ async function runStation(
     runId: ctx.run.id,
     stationId: station.id,
     station,
-    brief: ctx.run.prompt,
+    brief,
     workspace,
     emit,
     meter,
@@ -220,6 +346,7 @@ async function runStation(
   return {
     status: settled.status ?? "done",
     result: settled,
+    transcript,
     ...(settled.error !== undefined && { error: settled.error }),
   };
 }
@@ -262,6 +389,181 @@ async function runDiff(
   }
   if (lastResult?.diff) return lastResult.diff;
   return null;
+}
+
+/** How much of a Station's text to keep for verdict parsing. */
+const TRANSCRIPT_LIMIT = 1_000_000;
+
+/**
+ * How much diff to show a reviewer before it stops being useful context.
+ *
+ * This is the knob that decides what a review *costs*: every byte here is
+ * input tokens on someone's bill, and a reviewer reading a repo can spend
+ * more than the engineer that wrote the change did. 200 KB is roughly a large
+ * feature branch — big enough that a real review is never truncated, small
+ * enough that a runaway diff (a committed `node_modules`, a lockfile churn)
+ * cannot quietly turn one gate into a five-figure token count. Truncation is
+ * announced in the brief rather than silent, because a reviewer that saw half
+ * the change should say so.
+ */
+const REVIEW_DIFF_LIMIT = 200_000;
+
+type PlannedStep =
+  { kind: "station"; station: Station } | { kind: "gate"; name: string };
+
+/**
+ * The run, as an ordered list of things to do.
+ *
+ * A cuesheet is the authority when the run names one: its cues carry gates,
+ * and gates have to execute *between* Stations rather than after them. A run
+ * without a cuesheet is the Desk's single-prompt case, and stays exactly what
+ * it was — a list of Stations in order.
+ *
+ * Cues naming a Station that no longer exists are dropped rather than failing
+ * the run; the config loader already warns, and a deleted Station should not
+ * cost you the other steps. A *gate* cue is never dropped, because silently
+ * skipping a safety check is the one thing this design cannot do.
+ */
+function planSteps(
+  loaded: LoadedConfig,
+  run: { cuesheetId?: string; stationIds: readonly string[] },
+): PlannedStep[] {
+  const byId = new Map(
+    loaded.config.station.map((station) => [station.id, station] as const),
+  );
+
+  const sheet =
+    run.cuesheetId === undefined
+      ? undefined
+      : loaded.config.cuesheet[run.cuesheetId];
+
+  if (sheet !== undefined) {
+    const steps: PlannedStep[] = [];
+    for (const cue of sheet.cues) {
+      if (isGateRef(cue)) {
+        steps.push({ kind: "gate", name: cue.gate });
+        continue;
+      }
+      const station = byId.get(cue.station);
+      if (station) steps.push({ kind: "station", station });
+    }
+    return steps;
+  }
+
+  return resolveStations(loaded, run.stationIds).map((station) => ({
+    kind: "station" as const,
+    station,
+  }));
+}
+
+/**
+ * What a reviewer is actually asked.
+ *
+ * Without this a Station with `role = "reviewer"` just does the original task
+ * again with a different model — which looks like a review, costs like a
+ * review, and checks nothing. The brief is the original ask, the diff as it
+ * stands, and the format the verdict parser reads.
+ */
+async function reviewBrief(
+  ctx: ExecutionContext,
+  stations: readonly Station[],
+  env: HostEnv,
+): Promise<string> {
+  const diff = await workspaceDiff(ctx, stations, env);
+  const patch = diff?.patch ?? "";
+  const shown =
+    patch.length > REVIEW_DIFF_LIMIT
+      ? `${patch.slice(0, REVIEW_DIFF_LIMIT)}\n… diff truncated at ${REVIEW_DIFF_LIMIT} characters …`
+      : patch;
+
+  return [
+    "You are reviewing another agent's work. Do not change any files.",
+    "",
+    `The brief they were given:\n${ctx.run.prompt}`,
+    "",
+    shown.trim() === ""
+      ? "They changed nothing. That is itself worth a verdict."
+      : `What they changed:\n\n\`\`\`diff\n${shown}\n\`\`\``,
+    "",
+    REVIEW_INSTRUCTIONS,
+  ].join("\n");
+}
+
+/**
+ * A reviewer's verdicts: whatever the harness reported, or whatever can be
+ * read out of what it said.
+ *
+ * A harness that understands verdicts returns them directly — that is what
+ * `RunResult.verdicts` is for. Everything else is a CLI that streamed prose,
+ * and `parseVerdict` abstains when it cannot find a decision in it. An
+ * abstention is not an approval, which is what stops a crashed or rambling
+ * reviewer from satisfying a gate.
+ */
+function collectVerdicts(
+  ctx: ExecutionContext,
+  station: Station,
+  harness: Harness,
+  outcome: StationOutcome,
+): Verdict[] {
+  const at = new Date().toISOString();
+  const reported = outcome.result.verdicts;
+  if (reported !== undefined && reported.length > 0) {
+    return reported.map((verdict, index) => ({
+      ...verdict,
+      id: verdict.id || `${ctx.run.id}-${station.id}-${index}`,
+      runId: ctx.run.id,
+      stationId: station.id,
+      harness: harness.id,
+      vendor: harness.vendor,
+      at: verdict.at || at,
+    }));
+  }
+
+  const parsed = parseVerdict(outcome.transcript);
+  return [
+    {
+      id: `${ctx.run.id}-${station.id}-0`,
+      runId: ctx.run.id,
+      stationId: station.id,
+      harness: harness.id,
+      vendor: harness.vendor,
+      decision: parsed.decision,
+      findings: parsed.findings,
+      at,
+    },
+  ];
+}
+
+/** The workspace diff right now, or `undefined` if there is no reading it. */
+async function workspaceDiff(
+  ctx: ExecutionContext,
+  stations: readonly Station[],
+  env: HostEnv,
+): Promise<{ patch: string; stat: DiffStat } | undefined> {
+  const workspace =
+    ctx.run.workspace ||
+    stations.find((station) => station.workspace)?.workspace;
+  if (!workspace) return undefined;
+  const diff = await diffWorkspace({
+    cwd: expandHome(workspace, env),
+    timeoutMs: ctx.signal.aborted ? 10_000 : 60_000,
+  }).catch(() => null);
+  return diff ?? undefined;
+}
+
+/**
+ * The diff a Gate judges.
+ *
+ * `undefined` when it cannot be read, and `evaluateGate` treats that as "not
+ * known" rather than "small" — a failed `git diff` must not turn
+ * `skip_if_diff_under` into a gate that silently never runs.
+ */
+async function gateDiff(
+  ctx: ExecutionContext,
+  stations: readonly Station[],
+  env: HostEnv,
+): Promise<DiffStat | undefined> {
+  return (await workspaceDiff(ctx, stations, env))?.stat;
 }
 
 /**

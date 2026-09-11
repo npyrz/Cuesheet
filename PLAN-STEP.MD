@@ -56,7 +56,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS; Windows unverified) |
 | **5 · Electron shell** | 21–24 | 🟡 alpha | 🚧 21–23 ✅ · Step 24 awaits a Windows machine |
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Built and proven on macOS · the tag waits on Steps 22–24 |
-| — beyond this plan — | M2, M4, M5 | 🔵 beta | ⬜ |
+| — beyond this plan — | **M5 · Gates** | 🔵 beta | 🚧 Machinery done; `codex` harness outstanding |
+| — beyond this plan — | M2, M4 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
 
 ---
@@ -82,7 +83,22 @@ Everything in *this* plan lands you at **alpha**. That is the honest ceiling: th
 - [ ] Install caveats (quarantine, SmartScreen) documented, not hidden
 
 **Alpha → beta** — none of this is in this plan; each maps to a README milestone
-- [ ] **M5 · Gates** — `codex` harness, reviewer role, verdict parsing, Holds. *The second opinion is the thesis; without it this is a nicer terminal.*
+- [x] **M5 · Gates** — reviewer role, verdict parsing, gate evaluation, Holds. *The second opinion is the thesis; without it this is a nicer terminal.*
+  - [ ] **`codex` harness.** The one piece left, and it cannot be written honestly here: nobody has the CLI installed on this machine, and a harness whose stream mapping has never seen a real stream is a guess. Gates work today with any two harnesses of different vendors — verified with `mock` reviewing against `claude-code`.
+
+#### What Gates actually do now
+
+The machinery, end to end: `[gate.*]` is a live config table; a `{ gate = "…" }` cue executes between Stations; a Station with `role = "reviewer"` is handed the diff and the review format rather than the original brief; its reply becomes a `Verdict`; and `evaluateGate` decides. A failed gate raises a **standby** — which already notifies, already shows go/no in the Desk, and already reaches the phone in M3 — and a run the operator does not override lands `held`, with the reasons on the record and the findings attached.
+
+Verified against a real second opinion, not a fixture: `mock` wrote a file, `claude-code` (Anthropic) reviewed the actual diff, noticed the brief had not been performed, filed two blocking findings, and the gate held the run. Answering **no** landed it `held` at $0.30; the Desk rendered the hold, the verdict, and both findings.
+
+**Three decisions worth carrying forward:**
+
+- **`distinct_vendors` counts who *acted*, not who filed a verdict.** Author plus reviewers. It is the only reading under which the README's own example (`require = "1-of-1"` with `distinct_vendors = 2`) is satisfiable, and it is the point of the feature: the second vendor is the one whose blind spots are different.
+- **An unreadable review abstains, and an abstention cannot satisfy `require`.** A reviewer that crashed, rambled, or said "LGTM" has approved nothing. This is the single test that decides whether Gates are a safety feature or a decoration.
+- **`held` is terminal.** The standby happens *before* the run ends, so by the time a record reads `held` a human has already answered. Releasing a Hold is a new run, not a resumption — resuming would mean persisting executor state across process restarts, which is a much larger feature than it looks.
+
+**Known limitation:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons (M4) or per-cue diffs, and neither is in this increment.
 - [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.*
 - [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.*
 - [ ] `ollama` harness, so the local/worker story is real
@@ -215,6 +231,15 @@ Three things that decide whether this actually holds:
 Use `picomatch` against posix-normalized paths. Windows specifics that will bite: drive-letter casing, `\` vs `/`, 8.3 short names, and symlinks/junctions — call `fs.realpath` before checking.
 
 **Done when:** tests cover `..` escape, `C:\` vs `c:\`, a different drive, symlink-out-of-workspace, and `**/*.env` deny beating `src/**` allow.
+
+---
+
+> **Working on `core` or `harness`? Build before you test.** vitest resolves
+> `@cuesheet/core` and `@cuesheet/harness` through each package's `exports`
+> field, which points at `dist` — so a daemon or UI test runs against the last
+> *built* version, not the source you just edited. The symptom is a test that
+> fails for reasons the source says are impossible. `npm run build -w @cuesheet/core`
+> (and `-w @cuesheet/harness`) first, or `npm run build` for all six in order.
 
 ---
 

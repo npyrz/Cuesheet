@@ -26,7 +26,17 @@ role = "worker"
 workspace = "/ws"
 
 [gate.default]
-reviewers = 2
+require = "1-of-1"
+
+[cuesheet.ship]
+cues = [
+  { station = "opus", action = "implement" },
+  { gate = "default" },
+  { station = "sonnet", action = "review" },
+]
+
+[limits]
+warn_at = 0.85
 `;
 
 const loaded = (): LoadedConfig => parseConfig(TOML, "/ws/cuesheet.toml");
@@ -78,9 +88,36 @@ describe("describeStations", () => {
     expect(response.harnesses[0]?.harness).toBe("ollama");
   });
 
-  it("passes the loader's warnings straight through", async () => {
+  it("reports the named cuesheets, so the palette can offer them", async () => {
+    // The Desk has no other way to learn a cuesheet exists, and a cuesheet it
+    // cannot see is a Gate nobody can reach without curl. This shape is also
+    // hand-mirrored in `packages/ui/src/api/client.ts`, so this test is what
+    // catches the two drifting apart.
     const response = await describeStations(loaded(), unprobed);
-    expect(response.warnings.some((w) => w.table === "gate")).toBe(true);
+    expect(response.cuesheets).toEqual([
+      { id: "ship", stationIds: ["opus", "sonnet"], gates: ["default"] },
+    ]);
+  });
+
+  it("reports a cuesheet with no gate as having none", async () => {
+    const plain = parseConfig(
+      `${TOML}\n[cuesheet.solo]\ncues = [{ station = "opus", action = "implement" }]\n`,
+      "/ws/cuesheet.toml",
+    );
+    const response = await describeStations(plain, unprobed);
+    expect(response.cuesheets).toContainEqual({
+      id: "solo",
+      stationIds: ["opus"],
+      gates: [],
+    });
+  });
+
+  it("passes the loader's warnings straight through", async () => {
+    // `[limits]` rather than `[gate]`: gates are implemented now, so they no
+    // longer warn. The route's job — telling a user which of their tables are
+    // parsed but not live — is unchanged.
+    const response = await describeStations(loaded(), unprobed);
+    expect(response.warnings.some((w) => w.table === "limits")).toBe(true);
     expect(response.sourcePath).toBe("/ws/cuesheet.toml");
   });
 

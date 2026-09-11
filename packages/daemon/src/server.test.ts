@@ -42,7 +42,10 @@ cues = [
 ]
 
 [gate.default]
-reviewers = 2
+require = "1-of-1"
+
+[limits]
+warn_at = 0.85
 `;
 
 let env: HostEnv;
@@ -177,15 +180,18 @@ describe("GET /stations", () => {
 
   it("surfaces the loader's warnings for unimplemented tables", async () => {
     // Step 6 collects these precisely so this route can report them; without
-    // it a user never learns their `[gate]` table is parsed but not live.
+    // it a user never learns their `[limits]` table is parsed but not live.
+    // This used to assert on `[gate]`, which is implemented now.
     const { url } = await boot();
     const { body } = await get<StationsResponse>(url, "/stations");
     const warnings = body.warnings as Array<{
       table?: string;
       message: string;
     }>;
-    expect(warnings.some((w) => w.table === "gate")).toBe(true);
-    expect(warnings.some((w) => w.message.includes("Gates are M5"))).toBe(true);
+    expect(warnings.some((w) => w.table === "limits")).toBe(true);
+    expect(warnings.some((w) => w.message.includes("Usage limits"))).toBe(true);
+    // And the gate table no longer warns at all.
+    expect(warnings.some((w) => w.table === "gate")).toBe(false);
   });
 
   it("reports which file the config came from", async () => {
@@ -246,8 +252,9 @@ describe("POST /runs", () => {
     await daemon.queue.idle();
 
     const { body: stored } = await get<StoredRun>(url, `/runs/${body.runId}`);
-    // `{ gate = "default" }` is a cue kind, but Gates are M5 — so it is
-    // skipped rather than treated as a station.
+    // `{ gate = "default" }` is a cue kind, not a Station: it does not appear
+    // in `stationIds`, which is the list of Stations the run touches. The
+    // executor plans gates from the cuesheet itself.
     expect(stored.run.stationIds).toEqual(["opus", "sonnet"]);
     expect(stored.run.cuesheetId).toBe("ship");
   });
@@ -743,7 +750,10 @@ describe("POST /stations", () => {
     expect(body.station.deny).toContain(".git/**");
   });
 
-  it("preserves the deferred [gate] table the test config carries", async () => {
+  it("preserves the tables the test config carries, gates included", async () => {
+    // The writer appends to the file's *text*, so nothing it did not write is
+    // at risk — whether or not this build parses it. Both cases are checked:
+    // `[gate.default]` is implemented now, `[limits]` is still deferred.
     const { url } = await boot();
     await post(url, "/stations", {
       id: "qwen",
@@ -753,7 +763,9 @@ describe("POST /stations", () => {
     });
     const text = await readFile(path.join(cwd, "cuesheet.toml"), "utf8");
     expect(text).toContain("[gate.default]");
-    expect(text).toContain("reviewers = 2");
+    expect(text).toContain('require = "1-of-1"');
+    expect(text).toContain("[limits]");
+    expect(text).toContain("warn_at = 0.85");
   });
 
   it("409s a duplicate id instead of silently shadowing a tile", async () => {

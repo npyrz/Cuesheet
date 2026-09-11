@@ -153,14 +153,19 @@ describe("addStation", () => {
     expect(loaded.config.station.map((s) => s.id)).toEqual(["opus"]);
   });
 
-  it("preserves deferred tables verbatim — the user's Gates are not eaten", async () => {
+  it("preserves deferred tables verbatim — the user's Commons is not eaten", async () => {
+    // This used to use `[gate.*]` as its example of a table written ahead of
+    // its implementation. Gates are implemented now, so the example moved to
+    // one that still is not; the guarantee under test never changed, and it
+    // is the reason `addStation` appends to the file's *text* instead of
+    // re-emitting a parsed config.
     const dir = await scratch();
     const target = join(dir, "cuesheet.toml");
     const original = [
-      "# gates I wrote ahead of the implementation",
-      "[gate.default]",
-      "blocking = [ 'security', 'correctness' ]",
-      "distinct_vendors = 2",
+      "# the commons, written ahead of the implementation",
+      "[commons]",
+      "store = '~/.cuesheet/commons'",
+      "project_to = [ 'CLAUDE.md', 'AGENTS.md' ]",
       "",
     ].join("\n");
     await writeFile(target, original, "utf8");
@@ -169,9 +174,38 @@ describe("addStation", () => {
 
     const text = await readFile(target, "utf8");
     expect(text.startsWith(original)).toBe(true);
-    expect(text).toContain("# gates I wrote ahead of the implementation");
-    expect(parseConfig(text, target).deferred["gate"]).toEqual({
-      default: { blocking: ["security", "correctness"], distinct_vendors: 2 },
+    expect(text).toContain(
+      "# the commons, written ahead of the implementation",
+    );
+    expect(parseConfig(text, target).deferred["commons"]).toEqual({
+      store: "~/.cuesheet/commons",
+      project_to: ["CLAUDE.md", "AGENTS.md"],
+    });
+  });
+
+  it("keeps a hand-written gate table through a UI write", async () => {
+    // Gates are parsed now rather than deferred, which is a different code
+    // path through the writer — and the same promise: what you wrote by hand
+    // survives the app writing beside it.
+    const dir = await scratch();
+    const target = join(dir, "cuesheet.toml");
+    const original = [
+      "[gate.default]",
+      'require = "2-of-3"',
+      "distinct_vendors = 2",
+      "blocking = [ 'security' ]",
+      "",
+    ].join("\n");
+    await writeFile(target, original, "utf8");
+
+    await addStation({ ...BASE }, { sourcePath: target, env: envAt(dir) });
+
+    const text = await readFile(target, "utf8");
+    expect(text.startsWith(original)).toBe(true);
+    expect(parseConfig(text, target).config.gate["default"]).toMatchObject({
+      require: "2-of-3",
+      distinct_vendors: 2,
+      blocking: ["security"],
     });
   });
 

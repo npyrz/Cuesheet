@@ -26,7 +26,7 @@ const RUN_LIMIT = 50;
 
 export interface DeskApi {
   state: DeskState;
-  start(prompt: string): Promise<void>;
+  start(prompt: string, cuesheet?: string): Promise<void>;
   stop(runId: RunId): Promise<void>;
   select(runId: RunId): Promise<void>;
   answer(standbyId: string, answer: "go" | "no"): Promise<void>;
@@ -167,9 +167,9 @@ export function useDesk(): DeskApi {
   }, [resync, adopt]);
 
   const start = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, cuesheet?: string) => {
       try {
-        await startRun(prompt);
+        await startRun(prompt, cuesheet);
         // No optimistic insert: the `status` event that follows carries the
         // real run id, and guessing one would leave a ghost row behind.
       } catch (error) {

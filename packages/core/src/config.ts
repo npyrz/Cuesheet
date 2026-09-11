@@ -78,9 +78,41 @@ export const CuesheetSchema = z.object({
   cues: z.array(CueStepSchema).min(1),
 });
 
+/**
+ * `[gate.default]` — the second-opinion rule.
+ *
+ * `require` is the README's `"N-of-M"`: N reviewers must pass, out of M asked.
+ * It is a string rather than two numbers because that is what the README
+ * writes and the words are the spec.
+ *
+ * `distinct_vendors` counts the vendors of the Stations that **acted** in the
+ * run — the author and the reviewers — not the authors of the verdicts. That
+ * is the only reading under which the README's own example is satisfiable:
+ * `require = "1-of-1"` with `distinct_vendors = 2` has a single reviewer, so
+ * the second vendor can only be the engineer whose work is being reviewed.
+ * It is also the reading that matches the point: a model reviewing its own
+ * work shares its own blind spots.
+ */
+export const GateSchema = z
+  .object({
+    require: z
+      .string()
+      .regex(/^\d+-of-\d+$/, 'Use the form "1-of-1" or "2-of-3".')
+      .default("1-of-1"),
+    distinct_vendors: z.number().int().min(1).default(1),
+    /** Finding categories that block. Anything else is advisory. */
+    blocking: z.array(z.string().min(1)).default([]),
+    /** Don't burn tokens reviewing a typo. Counted in changed lines. */
+    skip_if_diff_under: z.number().int().min(0).optional(),
+    /** Parsed and kept for M7's hotfix gate; nothing reads it yet. */
+    merges: z.boolean().optional(),
+  })
+  .loose();
+
 export const ConfigSchema = z.object({
   desk: DeskSchema.default({}),
   station: z.array(StationSchema).default([]),
+  gate: z.record(Identifier, GateSchema).default({}),
   cuesheet: z.record(Identifier, CuesheetSchema).default({}),
 });
 
@@ -92,6 +124,7 @@ export type Cue = z.infer<typeof CueSchema>;
 export type GateRef = z.infer<typeof GateRefSchema>;
 export type CueStep = z.infer<typeof CueStepSchema>;
 export type Cuesheet = z.infer<typeof CuesheetSchema>;
+export type Gate = z.infer<typeof GateSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function isGateRef(step: CueStep): step is GateRef {
@@ -105,7 +138,6 @@ export function isGateRef(step: CueStep): step is GateRef {
  * Each maps to a milestone; see PLAN-STEP.MD's "Deferred on purpose" table.
  */
 export const DEFERRED_TABLES: Readonly<Record<string, string>> = {
-  gate: "Gates are M5. The cues array already accepts `{ gate = ... }`, so this becomes live without a config change.",
   caller: "The Caller is M6, post-1.0.",
   limits: "Usage limits and fallback routing are M2.",
   oncall: "On-Call is M7, post-1.0.",
@@ -183,7 +215,7 @@ export function parseConfig(
   const table = raw as Record<string, unknown>;
   const warnings: ConfigWarning[] = [];
   const deferred: Record<string, unknown> = {};
-  const implemented = new Set(["desk", "station", "cuesheet"]);
+  const implemented = new Set(["desk", "station", "gate", "cuesheet"]);
 
   for (const key of Object.keys(table)) {
     if (implemented.has(key)) continue;
@@ -239,10 +271,15 @@ function lint(config: Config): ConfigWarning[] {
   for (const [name, sheet] of Object.entries(config.cuesheet)) {
     for (const step of sheet.cues) {
       if (isGateRef(step)) {
-        warnings.push({
-          table: "cuesheet",
-          message: `Cuesheet "${name}" references gate "${step.gate}"; Gates are not implemented yet and this cue will be skipped.`,
-        });
+        // A gate cue naming a gate that does not exist is the one case worth
+        // warning about now that Gates run: the cue would otherwise pass
+        // silently, which is the worst possible failure for a safety check.
+        if (config.gate[step.gate] === undefined) {
+          warnings.push({
+            table: "cuesheet",
+            message: `Cuesheet "${name}" references unknown gate "${step.gate}"; add a [gate.${step.gate}] table or the run will stop there.`,
+          });
+        }
         continue;
       }
       if (!seen.has(step.station)) {
