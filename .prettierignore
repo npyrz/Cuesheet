@@ -1,0 +1,7 @@
+dist
+release
+node_modules
+package-lock.json
+
+# Hand-aligned ASCII diagrams and tables. Prettier reflows them into mush.
+*.md

@@ -1,0 +1,35 @@
+{
+  "name": "@cuesheet/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Domain types, config schema, leash enforcement, cross-platform paths.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))\""
+  },
+  "dependencies": {
+    "picomatch": "^4.0.7",
+    "smol-toml": "^1.8.0",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3"
+  }
+}

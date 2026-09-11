@@ -1,0 +1,538 @@
+/**
+ * `cuesheetd` — the HTTP + WebSocket surface.
+ *
+ * This is the product. The Desk, the CLI, and later the phone are all clients
+ * of exactly these routes, so there are no Electron-only shortcuts here: if
+ * the app can do it, it is an HTTP call, and M3's phone gets it for free.
+ *
+ * Bound to loopback. Nothing here is authenticated, which is fine only
+ * because nothing here is reachable off the machine — pairing tokens and a
+ * tailnet are M3, and that is the point at which this comment has to change.
+ */
+import Fastify, { type FastifyInstance } from "fastify";
+import websocket from "@fastify/websocket";
+import { stat } from "node:fs/promises";
+import {
+  addStation,
+  ConfigError,
+  DEFAULT_PORT,
+  expandHome,
+  hostEnv,
+  loadConfig,
+  resolveUserPath,
+  stationIdTaken,
+  type HostEnv,
+  type LoadedConfig,
+  type RunEvent,
+} from "@cuesheet/core";
+import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
+import {
+  createFileRunStore,
+  type RunDetailResponse,
+  type RunStore,
+} from "./store.js";
+import { createRunQueue, type RunQueue } from "./queue.js";
+import { noopExecutor, type RunExecutor } from "./executor.js";
+import { createStandbyRegistry, type StandbyRegistry } from "./standby.js";
+import { describeStations, unprobed, type HarnessProber } from "./stations.js";
+import { isRunId } from "./ids.js";
+import {
+  currentLock,
+  findRunningDaemon,
+  PortInUseError,
+  removeLock,
+  writeLock,
+} from "./lockfile.js";
+import { DAEMON_VERSION } from "./version.js";
+
+export interface StartDaemonOptions {
+  /** `0` binds an ephemeral port — what tests use, so they never collide. */
+  port?: number;
+  host?: string;
+  env?: HostEnv;
+  /** Where to look for `cuesheet.toml`. */
+  cwd?: string;
+  executor?: RunExecutor;
+  /**
+   * Build the executor once the config is loaded.
+   *
+   * An executor that runs real harnesses needs to resolve a Station id to its
+   * `harness`, `model`, and leash, and the config is not read until after
+   * `startDaemon` begins. A factory hands it the *live* accessor rather than a
+   * snapshot, so `reloadConfig()` affects the next run instead of being
+   * silently ignored — which is the bug you get from passing `loaded.config`
+   * into a closure built at boot.
+   *
+   * Ignored when `executor` is given; tests pass the closure directly.
+   */
+  executorFactory?: (deps: ExecutorFactoryDeps) => RunExecutor;
+  store?: RunStore;
+  bus?: EventBus;
+  prober?: HarnessProber;
+  replayLimit?: number;
+  /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
+  writeLockFile?: boolean;
+  logger?: boolean;
+}
+
+export interface ExecutorFactoryDeps {
+  /** Reads the currently loaded config. Call per run, never cache the result. */
+  config: () => LoadedConfig;
+  env: HostEnv;
+}
+
+export interface DaemonHandle {
+  /** The port actually bound, which is what matters when `port` was `0`. */
+  port: number;
+  host: string;
+  url: string;
+  app: FastifyInstance;
+  bus: EventBus;
+  store: RunStore;
+  queue: RunQueue;
+  standbys: StandbyRegistry;
+  /** Reload `cuesheet.toml` from disk. */
+  reloadConfig(): Promise<LoadedConfig>;
+  close(): Promise<void>;
+}
+
+/**
+ * Boot the daemon.
+ *
+ * Returns a handle rather than nothing, and the handle carries the *bound*
+ * port. Every test and both embedders depend on that: `port: 0` plus
+ * `handle.port` is what lets vitest run these files in parallel workers
+ * without fighting each other or a dev daemon on 7373.
+ */
+export async function startDaemon(
+  options: StartDaemonOptions = {},
+): Promise<DaemonHandle> {
+  const env = options.env ?? hostEnv();
+  const host = options.host ?? "127.0.0.1";
+  const requestedPort = options.port ?? DEFAULT_PORT;
+  const cwd = options.cwd ?? process.cwd();
+  const writeLockFile = options.writeLockFile ?? true;
+
+  const bus =
+    options.bus ??
+    createEventBus({
+      replayLimit: options.replayLimit ?? DEFAULT_REPLAY_LIMIT,
+    });
+  const store = options.store ?? createFileRunStore({ env });
+  const standbys = createStandbyRegistry();
+  const prober = options.prober ?? unprobed;
+
+  // Config is loaded once and cached: `/stations` is polled by the UI and
+  // re-reading TOML on every poll is a syscall storm for no benefit.
+  //
+  // Loaded *before* the queue is built, because the executor needs to be able
+  // to look Stations up. `config` is a function rather than the value so a
+  // later `reloadConfig()` reaches the executor too.
+  let loaded = await loadConfig(cwd, env);
+  const config = (): LoadedConfig => loaded;
+  // One reload closure, shared by `POST /stations` and `handle.reloadConfig`.
+  // Two closures over the same `loaded` would work; two *implementations*
+  // would drift, and the route's whole job is to leave the running daemon
+  // agreeing with the file it just wrote.
+  const reload = async (): Promise<LoadedConfig> => {
+    loaded = await loadConfig(cwd, env);
+    return loaded;
+  };
+
+  const queue = createRunQueue({
+    store,
+    bus,
+    standbys,
+    executor:
+      options.executor ??
+      options.executorFactory?.({ config, env }) ??
+      noopExecutor,
+  });
+
+  const app = Fastify({ logger: options.logger ?? false });
+
+  // Treat an empty JSON body as `{}`.
+  //
+  // `POST /runs/:id/stop` and a "no body" POST from a fetch that still sets
+  // `content-type: application/json` are both legitimate, and Fastify's
+  // default parser rejects them with a 400 that looks like a client bug. The
+  // route handlers already validate their own bodies, so an empty object is
+  // the honest parse. Registered on the root instance so the `/api` scope
+  // inherits it rather than re-registering and conflicting.
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_request, body, next) => {
+      const text = typeof body === "string" ? body.trim() : "";
+      if (text === "") return next(null, {});
+      try {
+        next(null, JSON.parse(text));
+      } catch (error) {
+        next(error as Error);
+      }
+    },
+  );
+
+  await app.register(websocket);
+
+  const routeDeps: RouteDeps = {
+    bus,
+    store,
+    queue,
+    standbys,
+    prober,
+    config,
+    reload,
+    env,
+  };
+
+  registerRoutes(app, routeDeps);
+  // The same routes under `/api` as well, because Step 17's Vite dev server
+  // proxies `/api` and `/ws`. One registration with a prefix beats a rewrite
+  // rule in the dev config and keeps `curl :7373/health` working.
+  await app.register(
+    async (scope) => {
+      registerRoutes(scope, routeDeps);
+    },
+    { prefix: "/api" },
+  );
+
+  let boundPort: number;
+  try {
+    await app.listen({ host, port: requestedPort });
+    boundPort = addressPort(app) ?? requestedPort;
+  } catch (error) {
+    await app.close().catch(() => undefined);
+    if (isPortUnavailable(error)) {
+      // Deliberately not falling back to another port. The CLI and the app
+      // find the daemon by a known port in a known lockfile; silently moving
+      // turns "already running" into "running but undiscoverable".
+      const existing = await findRunningDaemon(env);
+      throw new PortInUseError(requestedPort, host, existing);
+    }
+    throw error;
+  }
+
+  if (writeLockFile) {
+    await writeLock(currentLock(boundPort), env);
+  }
+
+  let closed = false;
+  return {
+    port: boundPort,
+    host,
+    url: `http://${host}:${boundPort}`,
+    app,
+    bus,
+    store,
+    queue,
+    standbys,
+    reloadConfig: reload,
+    async close() {
+      if (closed) return;
+      closed = true;
+      await queue.shutdown();
+      await app.close();
+      if (writeLockFile) await removeLock(env);
+    },
+  };
+}
+
+interface RouteDeps {
+  bus: EventBus;
+  store: RunStore;
+  queue: RunQueue;
+  standbys: StandbyRegistry;
+  prober: HarnessProber;
+  config: () => LoadedConfig;
+  /**
+   * Re-read `cuesheet.toml`. The same closure that backs
+   * `DaemonHandle.reloadConfig`, not a second one — `POST /stations` writes
+   * the file and must leave the *running* daemon seeing what it just wrote,
+   * or the new tile appears and the next run cannot find its Station.
+   */
+  reload: () => Promise<LoadedConfig>;
+  env: HostEnv;
+}
+
+function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { bus, store, queue, standbys, prober, config, reload, env } = deps;
+
+  app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
+
+  app.get("/stations", async () => describeStations(config(), prober));
+
+  app.get("/runs", async (request) => {
+    const limit = parseLimit(
+      (request.query as Record<string, unknown>)["limit"],
+    );
+    const runs = await store.list(limit);
+    return { runs };
+  });
+
+  app.get("/runs/:id", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    // Validated before it can reach the filesystem: a run id is a directory
+    // name, so an unvalidated param is a path traversal.
+    if (!isRunId(id))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const stored = await store.get(id);
+    if (!stored) return reply.code(404).send({ error: "No such run." });
+
+    // The patch is deliberately *not* in this response. A run against a
+    // workspace with a large untracked tree produces a diff measured in
+    // megabytes, and this route is what the Desk calls to open a run row.
+    // `hasDiff` is enough to decide whether to offer the button; the bytes
+    // come from `/runs/:id/diff` when someone actually asks for them.
+    const { diff, ...rest } = stored;
+    const body: RunDetailResponse = { ...rest, hasDiff: diff !== undefined };
+    return body;
+  });
+
+  /**
+   * The patch itself, as text.
+   *
+   * `text/plain` rather than JSON: a unified diff is a document, and wrapping
+   * megabytes of it in a JSON string means escaping every newline on the way
+   * out and unescaping them on the way in, for nothing.
+   */
+  app.get("/runs/:id/diff", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    if (!isRunId(id))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const diff = await store.getDiff(id);
+    if (diff === null) {
+      return reply.code(404).send({ error: "That run has no diff." });
+    }
+    return reply.type("text/plain; charset=utf-8").send(diff);
+  });
+
+  /**
+   * Add a Station — Step 20's panel, server side.
+   *
+   * Writes to `cuesheet.toml` and then reloads, so the response already
+   * reflects the new tile and the next run can resolve the Station. Validation
+   * is deliberately server-side rather than only in the UI: this is the same
+   * API the phone will call in M3, and a typed workspace path that does not
+   * exist is the mistake a person actually makes.
+   */
+  app.post("/stations", async (request, reply) => {
+    const body = request.body;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+    const draft = body as Record<string, unknown>;
+
+    const id = draft["id"];
+    if (typeof id === "string" && stationIdTaken(config(), id)) {
+      // 409 rather than the loader's "the last one wins" warning. That reading
+      // is fine for a file a human hand-edited; it is not a defensible outcome
+      // for a button, where the user would silently shadow an existing tile.
+      return reply.code(409).send({
+        error: `A station named "${id}" is already configured.`,
+      });
+    }
+
+    const workspace = draft["workspace"];
+    if (workspace !== undefined) {
+      if (typeof workspace !== "string" || workspace.trim() === "") {
+        return reply
+          .code(400)
+          .send({ error: "`workspace` must be a non-empty string." });
+      }
+      const problem = await workspaceProblem(workspace, env);
+      if (problem) return reply.code(400).send({ error: problem });
+    }
+
+    try {
+      const result = await addStation(draft, {
+        sourcePath: config().sourcePath,
+        env,
+      });
+      // Reload before responding, so the caller never sees a Station it then
+      // cannot run. `describeStations` is re-derived from the fresh config.
+      const reloaded = await reload();
+      const stations = await describeStations(reloaded, prober);
+      return reply.code(201).send({
+        station: result.station,
+        sourcePath: result.sourcePath,
+        created: result.created,
+        stations,
+      });
+    } catch (error) {
+      if (error instanceof ConfigError) {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/runs", async (request, reply) => {
+    const body = request.body;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+    const { prompt, cuesheet } = body as Record<string, unknown>;
+    if (typeof prompt !== "string" || prompt.trim() === "") {
+      return reply.code(400).send({ error: "`prompt` is required." });
+    }
+    if (cuesheet !== undefined && typeof cuesheet !== "string") {
+      return reply.code(400).send({ error: "`cuesheet` must be a string." });
+    }
+
+    const loaded = config();
+    const sheet =
+      cuesheet === undefined ? undefined : loaded.config.cuesheet[cuesheet];
+    if (cuesheet !== undefined && sheet === undefined) {
+      return reply
+        .code(404)
+        .send({ error: `No cuesheet named "${cuesheet}".` });
+    }
+
+    const stationIds = resolveStationIds(loaded, cuesheet);
+    const workspace = resolveWorkspace(loaded, stationIds);
+
+    const run = await queue.enqueue({
+      prompt,
+      workspace,
+      ...(cuesheet !== undefined && { cuesheetId: cuesheet }),
+      stationIds,
+    });
+    return reply.code(202).send({ runId: run.id });
+  });
+
+  app.post("/runs/:id/stop", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    if (!isRunId(id))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const outcome = await queue.stop(id);
+    if (outcome === "not-found")
+      return reply.code(404).send({ error: "No such run." });
+    return { runId: id, outcome };
+  });
+
+  app.post("/standbys/:id", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    const body = request.body;
+    const answer =
+      body !== null && typeof body === "object"
+        ? (body as Record<string, unknown>)["answer"]
+        : undefined;
+    if (answer !== "go" && answer !== "no") {
+      return reply.code(400).send({ error: '`answer` must be "go" or "no".' });
+    }
+    const settled = standbys.resolve(id, answer);
+    if (!settled) {
+      return reply
+        .code(404)
+        .send({ error: "No standby is waiting on that id." });
+    }
+    return { standby: settled };
+  });
+
+  app.get("/ws", { websocket: true }, (socket) => {
+    // Attach is one synchronous call returning the backlog, so there is no
+    // window between replaying buffered events and receiving live ones. See
+    // the note at the top of `bus.ts` — this is where that matters.
+    const { backlog, unsubscribe } = bus.attach((event) => send(event));
+
+    function send(event: RunEvent): void {
+      // A socket that closed between dispatch and write is normal, not an
+      // error worth propagating into the bus.
+      if (socket.readyState !== socket.OPEN) return;
+      try {
+        socket.send(JSON.stringify(event));
+      } catch {
+        unsubscribe();
+      }
+    }
+
+    for (const event of backlog) send(event);
+    socket.on("close", unsubscribe);
+    socket.on("error", unsubscribe);
+  });
+}
+
+/**
+ * Which Stations a run involves.
+ *
+ * A named cuesheet contributes its cues in declared order; gate refs are
+ * skipped because Gates are M5. A bare prompt uses the first configured
+ * Station, which is the single-station case Milestone A is defined by.
+ */
+function resolveStationIds(loaded: LoadedConfig, cuesheet?: string): string[] {
+  if (cuesheet !== undefined) {
+    const sheet = loaded.config.cuesheet[cuesheet];
+    if (sheet) {
+      return sheet.cues
+        .filter(
+          (step): step is { station: string; action: string } =>
+            "station" in step,
+        )
+        .map((step) => step.station);
+    }
+  }
+  const first = loaded.config.station[0];
+  return first ? [first.id] : [];
+}
+
+function resolveWorkspace(loaded: LoadedConfig, stationIds: string[]): string {
+  for (const id of stationIds) {
+    const station = loaded.config.station.find(
+      (candidate) => candidate.id === id,
+    );
+    if (station?.workspace) return station.workspace;
+  }
+  return loaded.config.station.find((s) => s.workspace)?.workspace ?? "";
+}
+
+/**
+ * Why a workspace path is unusable, or `null` if it is fine.
+ *
+ * `~/code/api` is the path a person types and the README's own example, and
+ * Windows will not expand it for you — so expand first, then resolve, then
+ * stat. Checking the raw string would reject a perfectly good tilde path.
+ */
+async function workspaceProblem(
+  workspace: string,
+  env: HostEnv,
+): Promise<string | null> {
+  const resolved = resolveUserPath(expandHome(workspace, env), process.cwd());
+  try {
+    const info = await stat(resolved);
+    if (!info.isDirectory()) {
+      return `Workspace ${resolved} is not a directory.`;
+    }
+    return null;
+  } catch {
+    return `Workspace ${resolved} does not exist.`;
+  }
+}
+
+function parseLimit(raw: unknown): number | undefined {
+  if (typeof raw !== "string") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function addressPort(app: FastifyInstance): number | null {
+  const [address] = app.addresses();
+  return address && typeof address.port === "number" ? address.port : null;
+}
+
+/**
+ * Whether a listen failure means "this port is not available to us".
+ *
+ * `EADDRINUSE` is the obvious case. `EACCES` is the Windows one: Hyper-V and
+ * WSL reserve blocks of dynamic ports, and a bind inside a reserved range
+ * fails with a permission error rather than an in-use error — on a machine
+ * where 7373 happens to land in such a block, the honest message is still
+ * "the port is unavailable", not a stack trace.
+ */
+function isPortUnavailable(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+  const code = (error as { code?: string }).code;
+  return code === "EADDRINUSE" || code === "EACCES";
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@cuesheet/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Electron shell. CommonJS on purpose - see PLAN-STEP.MD Phase 5.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))\""
+  },
+  "dependencies": {
+    "@cuesheet/core": "*",
+    "@cuesheet/daemon": "*"
+  }
+}
