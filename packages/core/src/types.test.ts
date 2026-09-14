@@ -67,6 +67,28 @@ const sample: RunEvent[] = [
     tokensOut: 20,
   },
   {
+    t: "verdict",
+    at: "2026-09-09T12:00:06.500Z",
+    runId: "r1",
+    stationId: "codex",
+    verdict: {
+      id: "v1",
+      runId: "r1",
+      stationId: "codex",
+      harness: "codex",
+      vendor: "OpenAI",
+      decision: "fail",
+      findings: [
+        {
+          category: "security",
+          severity: "block",
+          summary: "The upload endpoint still trusts the client's filename.",
+        },
+      ],
+      at: "2026-09-09T12:00:06.500Z",
+    },
+  },
+  {
     t: "done",
     at: "2026-09-09T12:00:07.000Z",
     runId: "r1",
@@ -113,6 +135,8 @@ describe("RunEvent", () => {
           return event.reason;
         case "cost":
           return String(event.tokensIn);
+        case "verdict":
+          return event.verdict.decision;
         case "done":
           return event.result.status;
         case "error":
@@ -133,11 +157,17 @@ describe("vocabulary", () => {
     expect(ROLES).toEqual(["engineer", "reviewer", "worker", "caller"]);
   });
 
-  it("treats crash and stop outcomes as terminal, but not standby or held", () => {
+  it("treats every outcome as terminal, including a Hold", () => {
     for (const status of TERMINAL_RUN_STATUSES) {
       expect(isTerminalStatus(status), status).toBe(true);
     }
-    const pending: RunStatus[] = ["queued", "running", "standby", "held"];
+    // Only these three have something still to happen. This test used to
+    // include `held`, on the reading that a Hold waits for a human — it does,
+    // but it waits as a *standby*, before the run ends. By the time a run
+    // reads `held`, the Gate has asked and a human has answered "no": nothing
+    // is pending, and releasing a Hold is a new run rather than a resumption
+    // of this one. See the comment on TERMINAL_RUN_STATUSES.
+    const pending: RunStatus[] = ["queued", "running", "standby"];
     for (const status of pending) {
       expect(isTerminalStatus(status), status).toBe(false);
     }

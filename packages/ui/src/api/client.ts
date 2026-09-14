@@ -30,7 +30,15 @@ export interface StationsResponse {
   stations: StationView[];
   harnesses: HarnessProbe[];
   warnings: ConfigWarning[];
+  cuesheets: CuesheetView[];
   sourcePath: string | null;
+}
+
+/** A named cuesheet, and whether running it puts the work through a Gate. */
+export interface CuesheetView {
+  id: string;
+  stationIds: string[];
+  gates: string[];
 }
 
 /** `GET /runs/:id` — note that the patch is *not* here; see `fetchDiff`. */

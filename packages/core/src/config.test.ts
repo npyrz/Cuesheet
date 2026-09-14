@@ -81,9 +81,36 @@ describe("the README's config example", () => {
     expect(loaded.deferred["remote"]).toMatchObject({ tailnet: true });
   });
 
-  it("flags the gate cue as not yet executable", () => {
+  it("parses the gate the ship cuesheet references", () => {
+    // This used to assert the opposite — that the gate cue was flagged as not
+    // yet executable. Gates run now, so the README's example is live, and the
+    // only thing worth warning about is a cue naming a gate that is missing.
+    expect(loaded.config.gate["default"]).toMatchObject({
+      require: "1-of-1",
+      distinct_vendors: 2,
+      blocking: ["security", "correctness"],
+      skip_if_diff_under: 20,
+    });
     const messages = loaded.warnings.map((w) => w.message);
-    expect(messages.some((m) => m.includes('gate "default"'))).toBe(true);
+    expect(messages.some((m) => m.includes("unknown gate"))).toBe(false);
+  });
+
+  it("warns about a cue naming a gate that does not exist", () => {
+    // Silence here would be the worst possible failure for a safety check:
+    // the cue would read as satisfied because nothing ran.
+    const { warnings } = parseConfig(`
+[[station]]
+id = "opus"
+harness = "claude-code"
+role = "engineer"
+workspace = "/tmp/api"
+
+[cuesheet.ship]
+cues = [{ station = "opus", action = "implement" }, { gate = "nope" }]
+`);
+    expect(
+      warnings.some((w) => w.message.includes('unknown gate "nope"')),
+    ).toBe(true);
   });
 });
 

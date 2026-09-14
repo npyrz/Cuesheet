@@ -11,6 +11,7 @@
  * parsed but not yet live.
  */
 import {
+  isGateRef,
   BUILTIN_HARNESS_IDS,
   type ConfigWarning,
   type HarnessId,
@@ -31,8 +32,24 @@ export interface StationsResponse {
   /** Every harness we know of, probed — including ones no Station uses. */
   harnesses: HarnessProbe[];
   warnings: ConfigWarning[];
+  /**
+   * The named cuesheets, and whether each one runs a Gate.
+   *
+   * Here rather than on a route of its own because the Desk already polls
+   * this one for everything else it needs to draw the command palette, and a
+   * cuesheet the UI cannot see is a Gate nobody can reach without curl.
+   */
+  cuesheets: CuesheetView[];
   /** Which file the config came from; `null` when defaults were used. */
   sourcePath: string | null;
+}
+
+export interface CuesheetView {
+  id: string;
+  /** Station ids in cue order, gates omitted. */
+  stationIds: string[];
+  /** The gates this cuesheet runs, in order. */
+  gates: string[];
 }
 
 /**
@@ -81,6 +98,15 @@ export async function describeStations(
       },
     })),
     harnesses: [...probes.values()].sort(byInstalledThenName),
+    cuesheets: Object.entries(loaded.config.cuesheet).map(([id, sheet]) => ({
+      id,
+      // `flatMap` rather than filter-then-cast: `isGateRef` is a type guard,
+      // and casting past it would survive a change to `CueStep` in silence.
+      stationIds: sheet.cues.flatMap((cue) =>
+        isGateRef(cue) ? [] : [cue.station],
+      ),
+      gates: sheet.cues.filter(isGateRef).map((cue) => cue.gate),
+    })),
     warnings: loaded.warnings,
     sourcePath: loaded.sourcePath,
   };

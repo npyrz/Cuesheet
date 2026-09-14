@@ -1,26 +1,30 @@
 {
   "name": "@cuesheet/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "description": "Electron shell. CommonJS on purpose - see PLAN-STEP.MD Phase 5.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
+  "main": "./dist/main.cjs",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "dev": "node build.mjs --dev && electron .",
+    "start": "electron .",
+    "build": "node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "node -e \"import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))\""
+    "clean": "node -e \"import('node:fs').then(m=>m.rmSync('dist',{recursive:true,force:true}))\"",
+    "pack:dir": "npm --prefix ../.. run build && electron-builder --dir --publish never",
+    "dist": "npm --prefix ../.. run build && electron-builder --publish never",
+    "icons": "node ../../scripts/make-icons.mjs"
   },
-  "dependencies": {
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "@cuesheet/core": "*",
-    "@cuesheet/daemon": "*"
-  }
+    "@cuesheet/daemon": "*",
+    "@cuesheet/ui": "*"
+  },
+  "author": "Noah Pyrzanowski",
+  "license": "Apache-2.0"
 }

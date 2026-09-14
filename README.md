@@ -7,14 +7,31 @@
 A desktop app that turns Claude Code, Codex, Ollama and whatever comes next into one crew you actually manage — models, harnesses, roles, memory, limits, and permissions on a single desk. Then hands you the whole thing on your phone.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#project-status)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#what-actually-works-right-now)
 [![Platform](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-desktop-black.svg)](#requirements)
 
 </div>
 
 ---
 
-> **Project status: pre-alpha.** Nothing here is shippable yet. This README is the design spec and the contract — it describes what Cuesheet is being built to be. See the [Roadmap](#roadmap) for what actually exists.
+> **Project status: alpha, and not yet downloadable.** The Desk runs, the daemon runs, and `claude-code` does real work through both — on macOS **and** Windows, from a checkout or from an installer you build yourself. Installers are real on both platforms, but nothing is signed and nothing has been published, so there is still no download link. Gates work, given a second harness from another vendor — which today means the built-in `mock`, since `codex` and `ollama` are not written yet. The Commons, the limits strip and the phone do not. This README is still the design spec and the contract: it describes what Cuesheet is being built to be, not what you can use today. [What actually works right now](#what-actually-works-right-now) is the honest list, and the [Roadmap](#roadmap) is the rest.
+
+### What actually works right now
+
+Everything below this line is either built or building. Nothing here needs `cuesheet.toml` opened by hand.
+
+| | |
+|---|---|
+| ✅ **The daemon** | `cuesheetd` on `127.0.0.1:7373` — run queue, run records, WebSocket stream. Every client, including the phone later, is a client of these routes. |
+| ✅ **The Desk** | React UI: Station tiles, live run log, `⌘K` palette, add-a-Station panel that writes your TOML for you. |
+| ✅ **`claude-code`** | Real runs: streamed output, a `diff.patch`, cost, and stop-means-stop on the whole process tree. |
+| ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar. Tray menu, native notifications, start-at-login, and a shutdown that never leaves a run stuck `running`. |
+| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, each built on its own platform and launched from a path with a space. Unsigned, and none published — the workflow that drafts them on a tag has not run on a runner yet. |
+| ✅ **Windows** | Run on a real Windows 10 box: install, build, the full test suite, a live `claude-code` run, a stop that takes the process tree to zero, a `taskkill /F` that reconciles to `interrupted`, the NSIS installer, and the installed app launched from a path with a space. Three things are still eyes-on: the tray glyph, a toast, and the `.cmd` shim path. |
+| ✅ **Gates** | A `{ gate = … }` cue runs a real second-opinion check: the reviewer gets the diff, its verdict is parsed, and a failed gate holds the run with the findings attached. Needs two harnesses from different vendors. |
+| 📋 **Not built yet** | The Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
+
+**Concretely, today:** clone it, `npm install`, `npm run build`, `npm run dev -w packages/desktop`. One harness, one Station at a time, no gates. Run records may be discarded on upgrade and the config format can still change under you.
 
 ---
 
@@ -192,34 +209,63 @@ Twelve words and you know the system.
   - [Claude Code](https://claude.com/claude-code) — `claude login`
   - [Codex CLI](https://developers.openai.com/codex) — `codex login`
   - [Ollama](https://ollama.com) — `ollama pull qwen3-coder`
-- Node.js ≥ 22, if you want the CLI as well as the app.
+- **Node.js ≥ 22.** Required in alpha — the app is run from a checkout, not installed.
 
 **Cuesheet never sees your model credentials.** Harnesses shell out to CLIs you already logged into. There is no key to paste, no proxy in the request path, and no account to create.
 
 ### Install
 
-Download the desktop app from [Releases](../../releases) — it bundles the daemon and adds a tray icon, native notifications, and start-on-login. Open it, and the add-station panel is already showing you what's installed.
-
-Or, if you live in a terminal:
+> **Alpha: nothing is published yet.** The installers build — `dmg` and `zip` for Apple Silicon and Intel, an `nsis` installer for Windows — and a tagged build drafts a GitHub Release, but no release has been published, and the app still needs its tray and clean-shutdown work first. Until then, run it from a checkout:
 
 ```bash
-npm install -g @cuesheet/cli
-cuesheet init      # writes cuesheet.toml, detects installed harnesses
-cuesheet up        # starts the daemon, opens the Desk
+git clone <this repo> && cd cuesheet
+npm install
+npm run build
+npm run dev -w packages/desktop   # the app, with the daemon inside it
+```
+
+The window opens on the Desk. Click **add a station**, pick the harness it found on your machine, point it at a workspace, and it writes `~/.cuesheet/cuesheet.toml` for you.
+
+Prefer a browser? `npx cuesheetd` in one terminal and `npm run dev -w packages/ui` in another puts the same Desk on `http://localhost:5173` — the app and the browser are the same UI talking to the same daemon.
+
+<details>
+<summary><b>When the first installers land, they will be unsigned.</b> Here is what that looks like.</summary>
+
+Code signing costs money and a developer account; neither is worth blocking an alpha on. What it is *not* worth doing is pretending the friction is not there:
+
+- **macOS** — the app is not signed or notarized, so Gatekeeper quarantines it. Right-click the app and choose **Open**, or `xattr -d com.apple.quarantine /Applications/Cuesheet.app`.
+- **Windows** — the installer is not signed, so SmartScreen warns. **More info** → **Run anyway**.
+
+Signing and notarization are on the list for beta. Until then, every release says all of this in its own notes as well.
+
+</details>
+
+Building them yourself, if you want to see what a release contains:
+
+```bash
+npm run dist -w packages/desktop   # builds everything, installers land in packages/desktop/release
 ```
 
 ### Your first run
 
+Press `⌘K` (`Ctrl+K` on Windows), type what you want, and watch it stream into the tile:
+
+```
+add rate limiting to the upload endpoint
+```
+
+The run lands as a record on disk — prompt, event log, and a `diff.patch` you can read.
+
+**What this is not yet:** the flags below are the shape this is heading for, and they need Gates (M5), which are not built.
+
 ```bash
 cuesheet run "add rate limiting to the upload endpoint" \
-  --engineer opus --review codex
+  --engineer opus --review codex          # 📋 planned, not shipped
 ```
 
 ### Pair your phone
 
-```bash
-cuesheet pair      # scan the QR from your phone
-```
+📋 Planned — M3. `cuesheet pair` does not exist yet.
 
 ---
 
@@ -322,6 +368,8 @@ blocking           = ["security", "correctness", "data-loss"]
 ```
 
 A Run that fails its gate is **held**, with the finding attached, and lands as a standby on whatever device you are holding.
+
+**This works today**, with one caveat: it needs two harnesses from different vendors, and `codex` is not written yet — so for now the second opinion has to come from another installed CLI. An unreadable review counts as an abstention, never as approval; a reviewer that crashes cannot wave anything through.
 
 ### 🚨 On-Call — a reviewed patch waiting for you when the pager goes off
 
@@ -510,9 +558,10 @@ Every Run is a durable object: prompt, brief, diff, verdicts, tool calls, denial
 
 | Harness | Vendor | Roles | Status |
 |---|---|---|---|
-| `claude-code` | Anthropic | engineer, reviewer, caller | 🚧 In progress |
-| `codex` | OpenAI | engineer, reviewer, caller | 🚧 In progress |
-| `ollama` | local | worker | 🚧 In progress |
+| `claude-code` | Anthropic | engineer | ✅ Working — reviewer and caller need M5/M6 |
+| `mock` | none | engineer | ✅ Working — ships on purpose, for developing against without burning tokens |
+| `codex` | OpenAI | engineer, reviewer, caller | 📋 Planned — M5, and the second vendor a Gate needs |
+| `ollama` | local | worker | 📋 Planned |
 | `gemini-cli` | Google | engineer, reviewer | 📋 Planned |
 | `opencode` | community | engineer | 📋 Planned |
 | `cursor-cli` | Cursor | engineer | 📋 Planned |
@@ -687,12 +736,12 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 
 | Milestone | Contents | State |
 |---|---|---|
-| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | 🚧 |
-| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 📋 |
+| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | ✅ macOS · 🚧 Windows |
+| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 🚧 Desk and shell done; tray, packaging and signing next |
 | **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | 📋 |
 | **M3 · Pocket** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
 | **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | 📋 |
-| **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | 📋 |
+| **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | 🚧 Gates, verdicts and Holds work; `codex` still to come |
 | **M6 · Caller** | `caller` role, `cuesheet plan`, proposal review, save-as-cuesheet | 📋 |
 | **M7 · On-Call** | Triggers, triage/patch/review cuesheet, hotfix gate, storm control, incident records | 📋 |
 | **M8 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |

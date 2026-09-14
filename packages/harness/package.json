@@ -1,6 +1,6 @@
 {
   "name": "@cuesheet/harness",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "description": "Harness interface, registry, and built-in harnesses.",
   "type": "module",

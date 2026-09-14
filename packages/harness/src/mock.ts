@@ -42,6 +42,16 @@ export interface MockHarnessOptions {
   denial?: boolean;
   /** Make the run fail, for testing the unhappy path. */
   fail?: boolean;
+  /**
+   * What this harness does when it is a Station with `role = "reviewer"`.
+   *
+   * - `"pass"` / `"fail"` — write a verdict the way a real reviewer does.
+   * - `"blocking"` — pass, but file a finding in a blocking category. The
+   *   case where the gate and the reviewer disagree.
+   * - `"silent"` — review, say nothing parseable, and leave. Not a pass: this
+   *   is the crashed-or-rambling reviewer that a Gate must not let through.
+   */
+  review?: "pass" | "fail" | "blocking" | "silent";
 }
 
 export function createMockHarness(options: MockHarnessOptions = {}): Harness {
@@ -77,6 +87,27 @@ export function createMockHarness(options: MockHarnessOptions = {}): Harness {
 
     async run(ctx: RunContext): Promise<RunResult> {
       const pause = () => wait(stepMs, ctx.signal);
+
+      // A reviewer reads and judges; it does not write, and it does not ask
+      // for permission to write. Emitting the verdict as *prose* is
+      // deliberate — it exercises `parseVerdict`, which is the path every
+      // CLI-backed reviewer takes. A harness that returns `RunResult.verdicts`
+      // directly is the other path, and it has its own tests.
+      if (ctx.station.role === "reviewer") {
+        ctx.emit({ t: "text", chunk: "Reading the diff.\n" });
+        ctx.meter.record({ tokensIn: 200, tokensOut: 0 });
+        await pause();
+
+        const verdict = options.review ?? "pass";
+        if (verdict === "silent") {
+          ctx.emit({ t: "text", chunk: "Looks fine to me, I suppose.\n" });
+        } else {
+          ctx.emit({ t: "text", chunk: `${REVIEW_REPLIES[verdict]}\n` });
+        }
+        ctx.meter.record({ tokensIn: 0, tokensOut: 60, usd: 0.0004 });
+
+        return { status: "done", cost: ctx.meter.total() };
+      }
 
       ctx.emit({ t: "text", chunk: `Reading the brief: ${ctx.brief}\n` });
       await pause();
@@ -149,6 +180,17 @@ export function createMockHarness(options: MockHarnessOptions = {}): Harness {
     },
   };
 }
+
+/**
+ * What the mock reviewer writes. Fenced JSON, because that is what
+ * `REVIEW_INSTRUCTIONS` asks a real reviewer for.
+ */
+const REVIEW_REPLIES: Record<"pass" | "fail" | "blocking", string> = {
+  pass: '```json\n{"decision": "pass", "findings": []}\n```',
+  fail: '```json\n{"decision": "fail", "findings": [{"category": "correctness", "severity": "block", "summary": "The mock reviewer was told to fail."}]}\n```',
+  blocking:
+    '```json\n{"decision": "pass", "findings": [{"category": "security", "severity": "block", "summary": "Looks fine, but this logs the key."}]}\n```',
+};
 
 /** The default instance, registered by {@link defaultHarnesses}. */
 export const mockHarness: Harness = createMockHarness();

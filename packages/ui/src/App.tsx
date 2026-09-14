@@ -59,8 +59,22 @@ export function App(): React.JSX.Element {
             },
           ]
         : []),
+      // One per configured cuesheet. The gate names are in the label because
+      // "this run will be reviewed and can be held" is the thing you want to
+      // know *before* pressing it, not after.
+      ...(state.stations?.cuesheets ?? []).map((sheet) => ({
+        id: `cuesheet-${sheet.id}`,
+        label:
+          sheet.gates.length === 0
+            ? `Run the “${sheet.id}” cuesheet`
+            : `Run the “${sheet.id}” cuesheet — gate: ${sheet.gates.join(", ")}`,
+        run: (prompt: string) => {
+          if (prompt !== "") void desk.start(prompt, sheet.id);
+        },
+        needsPrompt: true,
+      })),
     ],
-    [desk, run],
+    [desk, run, state.stations],
   );
 
   return (

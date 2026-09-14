@@ -1,0 +1,106 @@
+# How Cuesheet becomes something you can download.
+#
+# Read alongside `src/ui-entry.ts`: `extraResources` below puts the built Desk
+# at `<resourcesPath>/ui/index.html`, which is the *first* candidate that file
+# looks for in a packaged app. Those two have to agree — if they ever stop
+# agreeing, the packaged app opens the "Desk has not been built" dialog, which
+# is a confusing way to learn about a config typo.
+
+appId: io.github.npyrz.cuesheet
+productName: Cuesheet
+# `copyright` and the version come from package.json. `scripts/set-version.mjs`
+# is what keeps that number the same as the one `/health` reports.
+
+directories:
+  # Not `build/`: this package already has a `build.mjs`, and two things called
+  # "build" in one directory is a five-minute confusion every single time.
+  buildResources: assets
+  output: release
+
+# Everything the main process needs is already inside `dist/main.cjs` — the
+# daemon, fastify, ws, the harnesses, all of it, bundled by `build.mjs`. So the
+# asar is the bundle, the preload, and nothing else.
+#
+# `node_modules` is excluded deliberately rather than by omission: this is a
+# workspace, so `node_modules/@cuesheet/*` are symlinks to sibling packages,
+# and asar archives and symlinked directories are a bad combination that only
+# fails once it is packaged.
+files:
+  - dist/main.cjs
+  - dist/preload.cjs
+  - package.json
+  - "!node_modules/**/*"
+  - "!**/*.map"
+
+# The Desk, unpacked beside the app rather than inside the asar: it is static
+# files loaded over `file://`, and Chromium reads them faster from disk than
+# from an archive.
+extraResources:
+  - from: ../ui/dist
+    to: ui
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  # The tray icons, which `src/resources.ts` looks for at
+  # `<resourcesPath>/assets`. Out here rather than in the asar because reading
+  # an image out of an archive works *mostly*, and "mostly" is not something
+  # to find out from a bug report about a missing tray icon. `icon.png` stays
+  # behind: electron-builder consumes it at package time to make the .icns and
+  # .ico, and shipping it again would be dead weight.
+  - from: assets
+    to: assets
+    filter:
+      - iconTemplate.png
+      - iconTemplate@2x.png
+      - tray.ico
+
+asar: true
+# No native modules anywhere in the tree — `ws`'s two optional speedups are
+# left external and unbundled on purpose, and it falls back to pure JS. Saying
+# so here skips a rebuild step that can only break the Windows job.
+npmRebuild: false
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icon.png
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Unsigned, and honest about it. `identity: null` stops electron-builder
+  # picking up whatever certificate happens to be in the keychain, so a local
+  # build and a CI build produce the same thing. Step 26 is where this changes.
+  identity: null
+
+dmg:
+  # The window a stranger sees first. Nothing clever: the app, and the folder
+  # to drag it into.
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+
+win:
+  icon: assets/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  # Not a one-click installer: this is an alpha, and a person installing it
+  # should get to see where it is going and be able to put it somewhere else.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # Per-user, so no UAC prompt and no admin rights needed for an unsigned
+  # alpha that a person may well want to delete again tomorrow.
+  perMachine: false
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+
+# Releases are published by a human pushing a tag, never by a build.
+publish: null

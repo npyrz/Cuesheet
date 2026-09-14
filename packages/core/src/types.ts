@@ -68,6 +68,13 @@ export const TERMINAL_RUN_STATUSES = [
   "failed",
   "stopped",
   "interrupted",
+  // A Hold is the end of a run, not a pause in one. The Gate asked, a human
+  // answered, and nothing is waiting: "go" carries the run on to `done`, "no"
+  // stops it here. A non-terminal `held` would be a state with no actor —
+  // tiles lit for work that stopped, and a boot reconcile correctly marking it
+  // `interrupted`, which is the proof it was never meant to outlive the
+  // process. Releasing a Hold is a *new* run, not a resumption of this one.
+  "held",
 ] as const satisfies readonly RunStatus[];
 
 export function isTerminalStatus(status: RunStatus): boolean {
@@ -87,6 +94,24 @@ export interface DiffStat {
   deletions: number;
 }
 
+/**
+ * What one Gate decided, and why.
+ *
+ * Kept on the run summary rather than sent as its own event: a Gate that
+ * *passes* raises no standby and changes no status, so without this it would
+ * leave no trace at all — and "why did this pass?" is a question a safety
+ * feature has to be able to answer months later. Adding a field to a record
+ * every client already reads is additive; adding a variant to `RunEvent` is a
+ * case every client must then handle.
+ */
+export interface GateReport {
+  gate: string;
+  outcome: "pass" | "hold" | "skipped";
+  reasons: string[];
+  /** A human was asked, and said carry on anyway. */
+  overridden?: boolean;
+}
+
 /** What a `done` event carries: enough to render a run row without a re-read. */
 export interface RunResultSummary {
   status: RunStatus;
@@ -95,6 +120,17 @@ export interface RunResultSummary {
   /** Absent when the run touched nothing. */
   diff?: DiffStat;
   verdicts?: Verdict[];
+  /** Every Gate the run passed through, in cue order. */
+  gates?: GateReport[];
+  /**
+   * Why the run ended this way, when the status alone does not say it.
+   *
+   * A `held` run is the case this exists for: it ends *successfully* as far
+   * as the queue is concerned — the executor returned, nothing threw — so
+   * without this the record would carry a status and no sentence, and the
+   * README's promise is a Hold "with the finding attached".
+   */
+  error?: string;
 }
 
 /**
@@ -168,6 +204,26 @@ export type RunEvent =
       tokensOut: number;
       usd?: number;
     }
+  /**
+   * A reviewer's judgement on the work so far.
+   *
+   * Carries the whole `Verdict` rather than a decision word: the Desk has to
+   * show *why* something was blocked, and a client that only has "fail" has
+   * to go and fetch the findings to say anything useful.
+   *
+   * There is deliberately no matching `gate` event. A Gate's outcome is
+   * already observable — the standby it raises when it fails, the run's
+   * terminal status, and these verdicts — and every client has to handle this
+   * union exhaustively, so a variant carrying derivable state is a tax on all
+   * of them.
+   */
+  | {
+      t: "verdict";
+      at: string;
+      runId: RunId;
+      stationId: string;
+      verdict: Verdict;
+    }
   | { t: "done"; at: string; runId: RunId; result: RunResultSummary }
   | { t: "error"; at: string; runId: RunId; message: string };
 
@@ -182,6 +238,7 @@ export const RUN_EVENT_TYPES = [
   "standby",
   "denial",
   "cost",
+  "verdict",
   "done",
   "error",
 ] as const satisfies readonly RunEventType[];

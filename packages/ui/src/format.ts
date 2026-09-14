@@ -7,6 +7,17 @@
  */
 import type { Cost, RunStatus } from "@cuesheet/core";
 
+/**
+ * Ended without the harness getting to report a settled price. `held` is not
+ * here: a Hold is a decision at the end of a run that ran, so its cost is as
+ * final as a `done` run's.
+ */
+const ENDED_EARLY: ReadonlySet<RunStatus> = new Set<RunStatus>([
+  "stopped",
+  "interrupted",
+  "failed",
+]);
+
 /** `4m12s`, matching the README's tile. */
 export function elapsed(fromIso: string, toIso?: string): string {
   const from = Date.parse(fromIso);
@@ -38,10 +49,18 @@ export function duration(ms: number): string {
  *   `local` there labels a cloud model as free until its first usage event
  *   lands — which is exactly backwards, and visible on every tile for the
  *   first seconds of every run.
+ *
+ * `status` is what separates the second case from a fourth one that looks
+ * identical on the record and is its opposite. The settled price arrives once,
+ * at the end, so a run killed before that end has tokens and no `usd` exactly
+ * like an ollama run does — and a stopped `claude-code` run rendered `local`,
+ * calling a run that spent real money free. Absent a normal ending, the price
+ * is unknown rather than nothing, and `—` is the thing that says so.
  */
-export function money(cost: Cost | undefined): string {
+export function money(cost: Cost | undefined, status?: RunStatus): string {
   if (!cost) return "—";
   if (cost.usd === undefined) {
+    if (status !== undefined && ENDED_EARLY.has(status)) return "—";
     return cost.tokensIn + cost.tokensOut > 0 ? "local" : "—";
   }
   if (cost.usd === 0) return "$0.00";

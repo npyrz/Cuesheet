@@ -1,8 +1,20 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist"
+    /*
+     * This package is the one place tsc does not emit: `build.mjs` bundles it
+     * with esbuild instead, for the three reasons that file lists.
+     *
+     * `"module": "preserve"` is what that arrangement is *for*. The package is
+     * CommonJS at runtime (no `"type": "module"`, because Electron's ESM main
+     * process has `__dirname` and preload caveats), but the sources are
+     * written in ESM syntax and a bundler decides what they become. Under
+     * `nodenext` those two facts collide: `verbatimModuleSyntax` sees a CJS
+     * file containing `import`, and every line of every file is an error.
+     */
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true
   },
   "include": ["src/**/*"]
 }

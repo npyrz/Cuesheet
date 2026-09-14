@@ -1,6 +1,6 @@
 {
   "name": "@cuesheet/ui",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "description": "The Desk - React UI, served by the daemon and loaded by the desktop shell.",
   "type": "module",

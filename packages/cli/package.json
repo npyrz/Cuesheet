@@ -1,6 +1,6 @@
 {
   "name": "@cuesheet/cli",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "description": "The cuesheet command-line client.",
   "type": "module",
