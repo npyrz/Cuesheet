@@ -41,7 +41,7 @@ export function RunLog({
               </span>
               <span className="meta">
                 <span>{run.status}</span>
-                <span>{money(run.cost)}</span>
+                <span>{money(run.cost, run.status)}</span>
                 {run.result && <span>{duration(run.result.durationMs)}</span>}
               </span>
             </button>
@@ -85,7 +85,7 @@ function RunDetail({
           {statusDot(run.status)} “{run.prompt || "(no prompt)"}”
         </span>
         <span className="hint">{run.status}</span>
-        <span className="hint">{money(run.cost)}</span>
+        <span className="hint">{money(run.cost, run.status)}</span>
         {run.startedAt && (
           <span className="hint">{elapsed(run.startedAt, run.finishedAt)}</span>
         )}

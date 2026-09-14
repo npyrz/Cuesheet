@@ -65,16 +65,21 @@ jobs:
           fi
           echo "Building version $pkg"
 
-      # Same checks as CI. A tag that ships a red build is worse than a tag
-      # that fails, and this workflow can be run on a branch that CI never saw.
+      # Same checks as CI, in the same order — and the order is the load-bearing
+      # part. `npm ci` leaves no `dist`, and both steps below resolve
+      # `@cuesheet/*` through it, so building last fails them both on a clean
+      # runner. See the note in ci.yml.
+      #
+      # A tag that ships a red build is worse than a tag that fails, and this
+      # workflow can be run on a branch that CI never saw.
+      - name: Build
+        run: npm run build
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Test
         run: npm test
-
-      - name: Build
-        run: npm run build
 
       - name: Package
         working-directory: packages/desktop

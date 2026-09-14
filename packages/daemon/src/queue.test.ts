@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { RunEvent, RunStatus } from "@cuesheet/core";
+import type { RunEvent, RunStatus, Standby } from "@cuesheet/core";
 import { createEventBus } from "./bus.js";
 import { createFileRunStore, type RunStore } from "./store.js";
 import { createRunQueue, type RunQueue } from "./queue.js";
@@ -44,6 +44,31 @@ function harness(executor: RunExecutor = noopExecutor): Harness {
         )
         .map((e) => e.status),
   };
+}
+
+// Polls for a raised standby instead of sleeping a fixed interval. A loaded
+// runner (29 files in parallel on Windows) does not reliably reach `ctx.ask`
+// within 5ms, and a fixed sleep turns that into a 5s timeout rather than a
+// retry — the failure looks like a queue bug and is not one.
+// Waits for the queue to actually be running `runId`. Polled rather than
+// slept, for the same reason: `activeRunId` says exactly what we are waiting
+// for, where a fixed delay either flakes under load or slows every run.
+async function waitForActive(h: Harness, runId: string): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  while (h.queue.activeRunId() !== runId) {
+    if (Date.now() > deadline) throw new Error(`run ${runId} never started`);
+    await new Promise((r) => setTimeout(r, 1));
+  }
+}
+
+async function waitForStandby(h: Harness): Promise<Standby> {
+  const deadline = Date.now() + 4_000;
+  for (;;) {
+    const [pending] = h.standbys.list();
+    if (pending) return pending;
+    if (Date.now() > deadline) throw new Error("no standby was raised");
+    await new Promise((r) => setTimeout(r, 1));
+  }
 }
 
 const done = (): ReturnType<RunExecutor> =>
@@ -168,8 +193,7 @@ describe("sequential execution", () => {
     });
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    await Promise.resolve();
-    await new Promise((r) => setTimeout(r, 5));
+    await waitForActive(h, run.id);
     expect(h.queue.activeRunId()).toBe(run.id);
 
     release();
@@ -228,12 +252,7 @@ describe("stop", () => {
     );
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    // Polled rather than slept: a fixed delay either flakes under load or
-    // slows every run, and `activeRunId` says exactly what we are waiting for.
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (h.queue.activeRunId() === run.id) break;
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await waitForActive(h, run.id);
     expect(await h.queue.stop(run.id)).toBe("stopped-running");
     await h.queue.idle();
 
@@ -255,12 +274,15 @@ describe("stop", () => {
       return done();
     });
 
-    await h.queue.enqueue({ prompt: "running", workspace: "/ws" });
+    const active = await h.queue.enqueue({
+      prompt: "running",
+      workspace: "/ws",
+    });
     const queued = await h.queue.enqueue({
       prompt: "queued",
       workspace: "/ws",
     });
-    await new Promise((r) => setTimeout(r, 5));
+    await waitForActive(h, active.id);
 
     expect(await h.queue.stop(queued.id)).toBe("stopped-queued");
     release();
@@ -293,7 +315,7 @@ describe("stop", () => {
     });
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    await new Promise((r) => setTimeout(r, 5));
+    await waitForActive(h, run.id);
     await h.queue.stop(run.id);
     await h.queue.idle();
 
@@ -410,13 +432,12 @@ describe("standbys", () => {
     });
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    await new Promise((r) => setTimeout(r, 5));
 
-    const [pending] = h.standbys.list();
-    expect(pending?.ask).toBe("Write to infra/?");
+    const pending = await waitForStandby(h);
+    expect(pending.ask).toBe("Write to infra/?");
     expect(h.statusesFor(run.id)).toContain("standby");
 
-    h.standbys.resolve(pending!.id, "go");
+    h.standbys.resolve(pending.id, "go");
     await h.queue.idle();
 
     expect(answered).toBe("go");
@@ -433,9 +454,8 @@ describe("standbys", () => {
   it("records the standby in the run log", async () => {
     const h = harness(async (ctx) => {
       const promise = ctx.ask({ ask: "Proceed?", kind: "hold" });
-      await new Promise((r) => setTimeout(r, 5));
-      const [pending] = h.standbys.list();
-      h.standbys.resolve(pending!.id, "no");
+      const pending = await waitForStandby(h);
+      h.standbys.resolve(pending.id, "no");
       await promise;
       return done();
     });
@@ -457,7 +477,7 @@ describe("standbys", () => {
     });
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    await new Promise((r) => setTimeout(r, 5));
+    await waitForStandby(h);
     await h.queue.stop(run.id);
     await h.queue.idle();
 
@@ -473,14 +493,17 @@ describe("shutdown", () => {
     const h = harness(
       (ctx) =>
         new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () =>
-            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-          );
+          const abort = () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          // The same shape `spawn.ts` uses: an already-aborted signal fires no
+          // event, so a listener alone would wait forever.
+          if (ctx.signal.aborted) abort();
+          else ctx.signal.addEventListener("abort", abort, { once: true });
         }),
     );
 
     const run = await h.queue.enqueue({ prompt: "hi", workspace: "/ws" });
-    await new Promise((r) => setTimeout(r, 5));
+    await waitForActive(h, run.id);
     await h.queue.shutdown();
 
     // Step 23's bar: a run interrupted by a quit must land somewhere terminal
@@ -500,12 +523,15 @@ describe("shutdown", () => {
       return done();
     });
 
-    await h.queue.enqueue({ prompt: "running", workspace: "/ws" });
+    const active = await h.queue.enqueue({
+      prompt: "running",
+      workspace: "/ws",
+    });
     const queued = await h.queue.enqueue({
       prompt: "queued",
       workspace: "/ws",
     });
-    await new Promise((r) => setTimeout(r, 5));
+    await waitForActive(h, active.id);
 
     release();
     await h.queue.shutdown();

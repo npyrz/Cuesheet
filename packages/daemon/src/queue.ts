@@ -132,6 +132,19 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
     let patch: string | null = null;
 
     try {
+      // `active` — and so the controller `stop` and `shutdown` reach for — is
+      // set at the top of this function, but the executor is not called until
+      // after the `running` write above. An abort landing in that window was
+      // silently dropped: the work started anyway, and an executor that only
+      // registers an `abort` listener never saw the event it was waiting for
+      // and never settled, hanging `shutdown` on `await pump` forever. The
+      // shipped executors check `signal.aborted` themselves and so escaped it;
+      // the contract should not depend on every harness remembering to.
+      if (controller.signal.aborted) {
+        throw Object.assign(new Error("The run was aborted before it began."), {
+          name: "AbortError",
+        });
+      }
       result = await executor({
         run,
         signal: controller.signal,

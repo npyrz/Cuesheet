@@ -346,7 +346,15 @@ describe("observedStation", () => {
       await mkdtemp(path.join(tmpdir(), "cuesheet-link-")),
       "ws",
     );
-    await symlink(real, link, "dir");
+    // A Windows `dir` symlink needs Developer Mode or elevation and throws
+    // EPERM without either, which would make this suite red on an ordinary
+    // dev box. A junction needs no privilege, and `realpath` resolves it the
+    // same way — so the assertion keeps its meaning here instead of skipping.
+    await symlink(
+      real,
+      link,
+      process.platform === "win32" ? "junction" : "dir",
+    );
     return { real: await realpath(real), link };
   }
 

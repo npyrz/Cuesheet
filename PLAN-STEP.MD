@@ -49,13 +49,13 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 | Phase | Steps | Stage | State |
 |---|---|---|---|
-| **0 · Repo and toolchain** | 1–4 | 🟠 pre-alpha | ✅ Done |
-| 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done |
-| 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done |
-| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS; Windows unverified) |
-| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS; Windows unverified) |
-| **5 · Electron shell** | 21–24 | 🟡 alpha | 🚧 21–23 ✅ · Step 24 awaits a Windows machine |
-| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Built and proven on macOS · the tag waits on Steps 22–24 |
+| **0 · Repo and toolchain** | 1–4 | 🟠 pre-alpha | ✅ Done (macOS **and** Windows) |
+| 1 · Contracts | 5–7 | 🟠 pre-alpha | ✅ Done (macOS **and** Windows) |
+| 2 · Daemon spine | 8–12 | 🟠 pre-alpha | ✅ Done (macOS **and** Windows) |
+| 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS **and** Windows) |
+| 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS **and** Windows) |
+| **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
+| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Installers real on both · CI corrected but never run on a runner |
 | — beyond this plan — | **M5 · Gates** | 🔵 beta | 🚧 Machinery done; `codex` harness outstanding |
 | — beyond this plan — | M2, M4 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
@@ -76,10 +76,10 @@ Everything in *this* plan lands you at **alpha**. That is the honest ceiling: th
 ### Exit criteria
 
 **Pre-alpha → alpha** (end of Phase 6)
-- [ ] Milestone A and B both true on macOS **and** Windows
-- [ ] A stranger with Claude Code installed can open the app and complete a run without editing TOML
-- [ ] Crash mid-run leaves a readable run record, never a corrupt one
-- [ ] CI green on both OSes; installers uploaded on tag
+- [x] Milestone A and B both true on macOS **and** Windows
+- [x] A stranger with Claude Code installed can open the app and complete a run without editing TOML
+- [x] Crash mid-run leaves a readable run record, never a corrupt one — verified on Windows by `taskkill /F` mid-run
+- [ ] CI green on both OSes; installers uploaded on tag — *the workflows were red by construction and are now fixed, but nothing has run on a runner*
 - [ ] Install caveats (quarantine, SmartScreen) documented, not hidden
 
 **Alpha → beta** — none of this is in this plan; each maps to a README milestone
@@ -334,7 +334,11 @@ Keep the mapping layer thin and isolated. The README calls harness churn "the pe
 
 **Done when:** a real prompt against a scratch git repo produces streamed text, a `diff.patch`, and a `done` event — on both OSes.
 
-> **Verified on macOS only.** A real `claude-code` run over HTTP streamed text, wrote the file, produced `diff.patch`, and landed a `done` record with real cost; stopping a live run took the subprocess tree to zero and left the run terminal with partial events. The Windows halves of Steps 15 and 16 — `.cmd` shim resolution, `taskkill /T /F`, `\r\n` in the stream — are unit-tested with an injected `win32` host but have not been run on Windows. Phases 0–3 all carry that debt; Step 24 is where it comes due, and it is larger than that step's text implies.
+> **Verified on macOS.** A real `claude-code` run over HTTP streamed text, wrote the file, produced `diff.patch`, and landed a `done` record with real cost; stopping a live run took the subprocess tree to zero and left the run terminal with partial events.
+>
+> **And now on Windows, against the real CLI.** `probe()` resolved `C:\Users\…\.local\bin\claude.EXE` — note the uppercase extension, which is `PATHEXT` resolution working — and reported `2.1.221 ✓ logged in`. A real run streamed `text → tool → file → cost → done`, wrote `greeting.txt`, produced a `diff.patch` that `GET /runs/:id/diff` served, and landed `done · $0.29`. Stopping a live run took the tree to zero: the spawned `claude.EXE` and its `conhost.exe` grandchild were both gone four seconds after `POST /stop`, the run landed `stopped`, and its nine partial events survived.
+>
+> **The `.cmd` shim path was not exercised, and that is worth knowing.** This machine's Claude Code is a native `claude.exe`, so `cross-spawn` resolved a real executable rather than a `.cmd` shim. The shim handling remains unit-tested only. An npm-installed `claude` would exercise it; this install does not.
 
 ### Decisions this phase settled
 
@@ -386,7 +390,7 @@ Seed every new Station's `deny` with `.git/**`. The leash's `dot: true` means an
 
 > **Verified on macOS only, in a real browser.** The Desk was driven headless against a live daemon, not just typechecked: the app mounts and reports the daemon connected, the configured Station renders as a tile, the deferred `[gate]` table surfaces as a warning banner, `⌘K` opens the palette, and the Add a Station panel renders all five choices with `claude-code v2.1.221 ✓ logged in` listed above the greyed-out `codex` and `ollama`. Adding a Station through the panel wrote a `[[station]]` block beside a hand-written `[gate]` table that survived byte-for-byte, and produced a second tile. A prompt typed into the palette then streamed `text` → `tool` → `file` → `cost` → `done` into the tile and the log, landed as `done · $0.13 · 11s · 1 files, +1 −0`, and its patch loaded on demand from `/runs/:id/diff` — one request, only when asked for.
 >
-> The Windows half is unverified, and it inherits Phase 3's debt on top of its own.
+> **The Windows half is now verified too, by eye.** The Desk was photographed running in the packaged app: `daemon connected`, the `opus` tile reading `engineer · claude-code · idle`, all three runs in the list, the interrupted run's reason rendered in red above its preserved events, `open diff` fetching on demand — and the palette hint reading **`Ctrl1K`**, not `⌘K`, which is the one Step 24 item that can only be checked by looking. Adding the Station through `POST /stations` wrote a `[[station]]` block whose Windows path was correctly escaped (`C:\\Users\\…`) and re-parsed on the next read.
 
 ### Decisions this phase settled
 
@@ -472,7 +476,7 @@ Seven things that were not in the step text, four of which are one-line fixes th
 - **A standby was never closed.** Nothing in the reducer ever removed one — not on an answer, not on `done`, not on a stop. Answering left the buttons on screen until a reload, and the crash left a question with **go**/**no** wired to a registry that no longer existed. A standby is now open only while its run's status is `standby`, and a resync drops the rest.
 - **Opening a finished run replayed it as though it were live.** `run-detail` folded a historical log through the same path as live events, which re-opened that standby, re-lit a tile for work that had stopped, and added the run's `cost` events on top of the total already in its record. It also contradicted `snapshot`, where `activityFromRuns` has always skipped terminal runs for exactly this reason. Terminal runs are no longer replayed; the log pane is unaffected, because it reads the events the fetch replaced wholesale.
 
-### Step 24 — Windows-specific pass 🚧 (code landed; the machine is the test)
+### Step 24 — Windows-specific pass ✅
 Set aside a session for these; they are all one-line fixes that each cost an afternoon if discovered during packaging:
 - Long paths (>260 chars) in `node_modules` — enable long paths or keep the install path shallow.
 - `app.setAppUserModelId()` or notifications silently don't appear.
@@ -481,13 +485,15 @@ Set aside a session for these; they are all one-line fixes that each cost an aft
 
 **Done when:** a fresh Windows VM runs the dev build with no manual fixes.
 
-> **The code half is in; the verification half needs the machine.** `app.setAppUserModelId()` is set at module scope to the same string as `appId` in `electron-builder.yml` — Windows silently drops every notification from a process without one, and a mismatch between those two files is the version of this bug that looks like "notifications just don't work". `⌘` vs `Ctrl` was settled in Phase 4's `format.ts`, and the harness probe already carries a 20s timeout, so the antivirus item is mostly covered. Left for a Windows session:
+> **Done on a real Windows 10 box (19045, Node 24.19.0, npm 11.17.0).** Taking the list in order:
 >
-> - Long paths in `node_modules` — enable long paths, or keep the checkout shallow.
-> - Whether the generated `tray.ico` renders, and whether close-to-tray gets the window back.
-> - Whether `app.getLoginItemSettings().openAtLogin` round-trips: on Windows it writes a registry key rather than a login item, and it is the one Step 22 feature whose macOS verification proves nothing about the other platform.
-> - Whether a notification actually appears, which is what `setAppUserModelId` is for.
-> - The first CI run on `windows-latest`, which is where Phases 0–4's Windows debt all comes due at once.
+> - **Long paths.** Not needed, and now measured rather than assumed: `LongPathsEnabled` is `0` on this machine and the install worked anyway. The deepest path in `node_modules` is 148 characters against `MAX_PATH`'s 260, so a checkout root under ~110 characters has room. `C:\Users\noahp\Desktop\Cuesheet` is 31.
+> - **`tray.ico` and close-to-tray.** Verified functionally, which is stronger than looking at it: closing the window left the app alive with no window and the daemon still serving, and that handler returns early unless `tray !== null` — so the tray exists and the icon loaded. A second launch exited without spawning anything and restored the *original* window, which is also the way back. The icon does not appear in the visible notification area because Windows 10 hides new tray icons by default; it was not found in the overflow flyout either, and enumerating the tray through UI Automation does not work on this build. **Whether the glyph reads well at 16×16 is still an eyes-on check.**
+> - **`openAtLogin` round-trips.** `false → true → false`, read back through `app.getLoginItemSettings()` each time, and restored to its original value. This is the Step 22 feature whose macOS result proved nothing here, and it works.
+> - **Notifications could not be verified, for a reason outside the code.** `Notification.isSupported()` is true and `show()` raises nothing, but no toast appears — because `HKCU:\…\PushNotifications\ToastEnabled` is **`0` on this machine**, so Windows suppresses every app's toasts. Separately, an *unpackaged* Win32 app needs a Start Menu shortcut carrying a matching AppUserModelID before it can toast at all; the NSIS install creates one (`Cuesheet.lnk`). Re-enable notifications in Windows Settings and this can be checked in a minute; nothing in the code is known to be wrong.
+> - **CI.** It had never run, and it would have failed — see Step 27. Fixed, but still unrun on a runner.
+>
+> `app.setAppUserModelId()` is set at module scope to the same string as `appId` in `electron-builder.yml` — Windows silently drops every notification from a process without one, and a mismatch between those two files is the version of this bug that looks like "notifications just don't work". Nothing enforced that agreement, so `packages/desktop/src/app-id.test.ts` now does, in the spirit of `version.test.ts`.
 
 ---
 
@@ -495,7 +501,7 @@ Set aside a session for these; they are all one-line fixes that each cost an aft
 
 > 🟡 **Alpha**, shipping `v0.1.0-alpha` at **Milestone B**.
 
-### Step 25 — `electron-builder` ✅ (macOS proven; Windows unverified)
+### Step 25 — `electron-builder` ✅ (proven on both)
 Targets: `dmg` + `zip` (arm64 **and** x64) for macOS, `nsis` for Windows x64. Ensure the UI build output and the daemon's non-JS assets are in `files`; native modules, if you ever add one, need `asarUnpack`.
 
 **Done when:** `npm run build -w packages/desktop` produces an installer on each OS that launches from a path with a space in it (`/Applications`, `C:\Program Files`).
@@ -508,14 +514,20 @@ Don't let signing block Milestone B. Just don't pretend it isn't there.
 
 **Done when:** README install notes match what a stranger actually experiences.
 
-### Step 27 — CI matrix 🚧 (written; unproven until it runs)
+### Step 27 — CI matrix 🚧 (a real bug found and fixed; still unproven on a runner)
 GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck → test → build the app. Upload installers as artifacts on tags.
 
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
 
+> **Both workflows were red by construction, and neither would have reached a Windows-specific failure to begin with.** `Build` ran *last*, after `Typecheck`, `Lint`, `Format` and `Test` — but `npm ci` leaves no `dist`, and every one of those steps resolves `@cuesheet/*` through each package's `exports` field, which points at `dist`. Simulated by deleting every `dist` and running the steps in the committed order: typecheck fails with `Cannot find module '@cuesheet/core'`, lint degrades into a wall of `no-undef` as its type information collapses, and 15 of 30 test files fail to resolve. The plan's own margin note — *"Working on `core` or `harness`? Build before you test"* — is the same fact, and CI did not follow it. `Build` now runs first in both `ci.yml` and `release.yml`, and the whole sequence was re-run on Windows from a `dist`-free tree installed by `npm ci`: green, 455 tests. The first red run would have been on *both* runners, for a reason with nothing to do with Windows.
+>
 > **The macOS half is proven; nothing has run on a runner yet.** `npm run dist -w packages/desktop` produced `Cuesheet-0.1.0-alpha-arm64.dmg`, the x64 `.dmg`, and both `.zip`s. The arm64 dmg mounts, and the app inside it reports `CFBundleShortVersionString 0.1.0-alpha`, `io.github.npyrz.cuesheet`, and the generated `icon.icns`. Copied into a directory with a space in its name and launched, it boots its embedded daemon — `/health` answers `{"ok":true,"version":"0.1.0-alpha"}`, the version having travelled from `package.json` through `DAEMON_VERSION` to the wire — loads the Desk from `Contents/Resources/ui/index.html`, reports `daemon connected`, and quits leaving no process, no lockfile, and a free port.
 >
-> The `nsis` half cannot be built here (it needs Windows or wine), and neither workflow has ever run. Both are unproven until the first push.
+> **The `nsis` half is now real, built on Windows.** `npm run dist -w @cuesheet/desktop` produced `Cuesheet Setup 0.1.0-alpha.exe` (106.5 MB) plus its blockmap. The unpacked tree puts the Desk at `resources/ui/index.html` and the tray icon at `resources/assets/tray.ico` — the paths `ui-entry.ts` and `assetCandidates()` look for, which is the agreement Phase 6 said would only be caught by opening the package. `app.asar` is 1.46 MB and holds the two bundled files, as designed. The exe reports `ProductName Cuesheet`, `FileVersion 0.1.0-alpha`.
+>
+> **Installed and launched from a path with a space**, which is the done-when: a silent per-user install to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` exited `0`, created the Start Menu shortcut, and the installed `Cuesheet.exe` opened its window, served `{"ok":true,"version":"0.1.0-alpha"}` from its embedded daemon, rendered the Desk from the packaged resources, and quit from **File → Exit** leaving zero processes, a free port, and no `daemon.json`.
+>
+> Neither workflow has run on a runner. Both were also **wrong** until this session — see Step 27.
 
 ### Decisions Phase 6 settled
 
@@ -528,6 +540,18 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 - **CI skips the Electron binary download.** Nothing in the check matrix launches Electron — typecheck reads the `.d.ts` from the npm package and the build is esbuild — so the ~100 MB download is removed from the flakiest step of the Windows job. The release workflow, which packages a real app, keeps it.
 - **`npm run build -w packages/desktop` is the bundle, not the installer.** Step 25's text above assumes one script does both; splitting them keeps `npm run build` fast and offline. The installer is `npm run dist -w packages/desktop`, and `pack:dir` gives you an unpacked `.app` in seconds when you only need to check the layout.
 
+### Decisions the Windows pass settled
+
+Five things the machine found that 451 green tests on macOS could not. Three are bugs in the product or its build, and two of those were *passing* tests hiding a real defect.
+
+- **A fixed `setTimeout(…, 5)` is not a synchronisation primitive, and one of them was hiding a queue bug.** Two standby tests slept 5ms waiting for the executor to reach `ctx.ask`, which 29 parallel test files on Windows do not guarantee; they timed out. Converting them to poll made a *third* test fail deterministically — `shutdown` hanging forever — and that one was not a flake. `runOne` sets `active` (and so the controller `stop` and `shutdown` reach for) *before* the `running` write, then calls the executor after it. An abort landing in that window was silently dropped, and an executor that only registers an `abort` listener never saw the event it was waiting for. The shipped executors escape it because `spawn.ts` and `harness-executor.ts` both check `signal.aborted` first; the contract should not depend on every harness remembering to, so `runOne` now refuses to start work whose abort already landed. **On macOS the test passed because 5ms was too short** — shutdown ran before the run started, taking the queued path, and the case the test is named for was never exercised.
+- **A Windows `dir` symlink needs Developer Mode or elevation; a junction needs neither.** Three `observedStation` tests died on `EPERM`. The repo's own checklist says to probe and skip, but skipping would delete the assertion on the platform where drive letters and casing make it most interesting. `symlink(target, link, "junction")` needs no privilege and `realpath` resolves it identically, so the test keeps its meaning here.
+- **`money()` called a run that spent real money `local`.** Photographed, not deduced: a stopped `claude-code` run rendered `stopped local 39s`. The settled price arrives once, on the final result event, so a run killed before that end has tokens and no `usd` — the exact record an ollama run leaves. Phase 4 fixed this shape for tiles and the run row kept the identical call. `money()` now takes the run's status, and absent a normal ending renders `—`, because the price is *unknown* rather than *nothing*. `held` is deliberately not in that set: a Hold ends a run that ran.
+- **CI had never run and would not have survived its first minute** — on either OS. Recorded under Step 27.
+- **`ELECTRON_RUN_AS_NODE=1` is inherited from a VS Code terminal on Windows too**, and the plan only wrote down the macOS incantation. `env -u ELECTRON_RUN_AS_NODE` has no PowerShell equivalent; there it is `$env:ELECTRON_RUN_AS_NODE = $null` before launching. Without it `electron .` runs as plain Node and dies on `requestSingleInstanceLock` of `undefined` — a message that points at your code and is not about your code.
+
+**One thing that is not a bug, so nobody spends an afternoon on it:** `POST /runs/:id/stop` answers `415` to PowerShell's `Invoke-WebRequest -Method POST`, which attaches a form content-type to a body-less request that fastify has no parser for. The Desk sends `fetch(url, { method: "POST" })` with no body and no content-type, which is accepted, as is `curl -X POST`. It is a quirk of the client, not the route.
+
 > ### 🏁 Milestone B — the app ships · `v0.1.0-alpha`
 > *First public tag. Alpha, and labelled alpha.*
 >
@@ -535,11 +559,13 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 >
 > Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference. Unsigned, one harness, no gates. Say all three in the release notes.
 >
-> **Not reached.** The machinery is in place and the macOS installer is real, but three things stand between here and a published tag, and none of them is packaging:
+> **Closer than it was.** Both installers are real, and the app has now been installed and driven on Windows as well as macOS. Two things stand between here and a published tag:
 >
-> 1. **Step 24.** Steps 22 and 23 are done — tray, notifications, start-on-login, and a shutdown path whose force-quit half is covered by boot reconciliation. What remains is Windows itself: nothing in this repo has ever run there.
-> 2. **CI green on Windows.** Never once run. Phases 0–4's Windows debt all comes due in the same first red build.
+> 1. ~~**Step 24.**~~ Done. Nothing in this repo had ever run on Windows; all of it now has — `npm ci`, build, typecheck, lint, format, 455 tests, a real `claude-code` run at `$0.29`, a stop that took the process tree to zero, a `taskkill /F` crash that reconciled to `interrupted`, the NSIS installer, and the installed app launched from a path with a space.
+> 2. **CI green on Windows.** Still never run — but no longer merely unproven: both workflows were ordered so that every check ran before the build that makes the checks possible, and they would have failed on both runners. Fixed and re-run locally on Windows from an `npm ci` tree; the runner itself is the remaining unknown.
 > 3. **A human pressing publish** on the draft the tag produces.
+>
+> Two smaller things are worth knowing before the tag: the Windows tray glyph has still not been *looked* at, and notifications could not be observed because toasts are disabled system-wide on the test machine.
 
 ---
 
@@ -564,20 +590,22 @@ Not in this plan; each one has a seam already cut for it:
 
 Keep this next to you; every item is something that works on macOS and fails on Windows.
 
-- [ ] `.cmd` shims need `cross-spawn`, not `spawn`
-- [ ] Killing a child does not kill grandchildren on Windows — `taskkill /T /F`
-- [ ] Path separators: normalize to posix before any glob
-- [ ] Drive-letter case and `fs.realpath` before leash checks
-- [ ] Filenames are case-insensitive on Windows — glob matching needs `nocase` there, and only there
-- [ ] `symlink()` needs Developer Mode or elevation on Windows — probe and skip, don't fail
-- [ ] `EBUSY` on concurrent file writes — serialize appends
-- [ ] `\r\n` in stdout line parsers
-- [ ] `~` is not expanded by the OS on Windows
-- [ ] `MAX_PATH` 260-char limit
-- [ ] Tray icon format differs (`Template.png` vs `.ico`)
-- [ ] `setAppUserModelId` for notifications
-- [ ] `⌘` vs `Ctrl` in every UI hint
-- [ ] Paths with spaces in packaged builds
+Ticked means *exercised on a Windows machine*, not *handled in code*. The three left open are open for reasons worth reading.
+
+- [ ] `.cmd` shims need `cross-spawn`, not `spawn` — **unexercised.** The test machine's Claude Code is a native `claude.exe`, so `cross-spawn` never met a shim. Still unit-tested only; an npm-installed `claude` would cover it.
+- [x] Killing a child does not kill grandchildren on Windows — `taskkill /T /F`
+- [x] Path separators: normalize to posix before any glob
+- [x] Drive-letter case and `fs.realpath` before leash checks
+- [x] Filenames are case-insensitive on Windows — glob matching needs `nocase` there, and only there
+- [x] `symlink()` needs Developer Mode or elevation on Windows — probe and skip, don't fail — *or use a junction, which needs neither*
+- [x] `EBUSY` on concurrent file writes — serialize appends
+- [x] `\r\n` in stdout line parsers
+- [x] `~` is not expanded by the OS on Windows
+- [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
+- [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists); **nobody has looked at the glyph**
+- [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide
+- [x] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`
+- [x] Paths with spaces in packaged builds — installed to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` and launched
 
 ---
 

@@ -64,6 +64,25 @@ describe("money", () => {
     expect(money({ tokensIn: 0, tokensOut: 0 })).toBe("—");
   });
 
+  it('does not call a run that died mid-flight "local"', () => {
+    // Found on screen, not in a test: a real `claude-code` run stopped partway
+    // had tokens and no settled price — the same record an ollama run leaves —
+    // and the run row read `stopped local`, calling ~$0.15 of spend free. The
+    // price arrives once, at the end; a run with no end has no price, and that
+    // is not the same claim as costing nothing.
+    const partial = { tokensIn: 54_000, tokensOut: 190 };
+    expect(money(partial, "stopped")).toBe("—");
+    expect(money(partial, "interrupted")).toBe("—");
+    expect(money(partial, "failed")).toBe("—");
+  });
+
+  it('still says "local" for a run that finished without a price', () => {
+    // The ollama case has to survive the fix above: it ran to the end and the
+    // harness genuinely priced it at nothing.
+    expect(money({ tokensIn: 900, tokensOut: 120 }, "done")).toBe("local");
+    expect(money({ tokensIn: 900, tokensOut: 120 }, "held")).toBe("local");
+  });
+
   it("distinguishes a measured zero from an unpriced one", () => {
     expect(money({ tokensIn: 0, tokensOut: 0, usd: 0 })).toBe("$0.00");
   });
