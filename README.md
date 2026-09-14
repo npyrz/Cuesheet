@@ -14,7 +14,7 @@ A desktop app that turns Claude Code, Codex, Ollama and whatever comes next into
 
 ---
 
-> **Project status: alpha, and not yet installable.** The Desk runs, the daemon runs, and `claude-code` does real work through both — from a checkout, on macOS. There is no download yet, nothing is signed, there are no Gates, and Windows is written but unverified. This README is still the design spec and the contract: it describes what Cuesheet is being built to be, not what you can use today. [What actually works right now](#what-actually-works-right-now) is the honest list, and the [Roadmap](#roadmap) is the rest.
+> **Project status: alpha, and not yet downloadable.** The Desk runs, the daemon runs, and `claude-code` does real work through both — on macOS **and** Windows, from a checkout or from an installer you build yourself. Installers are real on both platforms, but nothing is signed and nothing has been published, so there is still no download link. Gates work, given a second harness from another vendor — which today means the built-in `mock`, since `codex` and `ollama` are not written yet. The Commons, the limits strip and the phone do not. This README is still the design spec and the contract: it describes what Cuesheet is being built to be, not what you can use today. [What actually works right now](#what-actually-works-right-now) is the honest list, and the [Roadmap](#roadmap) is the rest.
 
 ### What actually works right now
 
@@ -26,8 +26,8 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ✅ **The Desk** | React UI: Station tiles, live run log, `⌘K` palette, add-a-Station panel that writes your TOML for you. |
 | ✅ **`claude-code`** | Real runs: streamed output, a `diff.patch`, cost, and stop-means-stop on the whole process tree. |
 | ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar. Tray menu, native notifications, start-at-login, and a shutdown that never leaves a run stuck `running`. |
-| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, built by CI on a tag into a draft release. Unsigned. None published yet. |
-| 🚧 **Windows** | Written and unit-tested against an injected `win32` host. Not yet run on Windows. |
+| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, each built on its own platform and launched from a path with a space. Unsigned, and none published — the workflow that drafts them on a tag has not run on a runner yet. |
+| ✅ **Windows** | Run on a real Windows 10 box: install, build, the full test suite, a live `claude-code` run, a stop that takes the process tree to zero, a `taskkill /F` that reconciles to `interrupted`, the NSIS installer, and the installed app launched from a path with a space. Three things are still eyes-on: the tray glyph, a toast, and the `.cmd` shim path. |
 | ✅ **Gates** | A `{ gate = … }` cue runs a real second-opinion check: the reviewer gets the diff, its verdict is parsed, and a failed gate holds the run with the findings attached. Needs two harnesses from different vendors. |
 | 📋 **Not built yet** | The Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
 
