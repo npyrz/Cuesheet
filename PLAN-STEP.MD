@@ -56,15 +56,19 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS **and** Windows) |
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
-| — beyond this plan — | **M5 · Gates** | 🔵 beta | 🚧 Machinery done; `codex` harness outstanding |
-| — beyond this plan — | M2, M4 | 🔵 beta | ⬜ |
-| — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
+| **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
+| 8 · Commons | 31–35 | 🔵 beta | ⬜ **Next** |
+| 9 · Limits | 36–38 | 🔵 beta | ⬜ |
+| — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
+| — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
 ---
 
 ## Release stages
 
-Everything in *this* plan lands you at **alpha**. That is the honest ceiling: this document covers README milestones **M0** and **M1** only, and the features that make Cuesheet worth choosing over a terminal — gates, the Commons, the limits strip, the phone — are M2 through M5. A build without them works, but it is not yet the product the README describes.
+Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
+
+The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
 | Stage | Version | What it means | Who can use it |
 |---|---|---|---|
@@ -85,13 +89,13 @@ Everything in *this* plan lands you at **alpha**. That is the honest ceiling: th
 
 **Alpha → beta** — none of this is in this plan; each maps to a README milestone
 - [x] **M5 · Gates** — reviewer role, verdict parsing, gate evaluation, Holds. *The second opinion is the thesis; without it this is a nicer terminal.*
-  - [ ] **`codex` harness.** The one piece left, and it cannot be written honestly here: nobody has the CLI installed on this machine, and a harness whose stream mapping has never seen a real stream is a guess. Gates work today with any two harnesses of different vendors — verified with `mock` reviewing against `claude-code`.
+  - [x] **`codex` harness.** Written, once the blocker turned out to be an environment fact rather than a design one — the CLI was simply not installed. `brew install --cask codex`, an existing ChatGPT credential already in `~/.codex`, three captured streams, and the mapper was written against what arrived instead of what was remembered. See Phase 7.
 
 #### What Gates actually do now
 
 The machinery, end to end: `[gate.*]` is a live config table; a `{ gate = "…" }` cue executes between Stations; a Station with `role = "reviewer"` is handed the diff and the review format rather than the original brief; its reply becomes a `Verdict`; and `evaluateGate` decides. A failed gate raises a **standby** — which already notifies, already shows go/no in the Desk, and already reaches the phone in M3 — and a run the operator does not override lands `held`, with the reasons on the record and the findings attached.
 
-Verified against a real second opinion, not a fixture: `mock` wrote a file, `claude-code` (Anthropic) reviewed the actual diff, noticed the brief had not been performed, filed two blocking findings, and the gate held the run. Answering **no** landed it `held` at $0.30; the Desk rendered the hold, the verdict, and both findings.
+Verified first against `mock` writing and `claude-code` (Anthropic) reviewing — which proved the wiring but not the thesis, since one of the two vendors was a stub. **Phase 7 proved the thesis:** `claude-code` wrote a rate limiter, `codex` (OpenAI) reviewed the real diff and found unbounded memory growth the author had not, and the gate held the run at $0.56. Two real vendors, neither aware of the other.
 
 **Three decisions worth carrying forward:**
 
@@ -99,10 +103,10 @@ Verified against a real second opinion, not a fixture: `mock` wrote a file, `cla
 - **An unreadable review abstains, and an abstention cannot satisfy `require`.** A reviewer that crashed, rambled, or said "LGTM" has approved nothing. This is the single test that decides whether Gates are a safety feature or a decoration.
 - **`held` is terminal.** The standby happens *before* the run ends, so by the time a record reads `held` a human has already answered. Releasing a Hold is a new run, not a resumption — resuming would mean persisting executor state across process restarts, which is a much larger feature than it looks.
 
-**Known limitation:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons (M4) or per-cue diffs, and neither is in this increment.
-- [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.*
-- [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.*
-- [ ] `ollama` harness, so the local/worker story is real
+**Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 8's open questions rather than left here to be rediscovered.
+- [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 8**, and buildable at last: it needs two harnesses expecting two different context files, which is what Phase 7 delivered.
+- [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 9.**
+- [ ] `ollama` harness, so the local/worker story is real. Not blocked by anything but a missing install — which is what the `codex` blocker turned out to be too, so check before believing it
 - [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs)
 - [ ] Config migrations, and an upgrade that never discards run history
 - [ ] Code signing + notarization on macOS; signed installer on Windows
@@ -595,6 +599,172 @@ Five things the machine found that 451 green tests on macOS could not. Three are
 
 ---
 
+# Phase 7 · Gates, for real ✅
+
+> 🔵 **Beta track.** The first phase past alpha, and the first one whose absence made the README a claim rather than a description.
+
+Gates were built in an earlier increment and worked — against `mock` reviewing `claude-code`. That is a demonstration, not a feature. `distinct_vendors = 2` is an equality check over `vendor`, so a build shipping one real vendor cannot satisfy the README's own headline example, and nobody gates work they care about behind a fake reviewer.
+
+This phase closes that with the harness the plan had been deferring, and then proves the whole thing with money on the line.
+
+### Step 28 — The `codex` harness ✅
+
+Write `packages/harness/src/codex.ts` against **captured** streams, never from memory. Probe, usage, context files, connectors, run. Map the event stream onto `HarnessEvent`s. Register it in `defaultHarnesses()`.
+
+**Done when:** `codex` appears in `GET /stations`, a Station can be added to it from the Desk, and a run streams into a tile.
+
+### Step 29 — The reviewer seat ✅
+
+The daemon already assembles the review brief and parses the verdict, so the harness's job is narrower than it looks: stream the agent's text faithfully, and make `role = "reviewer"` mean something the subprocess cannot ignore.
+
+**Done when:** a `read-only` Codex Station returns a verdict `parseVerdict` reads, and cannot write to the workspace even if it tries.
+
+### Step 30 — The two-vendor run ✅
+
+One run, two vendors, a real gate, on a real repo. Anthropic writes, OpenAI reviews, and the gate decides.
+
+**Done when:** a run lands `held` with a blocking finding from a vendor that did not write the code — and the negative case holds too: an unreadable review abstains rather than approving.
+
+> **Done, and the blocker turned out not to be a design problem.**
+>
+> This harness sat unwritten behind one sentence: *"nobody has the CLI installed on this machine, and a harness whose stream mapping has never seen a real stream is a guess."* The second half of that was right and is the reason this file is trustworthy. The first half was a fact about a machine, recorded once and then believed for six weeks. It cost `brew install --cask codex` and ninety seconds to falsify — and `codex login status` then answered *"Logged in using ChatGPT"*, because the credential had been sitting in `~/.codex/auth.json` the whole time.
+>
+> **The lesson worth keeping is about the shape of the blocker, not about Codex.** A blocker that is a *design* problem stays blocked until someone thinks. A blocker that is an *environment* problem expires silently, and nothing in the document knows it has. The M5 checkbox above now says which kind it was; the ones still open should be read the same way. Two of the three "eyes-on" items in the README had gone stale exactly this way and were found in the same pass.
+>
+> Three streams were captured before a line of the mapper was written — an engineer run that applied a patch, a `read-only` review given Cuesheet's own `REVIEW_INSTRUCTIONS`, and a failure against a model the account cannot use. All three are fixtures now, so the mapper is tested on a machine with no Codex installed.
+>
+> **Five things the real streams settled, four of which a guess would have got wrong:**
+>
+> - **Codex's token fields are inclusive; Claude Code's are not.** `claude-code.ts` *sums* `input_tokens` with both cache fields, because that API reports them side by side. Codex nests them: `cached_input_tokens` is a subset of `input_tokens`, and `reasoning_output_tokens` a subset of `output_tokens`. Three captures agree (29952 of 34620, 82560 of 88658, 12928 of 17075), and the review run settles it arithmetically — 839 output minus 658 reasoning leaves 181, which is the size of the JSON verdict it printed. **Symmetry with the sibling harness would have double-billed every run**, in a ledger whose entire purpose is that nobody is surprised by an invoice.
+> - **An `error` *item* is a warning; only `turn.failed` is fatal.** The failing capture emits both. `{"type":"item.completed","item":{"type":"error","message":"Model metadata … not found"}}` arrived and *the run carried on and did the work*. Treating an error item as fatal — the obvious reading — would fail runs that succeed.
+> - **Codex reports no dollar figure at all.** Claude Code hands over `total_cost_usd`; Codex hands over tokens and nothing else. `Cost.usd` stays absent rather than being invented from a price table that goes stale the week a model is repriced. The Desk already renders a token-only cost, so this needed no change above the harness — but it means a two-vendor run's dollar total is the Anthropic half only, and M2 will have to say so.
+> - **`item.started` and `item.completed` carry identical payloads.** Without de-duplication every command and every patch renders twice in the run log. Keyed on item id, not on content, because two identical commands are a real thing an agent does.
+> - **The leash is weaker here than for `claude-code`, and the difference is structural.** Codex does most of its work through shell commands. A `file_change` item announces an `apply_patch` and those paths are checked — but the very first capture wrote a file with `printf %s hello > greet.txt` inside a `command_execution` and emitted no `file_change` at all. **A write inside a shell command is invisible to path observation.** Parsing paths out of arbitrary shell was considered and refused: it would work on `printf > x` and silently miss `tee`, `sed -i`, a heredoc, or `python -c`, and a leash that fails quietly is worse than one documented as partial. What holds the line instead is Codex's own `--sandbox`, set from the Station's role — `read-only` for a reviewer, `workspace-write` for an engineer, and `danger-full-access` unreachable. That is enforcement by the CLI rather than by us, the same bargain `claude-code.ts` strikes with `--permission-mode`.
+>
+> **One refactor the second harness forced.** `observedStation()` — which resolves a workspace through `realpath` so that observed paths and leash globs are compared like-for-like — lived inside `claude-code.ts`. Codex needed exactly the same correction, for exactly the same reason: both hand work to a subprocess that reports already-resolved absolute paths, and on macOS a workspace under `/tmp` sees every one of its own writes arrive as `/private/tmp/...`. It moved to `observe.ts`. A harness importing another harness is precisely the coupling this package is arranged to prevent, and the rule is worth stating: **the moment two harnesses need the same helper, it stops belonging to either of them.**
+
+#### What the two-vendor gate actually did
+
+Not a fixture. A real repo, both CLIs, both plans billed:
+
+```
+RUN  "Add rate limiting to the upload endpoint in upload.js."
+
+  opus   claude-code  anthropic  implement   ✓  +22 −1  upload.js
+  gpt    codex        openai     review      ✗  1 blocking finding
+         └─ security · the limiter permanently retains every caller IP,
+            allowing unbounded memory growth and eventual denial of service
+  gate   default      hold
+         └─ 1 blocking finding (security).
+         └─ 0 of 1 required approval (1 review recorded).
+
+  status  held        $0.5552     2m 51s
+```
+
+Claude Code wrote a fixed-window limiter keyed on `req.ip` — correct as far as the brief went. Codex, which had not seen the brief being written and does not share Anthropic's training, read the diff and found the thing the author did not: the `Map` grows forever, so the rate limiter is itself a memory exhaustion vector. That finding is the entire argument for Gates in one line. A second opinion from the same vendor would have been likelier to admire the same code.
+
+The run was then answered **no** at the standby and landed `held`, with the verdict, the finding and the reasons on the record.
+
+**And the negative case, which is the one that decides whether Gates are a safety feature or a decoration:** a reviewer whose reply contains no parseable verdict **abstains**, and an abstention cannot satisfy `require`. Both halves are tested against real Codex output — a run that talked but never rendered a verdict block, and a stream that died mid-turn. Neither reads as approval. A crashed reviewer waves nothing through.
+
+### Decisions this phase settled
+
+- **`vendor` is load-bearing, so the registry now asserts it.** A test fails if the default registry ever ships fewer than two distinct non-`mock` vendors. Someone copying a harness file and forgetting to change one string would otherwise weaken every Gate in every config, silently, with all tests green.
+- **A reviewer's sandbox comes from its role, not from its prompt.** The README says a reviewer "cannot write to the workspace". `--sandbox read-only` is what makes that true of the subprocess. `caller` gets the same treatment ahead of M6 — a Caller that could edit is not a Caller.
+- **`probe()` may answer the auth question honestly when the CLI is cheap about it.** `claude-code` reports `authed: true` optimistically, because Claude Code has no free auth query and a throwaway prompt would cost tokens on every poll of `/stations`. `codex login status` costs nothing, so this harness asks. Two harnesses answering the same field with different confidence is fine; pretending otherwise would mean making the good case worse.
+- **Another vendor's noise is not this run's output.** Codex logs `rmcp::transport` errors to stderr on every run when a configured MCP server is not listening — a fact about the operator's `~/.codex/config.toml`, not about the run. Filtered narrowly, on the module path rather than on the word `ERROR`, so a real failure still reaches the log.
+- **The CLI is now the thing blocking the README's own example.** `cuesheet run --engineer opus --review codex` is printed in the README and `packages/cli` is one line: `export {}`. Gates were the reason that snippet did not work; they are not any more.
+
+---
+
+# Phase 8 · The Commons
+
+> 🔵 **Beta track.** The durable layer the README spends its "Why this exists" section arguing for. Everything before this made Cuesheet a better way to *run* agents; this is the first thing that makes leaving it expensive.
+
+The pitch is one sentence: today Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, neither can read the other's, and every tool re-learns your codebase from zero, forever. Both of those files are now written by harnesses in this repo, which is what makes this phase buildable at all — `contextFiles` has been on the `Harness` interface since Step 13 waiting for it, and Phase 7 filled in the second entry.
+
+### Step 31 — The store
+
+`~/.cuesheet/commons/` as a git repo: markdown with frontmatter, one fact per file. Read, write, list, delete. Provenance on every entry — which Station, which Run, when.
+
+Plain files in a repo the operator owns, deliberately: the README promises "you can read it, grep it, diff it, and leave", and a database would make that a lie.
+
+**Done when:** a fact written through the API is a committed file on disk, and `git log` explains where it came from.
+
+### Step 32 — Projections
+
+Render the store into `CLAUDE.md` and `AGENTS.md` at the workspace root, from `contextFiles`. Regenerate on change. Never clobber a hand-written file — generated content goes between markers, and anything outside them survives.
+
+**Done when:** one fact written once is visible to both harnesses without either being told the other exists, and re-running the projection twice produces no diff.
+
+### Step 33 — The approval inbox
+
+Captured memories land in an inbox, not in the store. Approve, edit, or discard from the Desk.
+
+The README is blunt about why and the reasoning should not be softened during implementation: *"without a gate, agent-written memory drifts, duplicates, and quietly poisons every future session."* `approval = "auto"` exists in the config for people who want it; it is not the default.
+
+**Done when:** a run that writes a memory shows it as pending, and nothing reaches `CLAUDE.md` until a human says so.
+
+### Step 34 — MCP recall
+
+An MCP server exposing `memory_search` / `memory_write`, registered through `writeConnectors()` — inert in both harnesses today, for this.
+
+Why both static files *and* a server: files cost nothing and are always loaded, including by local models that will never reliably decide to call a tool; the server carries the long tail that would blow a context budget if pasted into every session.
+
+**Done when:** a Station recalls a fact that is *not* in its projected file, and a local model that never calls the tool still sees the projected ones.
+
+### Step 35 — Sync
+
+A git remote the operator controls. Push, pull, and a conflict that a human resolves rather than a merge strategy that silently picks.
+
+**Done when:** two checkouts of the same Commons converge, and a conflicting edit on both sides surfaces instead of vanishing.
+
+**Done when (phase):** a fact learned by `claude-code` on one machine is in `codex`'s context on another, with no vendor involved in moving it.
+
+### Open questions to settle in the work, not now
+
+- **What a "fact" is.** Too granular and the store becomes a junk drawer; too coarse and it is a second README nobody reads. The approval inbox is the pressure valve either way.
+- **Whether projection is per-workspace or global.** `contextFiles` already carries `scope: "project" | "user"`, so the seam exists — the question is what an operator expects when the same Station serves two repos.
+- **What Gates and the Commons owe each other.** Phase 7 left a known limitation: a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs this store or per-cue diffs. Worth deciding here rather than inheriting the ambiguity.
+
+---
+
+# Phase 9 · Limits
+
+> 🔵 **Beta track.** Not a polish item. Users hit caps in week one, and a gated two-model workflow burns roughly 3× a single session — which this phase is what makes visible *before* the invoice rather than after.
+
+`usage()` has been on the `Harness` interface since Step 13, returning `[]` from every harness. This phase is the wiring that milestone was shaped for.
+
+### Step 36 — Usage on the wire
+
+Move `UsageWindow` from `@cuesheet/harness` into `@cuesheet/core` — the type has a comment saying it moves when M2 puts it on the wire, and this is that. Poll, cache, serve.
+
+**Done when:** `GET /usage` answers with every harness's windows and never blocks on a hung CLI.
+
+### Step 37 — The strip, and the pre-run check
+
+Render every vendor's windows on one strip. `warn_at`, `block_at`. Refuse to *start* a run that cannot finish.
+
+The README's own framing is the acceptance criterion: every vendor meters differently and none of them tell you where you stand until you hit the wall, *"usually eleven minutes into something that mattered."*
+
+**Done when:** a Station near its cap is visibly near it, and a run that cannot finish is refused with a reason rather than dying halfway.
+
+### Step 38 — The ledger and fallback routing
+
+Tokens and dollars per Run, per Station, per vendor, per day. `when_capped` moves steps to another Station instead of stopping.
+
+**Done when:** the cost of the Phase 7 gate run is a row in a chart, and a capped Station routes to its fallback without the operator watching.
+
+### What Phase 7 already learned about this phase
+
+Two findings from writing the `codex` harness land squarely here, and they are the reason this phase is harder than "read a number and draw a bar":
+
+- **Claude Code reports plan limits, but only from *inside* a run** — as `rate_limit_event` lines, not as a queryable command. `mapRateLimit()` already turns one into a `UsageWindow`. It also reports a *status* rather than a fraction, so `used` is a floor (`allowed` → 0) and not a real percentage. **The strip will have to render "not yet blocked" honestly instead of drawing a convincing 0%.**
+- **Codex reports no plan window at all**, and no dollar figure either — its stream carries token counts and nothing else. So `usage()` returns `[]` truthfully, and a two-vendor run's dollar total is currently the Anthropic half only. Finding OpenAI's numbers is its own piece of work, and until then the honest strip has a blank row rather than a reassuring one.
+
+**Which means the first real decision of this phase is a presentation problem, not a parsing one:** what a limits strip shows when one vendor reports a status, another reports nothing, and a third is local and unlimited. Getting that wrong produces a strip that is worse than no strip, because it looks authoritative.
+---
+
 ## Deferred on purpose
 
 Not in this plan; each one has a seam already cut for it:
@@ -602,9 +772,9 @@ Not in this plan; each one has a seam already cut for it:
 | Deferred | Needed by | Seam that makes it additive |
 |---|---|---|
 | SQLite run store | 🔵 beta | `RunStore` interface (Step 10) |
-| `codex` / `ollama` harnesses | 🔵 beta | `Harness` interface (Step 13) |
+| ~~`codex`~~ / `ollama` harnesses | 🔵 beta | `Harness` interface (Step 13) — `codex` landed in Phase 7 through exactly this seam, with no change to the interface |
 | Limits strip, fallback routing | 🔵 beta | `usage()` already on the interface |
-| Gates, reviewer role, verdicts | 🔵 beta | Cues are already an ordered list; a gate is a cue kind |
+| ~~Gates, reviewer role, verdicts~~ | 🔵 beta | Done. Cues were already an ordered list; a gate was a cue kind |
 | Commons, MCP recall | 🔵 beta | `contextFiles` already on the interface |
 | Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) |
 | Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change |
@@ -629,7 +799,7 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 - [x] `~` is not expanded by the OS on Windows
 - [x] **A UTF-8 BOM makes `cuesheet.toml` unparseable** — found by writing a config the way Windows writes files, and fixed in `parseConfig`. See below; this one is not in the original list and should have been.
 - [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
-- [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists); **nobody has looked at the glyph**
+- [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists). The glyph **has** now been looked at, by decoding the file and rendering it at 8× (see Step 24): it is sound from 24px up and muddy at 16, where the fader tracks collapse into grey. What is left is a design decision about 16px proportions, not an observation — kept unticked because the decision is unmade
 - [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide
 - [x] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`
 - [x] Paths with spaces in packaged builds — installed to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` and launched
@@ -639,3 +809,5 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 ## Suggested order of attack
 
 If you want the shortest path to something you can play with, do **Steps 1, 4, 5, 8, 9, 10, 11, 13, 14, 17, 18, 19** first. That's a daemon streaming a fake run into a real Desk in a browser — the whole shape of the app, with no models and no Electron. Everything after that is making it real.
+
+**Past alpha the order is Phase 7, then 8, then 9,** and it is not the README's numbering. That table counts features for a reader deciding whether to care; this one is ordered by how much each unbuilt thing changes what the product *is*. Gates came first because a second opinion is the thesis. The Commons comes next because it is the only part that makes leaving expensive. Limits come last of the three, not because caps do not hurt — they hurt in week one — but because a limits strip built on one vendor that reports a status and another that reports nothing would be a strip you cannot trust, and Phase 8 does not make that worse while Phase 9 has to solve it.

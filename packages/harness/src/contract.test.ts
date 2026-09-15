@@ -174,7 +174,25 @@ describe("the registry", () => {
     expect(probe.error).toMatch(/No harness named "nope"/);
   });
 
-  it("ships mock and claude-code", () => {
-    expect(defaultHarnessRegistry().ids()).toEqual(["mock", "claude-code"]);
+  it("ships mock, claude-code and codex", () => {
+    expect(defaultHarnessRegistry().ids()).toEqual([
+      "mock",
+      "claude-code",
+      "codex",
+    ]);
+  });
+
+  it("ships two real harnesses from different vendors", () => {
+    // Not bookkeeping. `distinct_vendors = 2` is an equality check over
+    // `vendor`, so a stock build with one real vendor cannot satisfy the
+    // README's own headline Gate. This is the assertion that fails if someone
+    // unregisters `codex` or copies a vendor string between harnesses.
+    const vendors = new Set(
+      defaultHarnessRegistry()
+        .list()
+        .filter((h) => h.id !== "mock")
+        .map((h) => h.vendor),
+    );
+    expect(vendors.size).toBeGreaterThanOrEqual(2);
   });
 });

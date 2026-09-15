@@ -75,7 +75,24 @@ export {
 } from "./claude-code.js";
 export type { ClaudeCodeOptions, StreamState } from "./claude-code.js";
 
+export {
+  createCodexHarness,
+  codexHarness,
+  buildArgs as buildCodexArgs,
+  parseVersion as parseCodexVersion,
+  mapCodexEvent,
+  createCodexState,
+  sandboxFor,
+  isTransportNoise,
+  unwrap,
+  CODEX_BIN,
+} from "./codex.js";
+export type { CodexOptions, CodexState } from "./codex.js";
+
+export { observedStation } from "./observe.js";
+
 import { claudeCodeHarness } from "./claude-code.js";
+import { codexHarness } from "./codex.js";
 import { mockHarness } from "./mock.js";
 import { createHarnessRegistry, type HarnessRegistry } from "./registry.js";
 import type { Harness } from "./types.js";
@@ -87,9 +104,15 @@ import type { Harness } from "./types.js";
  * how someone with no agent CLI installed can still open the app, add a
  * Station, and watch the Desk work. A first run that shows nothing because
  * nothing is installed is a worse introduction than a fake one that moves.
+ *
+ * `claude-code` and `codex` are both here because a Gate's `distinct_vendors`
+ * is an equality check over `vendor`. Shipping one real harness made Gates
+ * demonstrable but not usable; shipping two from different vendors is what
+ * makes the README's own example satisfiable without the operator installing
+ * anything beyond the CLIs they already have.
  */
 export function defaultHarnesses(): Harness[] {
-  return [mockHarness, claudeCodeHarness];
+  return [mockHarness, claudeCodeHarness, codexHarness];
 }
 
 export function defaultHarnessRegistry(): HarnessRegistry {
