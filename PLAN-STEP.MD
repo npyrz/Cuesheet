@@ -55,7 +55,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS **and** Windows) |
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS **and** Windows) |
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
-| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Installers real on both · CI corrected but never run on a runner |
+| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Installers real on both · **CI green on both runners** · the tag is the last step |
 | — beyond this plan — | **M5 · Gates** | 🔵 beta | 🚧 Machinery done; `codex` harness outstanding |
 | — beyond this plan — | M2, M4 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
@@ -79,7 +79,8 @@ Everything in *this* plan lands you at **alpha**. That is the honest ceiling: th
 - [x] Milestone A and B both true on macOS **and** Windows
 - [x] A stranger with Claude Code installed can open the app and complete a run without editing TOML
 - [x] Crash mid-run leaves a readable run record, never a corrupt one — verified on Windows by `taskkill /F` mid-run
-- [ ] CI green on both OSes; installers uploaded on tag — *the workflows were red by construction and are now fixed, but nothing has run on a runner*
+- [x] CI green on both OSes — `macos-latest` in 38s and `windows-latest` in 1m, on `main`, after the ordering fix and the timing-flake pass
+- [ ] Installers uploaded on tag — *unproven: `release.yml` has never run, so the `nsis` and `dmg` builds have only ever happened on local machines*
 - [x] Install caveats (quarantine, SmartScreen) documented, not hidden — in the README and repeated in every release's own notes
 
 **Alpha → beta** — none of this is in this plan; each maps to a README milestone
@@ -514,14 +515,14 @@ Don't let signing block Milestone B. Just don't pretend it isn't there.
 
 **Done when:** README install notes match what a stranger actually experiences.
 
-### Step 27 — CI matrix 🚧 (it has run; two ordering bugs and three flakes fixed)
+### Step 27 — CI matrix ✅ (green on both runners)
 GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck → test → build the app. Upload installers as artifacts on tags.
 
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
 
 > **Both workflows were red by construction, and neither would have reached a Windows-specific failure to begin with.** `Build` ran *last*, after `Typecheck`, `Lint`, `Format` and `Test` — but `npm ci` leaves no `dist`, and every one of those steps resolves `@cuesheet/*` through each package's `exports` field, which points at `dist`. Simulated by deleting every `dist` and running the steps in the committed order: typecheck fails with `Cannot find module '@cuesheet/core'`, lint degrades into a wall of `no-undef` as its type information collapses, and 15 of 30 test files fail to resolve. The plan's own margin note — *"Working on `core` or `harness`? Build before you test"* — is the same fact, and CI did not follow it. `Build` now runs first in both `ci.yml` and `release.yml`, and the whole sequence was re-run on Windows from a `dist`-free tree installed by `npm ci`: green, 455 tests. The first red run would have been on *both* runners, for a reason with nothing to do with Windows.
 >
-> **And neither *could* have run: the workflows are not on the default branch.** `git ls-tree -r origin/main -- .github/` is empty — both files live only on `alpha`. So `push: branches: [main]` has never had a chance to fire, and `workflow_dispatch` is not merely unused but **unavailable**: GitHub only offers manual dispatch for a workflow present on the default branch, so `gh workflow run ci.yml --ref alpha` cannot find it. `pull_request` is the one trigger that works from here, because a PR runs the workflow from its *head* branch. A PR `alpha → main` is therefore both the first CI run and the merge that makes every later trigger exist. Tagging first is the wrong order: `release.yml` would package a build no runner has ever checked.
+> **And neither *could* have run at the time: the workflows were not on the default branch.** `git ls-tree -r origin/main -- .github/` was empty — both files lived only on `alpha`. So `push: branches: [main]` never had a chance to fire, and `workflow_dispatch` was not merely unused but **unavailable**: GitHub only offers manual dispatch for a workflow present on the default branch. `pull_request` was the one trigger that worked, because a PR runs the workflow from its *head* branch. **PR #2 (`alpha → main`) was therefore both the first CI run and the merge that made every later trigger exist** — and it is why the ordering bug above could not have been found any earlier than it was.
 >
 > **The Node version CI pins had never been run either.** Both workflows pin `node-version: 22`; the Windows box ran 24.19.0 and the Mac runs 25.2.1, so the pinned version was the likeliest source of a first red run that reads like a mystery rather than a finding. Reproduced exactly — fresh clone of `alpha`, Node 22.23.2, `npm ci`, then Build → Typecheck → Lint → Format → Test in the committed order — and it is green: 30 files, 460 passed, 1 skipped. A red Windows runner now means something Windows-specific. `ELECTRON_SKIP_BINARY_DOWNLOAD` was checked for the same reason and is safe: no test under `packages/desktop/src` imports `electron` at all — `app-id.test.ts` reads `main.ts` and `electron-builder.yml` as *text* and matches them with a regex.
 >
@@ -531,7 +532,7 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 > - `harness-executor.test.ts > produces a full run record in under a second` asserted a **wall-clock budget**. Step 14's "under a second" is a real design constraint, but as an assertion it measures the scheduler: ~600ms idle, over 1000ms with 30 files in parallel. What it is actually guarding — a real model or a network call sneaking into the mock path — costs seconds, so the bound is now 10s and still catches that.
 > - `replays a mid-run backlog` was not flaky but was *silently weakening*: a 30ms sleep decided whether the client attached before or after the event was emitted, and attaching early takes the live path and stops covering replay at all, while staying green. It now waits on the emit itself.
 >
-> The suite then ran five consecutive times clean on Windows. **The lesson is the one the first two flakes already taught: a fixed `setTimeout` is not a synchronisation primitive.** The whole suite was swept for the pattern afterwards — every other `setTimeout` in a test is either a poll interval inside a retry loop or an executor simulating work, and there is exactly one remaining wall-clock assertion, the loosened one above.
+> The suite then ran five consecutive times clean on Windows, and **`main` went green on both runners** — `macos-latest` 38s, `windows-latest` 1m. **The lesson is the one the first two flakes already taught: a fixed `setTimeout` is not a synchronisation primitive.** The whole suite was swept for the pattern afterwards — every other `setTimeout` in a test is either a poll interval inside a retry loop or an executor simulating work, and there is exactly one remaining wall-clock assertion, the loosened one above.
 >
 > **The done-when is already met, by something stronger than an OS-gated test.** "A PR fails CI when a Windows-only path bug is introduced" is exactly what `paths.test.ts` and `leash.test.ts` do with an injected `win32` `HostEnv`: they assert `C:\Users\noah\.cuesheet`, drive-letter casing, and the Windows-only `nocase` deny **from macOS**. A Windows-only path regression therefore goes red on *both* runners rather than only the one that can reproduce it. No new test is needed.
 >
@@ -573,11 +574,12 @@ Five things the machine found that 451 green tests on macOS could not. Three are
 >
 > Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference. Unsigned, one harness, no gates. Say all three in the release notes.
 >
-> **Closer than it was.** Both installers are real, and the app has now been installed and driven on Windows as well as macOS. Two things stand between here and a published tag:
+> **One step left.** Both installers are real, the app has been installed and driven on Windows as well as macOS, and CI is green on both runners. What remains is the tag itself:
 >
 > 1. ~~**Step 24.**~~ Done. Nothing in this repo had ever run on Windows; all of it now has — `npm ci`, build, typecheck, lint, format, 455 tests, a real `claude-code` run at `$0.29`, a stop that took the process tree to zero, a `taskkill /F` crash that reconciled to `interrupted`, the NSIS installer, and the installed app launched from a path with a space.
-> 2. **CI green on Windows.** Still never run — but no longer merely unproven: both workflows were ordered so that every check ran before the build that makes the checks possible, and they would have failed on both runners. Fixed and re-run locally on Windows from an `npm ci` tree, and again on macOS under CI's pinned Node 22. The remaining unknown is the runner — and the blocker is the *trigger*, not the workflow: neither file is on `main`, so a PR `alpha → main` is the only thing that can fire them.
-> 3. **A human pressing publish** on the draft the tag produces.
+> 2. ~~**CI green on Windows.**~~ Done. The workflows reached `main` with PR #2, which is what made any trigger fire at all; the first runs were red on the ordering bug, then on three timing flakes, and `main` is now green on both — `macos-latest` 38s, `windows-latest` 1m. Every Windows-specific decision in this repo has now been executed by a machine that is not the author's.
+> 3. **`release.yml` has still never run.** This is the last unproven path, and it is not the same path CI exercises: packaging downloads the Electron binaries, runs `electron-builder`, and on Windows builds the `nsis` target — which has only ever happened on a local box, with `signtool` present. `workflow_dispatch` builds and uploads the artifacts **without** creating a release, so the packaging path can be proven before anything is tagged. Doing that first is cheap; a failed tag build means deleting a tag and re-tagging.
+> 4. **A human pressing publish** on the draft the tag produces.
 >
 > Two smaller things are worth knowing before the tag: the Windows tray glyph has still not been *looked* at, and notifications could not be observed because toasts are disabled system-wide on the test machine.
 

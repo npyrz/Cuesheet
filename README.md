@@ -215,7 +215,7 @@ Twelve words and you know the system.
 
 ### Install
 
-> **Alpha: nothing is published yet.** The installers build — `dmg` and `zip` for Apple Silicon and Intel, an `nsis` installer for Windows — and a tagged build drafts a GitHub Release, but no release has been published, and the app still needs its tray and clean-shutdown work first. Until then, run it from a checkout:
+> **Alpha: nothing is published yet.** The installers build — `dmg` and `zip` for Apple Silicon and Intel, an `nsis` installer for Windows — CI is green on macOS and Windows, and a tagged build drafts a GitHub Release. No release has been published yet. Until one is, run it from a checkout:
 
 ```bash
 git clone <this repo> && cd cuesheet
