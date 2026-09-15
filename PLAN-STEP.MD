@@ -57,10 +57,16 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
-| 8 · Commons | 31–35 | 🔵 beta | ⬜ **Next** |
-| 9 · Limits | 36–38 | 🔵 beta | ⬜ |
+| **8 · Projects** | 31–34 | 🔵 beta | ⬜ **Next** |
+| 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ⬜ |
+| 10 · Limits | 37–39 | 🔵 beta | ⬜ |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
+| 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
+
+**Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
 ---
 
@@ -69,6 +75,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
+
+**Phases 8–13 changed that order, and the reason is worth stating rather than absorbing.** The previous revision put the Commons next, on the argument that it is the only part that makes leaving expensive. That argument is still true and it is still the strongest single reason to build this. What overtook it is a dependency: the Commons' own first open question was *whether projection is per-workspace or global*, and Cuesheet has no concept of a project at all — one `cwd`, one config, one run store, and a packaged app that resolves its config path from wherever the OS launched it. You cannot answer a scoping question in a product with no scopes. **Projects therefore come first, and three other things follow from them:** the Desk needs a level above the run before it is worth redrawing, the limits strip is something an operator reads *per project*, and `ollama` is worth having before the strip so that its hardest row — a station that cannot run out — is real rather than imagined. The Commons is then built into a product that can say where a fact belongs.
 
 | Stage | Version | What it means | Who can use it |
 |---|---|---|---|
@@ -103,14 +111,18 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - **An unreadable review abstains, and an abstention cannot satisfy `require`.** A reviewer that crashed, rambled, or said "LGTM" has approved nothing. This is the single test that decides whether Gates are a safety feature or a decoration.
 - **`held` is terminal.** The standby happens *before* the run ends, so by the time a record reads `held` a human has already answered. Releasing a Hold is a new run, not a resumption — resuming would mean persisting executor state across process restarts, which is a much larger feature than it looks.
 
-**Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 8's open questions rather than left here to be rediscovered.
-- [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 8**, and buildable at last: it needs two harnesses expecting two different context files, which is what Phase 7 delivered.
-- [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 9.**
-- [ ] `ollama` harness, so the local/worker story is real. Not blocked by anything but a missing install — which is what the `codex` blocker turned out to be too, so check before believing it
-- [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs)
-- [ ] Config migrations, and an upgrade that never discards run history
-- [ ] Code signing + notarization on macOS; signed installer on Windows
-- [ ] Crash and error reporting you can actually act on — local only, no telemetry
+**Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
+- [ ] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Now Phase 8**, and everything below waits on it
+- [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 12** — moved behind Projects because its own scoping question is unanswerable until a project is a thing, which is a dependency rather than a demotion
+- [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 10.**
+- [ ] `ollama` harness, so the local/worker story is real. **Now Phase 9** — and this line used to say it was blocked by nothing but a missing install, which was wrong. Ollama is a completion endpoint, not an agent loop; the `worker`-only reading the README already specifies is what makes it small
+- [ ] **The Desk rebuilt** around all of the above — **now Phase 11.** The current one was built to prove a daemon could stream a run into a browser, and has no level above the run
+- [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **now Step 52**
+- [ ] Config migrations, and an upgrade that never discards run history — **now Steps 33 and 53**
+- [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
+- [ ] Crash and error reporting you can actually act on — local only, no telemetry — **now Step 56**
+- [ ] A `cuesheet` CLI that does what the README already prints — **now Step 51**
+- [ ] The files the README links to and the repository does not contain — **now Step 55**
 
 **Beta → 1.0**
 - [ ] **M3 · Pocket** — QR pairing, tailnet serving, mobile standby. *The README leads with it; 1.0 can't ship without it.*
@@ -677,13 +689,193 @@ The run was then answered **no** at the standby and landed `held`, with the verd
 
 ---
 
-# Phase 8 · The Commons
+# Phase 8 · Projects
+
+> 🔵 **Beta track.** The phase that turns a tool you point at a directory into an app you open. Everything the Desk rebuild needs sits on top of it, which is why it goes first.
+
+Cuesheet today has no idea what a project is. `startDaemon` takes one `cwd`, `loadConfig` walks exactly two candidates — `<cwd>/cuesheet.toml`, then `~/.cuesheet/cuesheet.toml` — and `createFileRunStore` has one root. A Station carries a `workspace`, so a single config *can* address several repos, but there is one config, one run history and one queue across all of them, and nothing anywhere records that you were working on something yesterday.
+
+The packaged app makes this sharper than a checkout does. `main.ts` calls `startDaemon({ ...harnessRuntime() })` with no `cwd` and never calls `process.chdir`, so a double-clicked `.app` resolves `process.cwd()` to whatever the OS hands it — on macOS from Finder, `/`. The first candidate path can therefore never match, and the app falls through to the global `~/.cuesheet/cuesheet.toml` every single time, silently. That is not a bug to patch. It is the absence of this feature, showing.
+
+**The decision this phase forces, and it belongs at the top rather than in the work: one daemon serving many projects, not one daemon per project.** The port is fixed by design — `findRunningDaemon` and the lockfile exist so that every client, including a second window and later the phone, finds *the* daemon. A daemon per project multiplies ports, lockfiles and trays, and breaks the one contract the architecture is arranged around. So project scope moves onto the routes and into the store, never into the process.
+
+### Step 31 — A project is a thing
+
+`Project` in `@cuesheet/core`: an id, a display name, a root directory, its config. A registry of them at `~/.cuesheet/projects.json` — the first persistent state Cuesheet owns that is neither config nor a run record, which is why it needs its own home and its own answer to "what happens when the folder is gone."
+
+Config becomes per-project. `loadConfig`'s two-candidate search stops being the mechanism and becomes the migration *source*.
+
+**Done when:** a project opened once is in the registry with its last-opened time and survives a daemon restart, and a project whose folder has been deleted or renamed lists as missing rather than crashing the picker.
+
+### Step 32 — The daemon serves more than one
+
+Project-scoped routes. `/runs` and `/stations` are implicitly global today; they become `/projects`, `/projects/:id/stations`, `/projects/:id/runs`. One run-store root per project, or one root keyed by project — decided in the work, on whether `store.list(limit)` can stay O(recent) either way.
+
+Three places bake in single-project scope and all three are in this step: the single `loaded = await loadConfig(cwd, env)` and its `reload` closure, the single `createFileRunStore({ env })`, and `reconcileInterruptedRuns({ store })` at boot, which today repairs one store and would need to repair every project's.
+
+**Done when:** two projects are open at once, a run started in one never appears in the other's list, and `GET /projects` answers before any project has been opened.
+
+### Step 33 — The upgrade that loses nothing
+
+The beta bar already promises "no data loss, ever" and config migrations. This is the first migration that has to keep that promise rather than state it: an existing install has one `~/.cuesheet/cuesheet.toml` and one `~/.cuesheet/runs` of history, written by a version that had never heard of projects.
+
+**Done when:** an alpha install opens on the new build, its config is project #1 with its Stations intact, and every run record it already had is still readable and still attributed — verified by upgrading a real alpha profile, not a fixture.
+
+### Step 34 — Open, and switch
+
+The launch behaviour the app has never had: reopen the project you were last in, pick one from recents, or choose a folder. Switching is a client action over a daemon that already holds both.
+
+The queue is per-daemon and runs are long, so the constraint worth writing down before anyone builds it: **a switch is not a stop.**
+
+**Done when:** switching projects while a run is streaming neither cancels it nor orphans it — switch away, switch back, and the run is still streaming into its tile with no gap in the log.
+
+### Open questions to settle in the work, not now
+
+- **Where a project's config lives.** In the repo (`<root>/cuesheet.toml` — shareable, commits with the code, and the thing a team would want) or under `~/.cuesheet/projects/<id>/` (private, survives a clone, asks nobody to gitignore anything). Both have a real argument and the answer may be "either, and the repo wins when present."
+- **What a project *is*, exactly.** A folder, or a folder plus Stations that may point outside it? Leashes are per-Station and already allow a workspace anywhere, so the two can legitimately diverge and the UI has to show which one it is describing.
+
+---
+
+# Phase 9 · Local models — `ollama`
+
+> 🔵 **Beta track.** Small, and deliberately placed before Limits: it is what makes Phase 10's hardest case real instead of hypothetical.
+
+### The Deferred table was wrong about this one, and the correction is most of the phase
+
+It read: *"Not blocked by anything but a missing install — which is what the `codex` blocker turned out to be too, so check before believing it."* The check was worth making, and the answer is no.
+
+`claude-code` and `codex` are agent loops: they plan, run shell commands, apply patches, and emit a structured event stream to map. **Ollama is a completion endpoint.** No loop, no patch application, no event taxonomy, and no `--sandbox` to hand a role to. Sizing it like the `codex` install would have been Phase 7's error run backwards — the lesson there was *check which kind of blocker this is*, not *assume every blocker is environmental*.
+
+So the honest small version is the one the README already specifies, and this phase adopts it rather than inventing one: **`ollama` is `worker`-only.** The supported-harnesses table already reads `local / worker / 📋 Planned`, and the roles table already says a `worker` "cannot review; cannot write code."
+
+**That is a feature rather than a shortfall.** A harness that never writes to a workspace has no partial-leash story to document, because it has no write path at all — the thing that made `codex`'s leash structurally weaker than `claude-code`'s does not arise. And the README's own argument for the role is a safety argument: *"a small local model is not a reviewer. A 7–30B model reviewing a frontier model's output approves nearly everything, which is worse than no review because it manufactures confidence."* Shipping with `roles: ["worker"]` makes that structural instead of advisory.
+
+### Step 35 — The harness
+
+`packages/harness/src/ollama.ts`. `vendor: "ollama"`, `roles: ["worker"]`, `contextFiles: []` — Ollama keeps no context file of its own, which is precisely the hole Phase 12 exists to fill, and the README already names it: *"Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, Ollama keeps nothing."*
+
+Two things make this the first harness of its shape, and both are interface questions rather than implementation ones:
+
+- **`probe()` asks whether a server is reachable, not whether a binary is on `PATH`.** Every existing probe shells out to a CLI. This one makes an HTTP request to `http://127.0.0.1:11434`, and has to distinguish *installed but not running* from *not installed* — a state no other harness can be in.
+- **The model list is dynamic.** `/api/tags` returns what is actually pulled on the machine. Every other harness takes its model from static config, so this is the first where the Desk can offer a real list, and the first whose list can go stale between one probe and the next.
+
+Written against a **captured** stream like the other two: `/api/chat` with `"stream": true` emits NDJSON, and the rule from Phase 7 holds without exception.
+
+**Done when:** with Ollama running, the harness appears in `/stations` with the models actually pulled on that machine; with Ollama stopped, it reports not-running without failing the request or hanging it.
+
+### Step 36 — The worker seat means something
+
+A `worker` cue: classify, summarize, write a commit message, dedupe a memory. No workspace writes. And the warning the README promises out loud — a `worker`-class harness dropped into a `reviewer` seat is a config error the daemon names at `GET /stations`, not a surprise three steps into a run.
+
+**Done when:** that config produces a warning rather than a plausible-looking approval, and a `worker` cue completes having touched zero files.
+
+---
+
+# Phase 10 · Limits
+
+> 🔵 **Beta track.** Not a polish item. Users hit caps in week one, and a gated two-model workflow burns roughly 3× a single session — which this phase is what makes visible *before* the invoice rather than after.
+
+`usage()` has been on the `Harness` interface since Step 13, returning `[]` from every harness. This phase is the wiring that milestone was shaped for, and Phase 8 gives it the surface the user actually asked for: limits shown per project, next to the roles that are spending them.
+
+### Step 37 — Usage on the wire
+
+Move `UsageWindow` from `@cuesheet/harness` into `@cuesheet/core` — the type carries a comment saying it moves when M2 puts it on the wire, and this is that. Poll, cache, serve.
+
+The type needs one addition before anything renders it, and Phase 9 is what forces it: a window must be able to say **unmetered** as distinct from **unknown**. A local model has no cap; Codex reports nothing. Collapsing those two into a blank cell tells the operator the same thing about a station that cannot run out and a station that might already have.
+
+**Done when:** `GET /usage` answers with every harness's windows, never blocks on a hung CLI, and distinguishes measured, not-yet-blocked, unmetered and unknown as four different answers.
+
+### Step 38 — The strip, and the pre-run check
+
+Render every vendor's windows on one strip. `warn_at`, `block_at`. Refuse to *start* a run that cannot finish.
+
+The README's own framing is the acceptance criterion: every vendor meters differently and none of them tell you where you stand until you hit the wall, *"usually eleven minutes into something that mattered."*
+
+**Done when:** a Station near its cap is visibly near it, and a run that cannot finish is refused with a reason rather than dying halfway.
+
+### Step 39 — The ledger and fallback routing
+
+Tokens and dollars per Run, per Station, per vendor, per day. `when_capped` moves steps to another Station instead of stopping.
+
+**Done when:** the cost of the Phase 7 gate run is a row in a chart, and a capped Station routes to its fallback without the operator watching.
+
+### What the earlier phases already learned about this one
+
+Three findings land squarely here, and together they are why this is harder than "read a number and draw a bar":
+
+- **Claude Code reports plan limits, but only from *inside* a run** — as `rate_limit_event` lines, not as a queryable command. `mapRateLimit()` already turns one into a `UsageWindow`. It also reports a *status* rather than a fraction, so `used` is a floor (`allowed` → 0) and not a real percentage. **The strip will have to render "not yet blocked" honestly instead of drawing a convincing 0%.**
+- **Codex reports no plan window at all**, and no dollar figure either — its stream carries token counts and nothing else. So `usage()` returns `[]` truthfully, and a two-vendor run's dollar total is currently the Anthropic half only. Finding OpenAI's numbers is its own piece of work; until then the honest strip has a blank row rather than a reassuring one.
+- **Ollama is unmetered and free**, which sounds like the easy row and is the one that breaks a naive design: a bar chart of "usage" cannot draw it at all, and a percentage would be a lie in the opposite direction from Codex's.
+
+**Which means the first real decision of this phase is a presentation problem, not a parsing one:** what a limits strip shows when one vendor reports a status, another reports nothing, and a third cannot run out. Getting that wrong produces a strip that is worse than no strip, because it looks authoritative.
+
+---
+
+# Phase 11 · The Desk, rebuilt
+
+> 🔵 **Beta track.** The current Desk was built in Phase 4 to prove a daemon could stream a run into a browser. It did that. It was never designed to be opened every day.
+
+The honest case for a rebuild rather than an extension is structural, not aesthetic: **the current UI has no level above the run.** `App.tsx` reads one `state.stations` payload and renders one grid; there is no project, no switcher, no place for a limits strip that belongs to a vendor rather than a tile, and no first-run state other than an empty grid and a palette hint. Every one of those is a top-level shape, and retrofitting four of them into a component that was written as a single screen produces something worse than either.
+
+**What survives, because it is tested logic and not layout:** the reducer and its tests, `format.ts`, the WebSocket client and reconnect handling, the command palette's chord matching, and the add-a-Station flow's TOML writing. This is a re-shell, not a rewrite of the client. `App.tsx` was written with a comment saying that anything here which starts deciding things belongs in the reducer or in `format.ts`; that discipline is what makes this affordable.
+
+### Step 40 — The launch surface
+
+What the app opens on when no project is active: recents, with last-opened and a live "is this folder still there" state, plus **Open a folder…** — which already exists as `window.cuesheet.chooseDirectory()`, built in Phase 5 for the add-a-Station panel and reusable here as-is.
+
+**Done when:** a first-ever launch and a launch with six known projects both look deliberate, and a folder that has been moved says so rather than failing on open.
+
+### Step 41 — The project shell and the switcher
+
+The frame every other surface lives in. Switching is one action, keyboard-reachable, and the constraint from Step 34 is the acceptance test rather than an aspiration.
+
+**Done when:** switching is possible from anywhere including mid-run, the window title and tray reflect the active project, and a second project's runs are never visible from the first.
+
+### Step 42 — The project view
+
+The screen the request describes: for this project, its Stations — which harness, which model, which role — and its usage, on the same screen. Roles are the interesting part, because the README's claim is that they are enforced rather than requested, and the UI has never shown that. A `reviewer` that cannot write and a `worker` that cannot review should be legible as *constraints*, not as labels.
+
+Depends on Phase 10 for the usage half and Phase 9 for the local row; built after both so it renders data rather than placeholders.
+
+**Done when:** a project's whole posture — who is on it, what each one is allowed to do, what it has spent, how close it is to a cap — is one screen with nothing on it that says "coming soon."
+
+### Step 43 — The run surface
+
+The live run, rebuilt on what three real harnesses actually emit rather than on what `mock` emitted in Phase 4: text, tool calls, file changes, denials, cost, verdicts, gates, standbys. Verdicts and gates in particular have never had a designed treatment — a blocking finding that holds a run is the most important thing this app can tell you, and it currently arrives as another line in a log.
+
+**Done when:** the Phase 7 gate run replays into the new surface and the blocking finding is the thing you see first, not the thing you scroll for.
+
+### Step 44 — A design system, once
+
+Tokens for colour, type and spacing. Dark mode. A real empty state, error state and loading state for each surface. Keyboard navigation and focus order throughout, and the `⌘`/`Ctrl` hint correctness the gotcha checklist already tracks.
+
+`styles.css` is 697 lines of hand-written CSS that grew a screen at a time. Consolidating it is what stops the rebuild from becoming the next thing that needs rebuilding.
+
+**Done when:** every surface has all three non-happy states, the whole app is operable from the keyboard, and dark mode is not a second set of hard-coded hexes.
+
+**This step expires a tick.** The gotcha checklist records `⌘` vs `Ctrl` as exercised — *photographed* reading `Ctrl1K` — and that photograph is of the Desk this phase replaces. A rebuilt UI has been exercised on nothing. The row is re-opened below rather than being quietly inherited, because a tick that was true when written and expires without the document noticing is the exact failure Phase 7 spent a retrospective on.
+
+### Step 45 — First run
+
+The path from install to first successful run, for someone who has never edited a TOML and did not read the README. Detect what is installed, say what is missing and how to get it, pick a project, add a Station, run something.
+
+**Done when:** someone with Claude Code installed and no other preparation completes a run without being told anything by a human — the alpha bar, but measured on a stranger rather than asserted.
+
+### Open question
+
+**How much of this the phone inherits.** M3 · Pocket serves the same UI over a tailnet, so a Desk rebuilt purely for a desktop window is a phone rewrite later. Whether that means responsive-from-the-start or a deliberately separate small surface is worth deciding here, while the shell is being drawn, rather than discovering it at M3.
+
+---
+
+# Phase 12 · The Commons
 
 > 🔵 **Beta track.** The durable layer the README spends its "Why this exists" section arguing for. Everything before this made Cuesheet a better way to *run* agents; this is the first thing that makes leaving it expensive.
 
-The pitch is one sentence: today Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, neither can read the other's, and every tool re-learns your codebase from zero, forever. Both of those files are now written by harnesses in this repo, which is what makes this phase buildable at all — `contextFiles` has been on the `Harness` interface since Step 13 waiting for it, and Phase 7 filled in the second entry.
+The pitch is one sentence: today Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, Ollama keeps nothing, none of them can read the others', and every tool re-learns your codebase from zero, forever. Two of those files are now written by harnesses in this repo and the third harness is the case that proves the point, which is what makes this phase buildable — `contextFiles` has been on the `Harness` interface since Step 13 waiting for it.
 
-### Step 31 — The store
+**Why this moved behind Projects and the Desk**, having been next in the previous revision of this plan: its own first open question was *"whether projection is per-workspace or global."* That question is not answerable by thinking harder about the Commons. It is answerable by Phase 8 existing, and unanswerable before it. Building the store first would have meant choosing arbitrarily and migrating later — the deferral is a dependency, not a demotion.
+
+### Step 46 — The store
 
 `~/.cuesheet/commons/` as a git repo: markdown with frontmatter, one fact per file. Read, write, list, delete. Provenance on every entry — which Station, which Run, when.
 
@@ -691,13 +883,13 @@ Plain files in a repo the operator owns, deliberately: the README promises "you 
 
 **Done when:** a fact written through the API is a committed file on disk, and `git log` explains where it came from.
 
-### Step 32 — Projections
+### Step 47 — Projections
 
 Render the store into `CLAUDE.md` and `AGENTS.md` at the workspace root, from `contextFiles`. Regenerate on change. Never clobber a hand-written file — generated content goes between markers, and anything outside them survives.
 
 **Done when:** one fact written once is visible to both harnesses without either being told the other exists, and re-running the projection twice produces no diff.
 
-### Step 33 — The approval inbox
+### Step 48 — The approval inbox
 
 Captured memories land in an inbox, not in the store. Approve, edit, or discard from the Desk.
 
@@ -705,15 +897,15 @@ The README is blunt about why and the reasoning should not be softened during im
 
 **Done when:** a run that writes a memory shows it as pending, and nothing reaches `CLAUDE.md` until a human says so.
 
-### Step 34 — MCP recall
+### Step 49 — MCP recall
 
-An MCP server exposing `memory_search` / `memory_write`, registered through `writeConnectors()` — inert in both harnesses today, for this.
+An MCP server exposing `memory_search` / `memory_write`, registered through `writeConnectors()` — inert in all three harnesses today, for this.
 
-Why both static files *and* a server: files cost nothing and are always loaded, including by local models that will never reliably decide to call a tool; the server carries the long tail that would blow a context budget if pasted into every session.
+Why both static files *and* a server: files cost nothing and are always loaded, including by the local models of Phase 9 that will never reliably decide to call a tool; the server carries the long tail that would blow a context budget if pasted into every session.
 
 **Done when:** a Station recalls a fact that is *not* in its projected file, and a local model that never calls the tool still sees the projected ones.
 
-### Step 35 — Sync
+### Step 50 — Sync
 
 A git remote the operator controls. Push, pull, and a conflict that a human resolves rather than a merge strategy that silently picks.
 
@@ -724,61 +916,82 @@ A git remote the operator controls. Push, pull, and a conflict that a human reso
 ### Open questions to settle in the work, not now
 
 - **What a "fact" is.** Too granular and the store becomes a junk drawer; too coarse and it is a second README nobody reads. The approval inbox is the pressure valve either way.
-- **Whether projection is per-workspace or global.** `contextFiles` already carries `scope: "project" | "user"`, so the seam exists — the question is what an operator expects when the same Station serves two repos.
 - **What Gates and the Commons owe each other.** Phase 7 left a known limitation: a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs this store or per-cue diffs. Worth deciding here rather than inheriting the ambiguity.
+- **Scope, now that projects exist.** `contextFiles` carries `scope: "project" | "user"` and Phase 8 makes the first of those mean something concrete. What remains is what an operator expects when the same Station serves two projects — which is now a question with a defined vocabulary rather than an open one.
 
 ---
 
-# Phase 9 · Limits
+# Phase 13 · A product other people can use
 
-> 🔵 **Beta track.** Not a polish item. Users hit caps in week one, and a gated two-model workflow burns roughly 3× a single session — which this phase is what makes visible *before* the invoice rather than after.
+> 🔵 **Beta track, and the boundary of it.** Every step here is something a stranger hits in their first hour that no amount of feature work fixes.
 
-`usage()` has been on the `Harness` interface since Step 13, returning `[]` from every harness. This phase is the wiring that milestone was shaped for.
+Most of this phase is already written down as unticked boxes in [Exit criteria](#exit-criteria); what it adds is step shape, ordering, and the dependency chains that two adjacent checkboxes hide. The 1.0-only items — the security review, leash fuzzing, Linux, M3 · Pocket — stay in that list rather than moving here.
 
-### Step 36 — Usage on the wire
+### Step 51 — The CLI that the README already documents
 
-Move `UsageWindow` from `@cuesheet/harness` into `@cuesheet/core` — the type has a comment saying it moves when M2 puts it on the wire, and this is that. Poll, cache, serve.
+`packages/cli/src/index.ts` is one line: `export {}`. The README prints `cuesheet run --engineer opus --review codex` and a Quickstart built around `npx cuesheetd`, and a note admitting the flags are "the shape it is heading for" rather than something you can type.
 
-**Done when:** `GET /usage` answers with every harness's windows and never blocks on a hung CLI.
+This is the largest honesty debt in the repo. Phase 7 removed the reason it was empty — Gates were the blocker and are not any more — and Phase 8 gives the commands a project to run against.
 
-### Step 37 — The strip, and the pre-run check
+**Done when:** every command printed in the README runs, or the README stops printing it. No third option.
 
-Render every vendor's windows on one strip. `warn_at`, `block_at`. Refuse to *start* a run that cannot finish.
+### Step 52 — SQLite behind `RunStore`
 
-The README's own framing is the acceptance criterion: every vendor meters differently and none of them tell you where you stand until you hit the wall, *"usually eleven minutes into something that mattered."*
+The interface was cut for this in Step 10, and the seam has held through everything since. Two places already show the file store's scaling through: `reconcileInterruptedRuns` is O(all runs ever) by its own comment, and `store.list(limit)` reads directories to answer.
 
-**Done when:** a Station near its cap is visibly near it, and a run that cannot finish is refused with a reason rather than dying halfway.
+`node:sqlite` is in Node 22, which removes the native-module risk that motivated files in the first place — the Decisions table's stated reason to revisit *"once packaging is proven"*, and packaging is proven.
 
-### Step 38 — The ledger and fallback routing
+**Done when:** a store with 10,000 runs opens the Desk as fast as one with ten, and the file store still passes the same suite so an operator can choose.
 
-Tokens and dollars per Run, per Station, per vendor, per day. `when_capped` moves steps to another Station instead of stopping.
+### Step 53 — Migrations as a mechanism
 
-**Done when:** the cost of the Phase 7 gate run is a row in a chart, and a capped Station routes to its fallback without the operator watching.
+Step 33 performs one migration. This makes it a system: versioned config, versioned store, a migration that runs once and is recorded, and a refusal to open state written by a *newer* build rather than corrupting it.
 
-### What Phase 7 already learned about this phase
+**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI.
 
-Two findings from writing the `codex` harness land squarely here, and they are the reason this phase is harder than "read a number and draw a bar":
+### Step 54 — Signing, notarization, auto-update
 
-- **Claude Code reports plan limits, but only from *inside* a run** — as `rate_limit_event` lines, not as a queryable command. `mapRateLimit()` already turns one into a `UsageWindow`. It also reports a *status* rather than a fraction, so `used` is a floor (`allowed` → 0) and not a real percentage. **The strip will have to render "not yet blocked" honestly instead of drawing a convincing 0%.**
-- **Codex reports no plan window at all**, and no dollar figure either — its stream carries token counts and nothing else. So `usage()` returns `[]` truthfully, and a two-vendor run's dollar total is currently the Anthropic half only. Finding OpenAI's numbers is its own piece of work, and until then the honest strip has a blank row rather than a reassuring one.
+One chain, not three checkboxes: macOS notarization is a precondition for `electron-updater` working without a Gatekeeper prompt, and an unsigned auto-updater is worse than no auto-updater. Windows SmartScreen reputation accrues only to a signed binary, and only over time, which makes the signing date a dependency for every install after it.
 
-**Which means the first real decision of this phase is a presentation problem, not a parsing one:** what a limits strip shows when one vendor reports a status, another reports nothing, and a third is local and unlimited. Getting that wrong produces a strip that is worse than no strip, because it looks authoritative.
+Step 26 documented the honest unsigned position. This is where that stops being acceptable, because an app that cannot update itself is not one people keep.
+
+**Done when:** a stranger's install updates itself with no terminal, no quarantine flag and no SmartScreen dialog — and a release that fails to notarize fails the pipeline rather than shipping.
+
+### Step 55 — The repository as a product
+
+The README links to `docs/harnesses.md` twice, `CONTRIBUTING.md` once and `SECURITY.md` once. **None of the three files exist**, so all four links 404 on GitHub today. `.github/` holds two workflows and nothing else — no issue templates, no PR template, no code of conduct, no changelog.
+
+- `docs/harnesses.md` — the one the README calls "the highest-leverage contribution", and the 1.0 bar already requires a third-party harness proven against it. Three shipped harnesses of three genuinely different shapes is the material to write it from.
+- `SECURITY.md` — a disclosure path. The README makes real security claims (loopback by default, short-lived pairing tokens, leashes) and tells people it is not audited; that combination needs somewhere to send a finding.
+- `CONTRIBUTING.md`, code of conduct, issue and PR templates, and a changelog that releases are cut from rather than written after.
+
+**Done when:** no link in the README 404s, and someone can file a good bug report or a first harness PR without asking a question first.
+
+### Step 56 — Errors you can act on, locally
+
+Crash and error reporting with no telemetry — the constraint the README sets and the Non-goals section defends. A log an operator can find, a crash that names what it was doing, and a bug report that can be pasted rather than reconstructed.
+
+**Done when:** a crash mid-run leaves something a stranger can attach to an issue, and nothing leaves the machine unless they attach it.
+
 ---
 
 ## Deferred on purpose
 
-Not in this plan; each one has a seam already cut for it:
+Most of this table has now been claimed by Phases 8–13, which is what the seams were cut for. The rows are kept rather than deleted, because *which* seam absorbed each one is the evidence that the interfaces were drawn in the right places — nothing below required changing `Harness`, `RunStore` or the HTTP transport to become additive.
 
-| Deferred | Needed by | Seam that makes it additive |
-|---|---|---|
-| SQLite run store | 🔵 beta | `RunStore` interface (Step 10) |
-| ~~`codex`~~ / `ollama` harnesses | 🔵 beta | `Harness` interface (Step 13) — `codex` landed in Phase 7 through exactly this seam, with no change to the interface |
-| Limits strip, fallback routing | 🔵 beta | `usage()` already on the interface |
-| ~~Gates, reviewer role, verdicts~~ | 🔵 beta | Done. Cues were already an ordered list; a gate was a cue kind |
-| Commons, MCP recall | 🔵 beta | `contextFiles` already on the interface |
-| Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) |
-| Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change |
-| Caller, On-Call | ⚪ post-1.0 | Both are cuesheets + a trigger over the existing queue |
+| Deferred | Needed by | Seam that makes it additive | Where it went |
+|---|---|---|---|
+| ~~SQLite run store~~ | 🔵 beta | `RunStore` interface (Step 10) | Step 52 |
+| ~~`codex`~~ / ~~`ollama`~~ harnesses | 🔵 beta | `Harness` interface (Step 13) — `codex` landed in Phase 7 through exactly this seam, with no change to the interface, and `ollama` needs none either despite being a different shape of thing entirely | Phase 7, Phase 9 |
+| ~~Limits strip, fallback routing~~ | 🔵 beta | `usage()` already on the interface | Phase 10 |
+| ~~Gates, reviewer role, verdicts~~ | 🔵 beta | Done. Cues were already an ordered list; a gate was a cue kind | Phase 7 ✅ |
+| ~~Commons, MCP recall~~ | 🔵 beta | `contextFiles` already on the interface | Phase 12 |
+| **Projects** | 🔵 beta | **No seam — this is the one nothing was cut for.** `cwd`, `loadConfig` and the store root each assume exactly one, which is why it is a phase and not a step | Phase 8 |
+| Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) | still deferred |
+| Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change | still deferred |
+| Caller, On-Call | ⚪ post-1.0 | Both are cuesheets + a trigger over the existing queue | still deferred |
+
+**The one row without a seam is the one worth reading.** Every other deferral in this table was anticipated: an interface method sat unused for months waiting for it. Projects were not deferred — they were *assumed*, and an assumption leaves no seam behind. That is a different failure from a known gap, and the tell is that it never appeared on a checklist until someone tried to open the app on a second repo.
 
 ---
 
@@ -786,7 +999,7 @@ Not in this plan; each one has a seam already cut for it:
 
 Keep this next to you; every item is something that works on macOS and fails on Windows.
 
-Ticked means *exercised on a Windows machine*, not *handled in code*. The three left open are open for reasons worth reading.
+Ticked means *exercised on a Windows machine*, not *handled in code*. The three left open are open for reasons worth reading — and one of them was ticked until Phase 11 was planned, which is the point of stating the rule this precisely.
 
 - [x] `.cmd` shims need `cross-spawn`, not `spawn` — no longer taken on trust. The `which` tests inject `isExecutable`, so they only ever proved the PATHEXT arithmetic, and both Windows machines happened to have a native `claude.exe`. `spawn.test.ts` now writes a real CRLF `.cmd`, resolves it against a real PATH with the real executable check, and **executes** it — the thing bare `spawn` cannot do. It also asserts that a prompt with `&` in it goes in on stdin and never reaches `cmd.exe` as a command. Windows-gated, so it runs on the CI runner and skips elsewhere.
 - [x] Killing a child does not kill grandchildren on Windows — `taskkill /T /F`
@@ -801,7 +1014,7 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 - [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
 - [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists). The glyph **has** now been looked at, by decoding the file and rendering it at 8× (see Step 24): it is sound from 24px up and muddy at 16, where the fader tracks collapse into grey. What is left is a design decision about 16px proportions, not an observation — kept unticked because the decision is unmade
 - [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide
-- [x] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`
+- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, and **re-opened by Step 44**: that photograph is of the Desk Phase 11 replaces, and ticked here means exercised on a Windows machine, not handled in code. Nothing is known to be broken; it is simply no longer known to be right
 - [x] Paths with spaces in packaged builds — installed to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` and launched
 
 ---
@@ -810,4 +1023,10 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 
 If you want the shortest path to something you can play with, do **Steps 1, 4, 5, 8, 9, 10, 11, 13, 14, 17, 18, 19** first. That's a daemon streaming a fake run into a real Desk in a browser — the whole shape of the app, with no models and no Electron. Everything after that is making it real.
 
-**Past alpha the order is Phase 7, then 8, then 9,** and it is not the README's numbering. That table counts features for a reader deciding whether to care; this one is ordered by how much each unbuilt thing changes what the product *is*. Gates came first because a second opinion is the thesis. The Commons comes next because it is the only part that makes leaving expensive. Limits come last of the three, not because caps do not hurt — they hurt in week one — but because a limits strip built on one vendor that reports a status and another that reports nothing would be a strip you cannot trust, and Phase 8 does not make that worse while Phase 9 has to solve it.
+**Past alpha, the phase number is the order** — see the numbering rule under [Status](#status). Phase 7 came first because a second opinion is the thesis and it was the one claim the README could not back. Phases 8–13 then run in sequence, and the chain is a dependency chain rather than a ranking:
+
+**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product.**
+
+Projects because nothing above it can be scoped without them. `ollama` before Limits because a strip designed without a station that cannot run out is a strip that will need redesigning the week one arrives. Limits before the Desk because half the screen the operator asked for renders usage, and `usage()` returns `[]` from every harness today. The Desk after all three because a rebuilt UI full of placeholders is the expensive kind of mistake — you ship it, and then you cannot tell whether it is wrong or merely empty. The Commons after the Desk because its scoping question is answered by Phase 8 and its inbox needs somewhere to live. And the product last because signing, migrations and a CLI are the work that only pays off once the thing is worth installing.
+
+**If you want the shortest path to the thing the request actually described** — open the app, pick a project, see who is on it and what they are spending — that is Steps 31–34 and 40–42, with 37 for real numbers. Phases 9, 12 and 13 can slip without making that incoherent.

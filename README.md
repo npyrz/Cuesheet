@@ -26,10 +26,10 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ✅ **The Desk** | React UI: Station tiles, live run log, `⌘K` palette, add-a-Station panel that writes your TOML for you. |
 | ✅ **`claude-code`** | Real runs: streamed output, a `diff.patch`, cost, and stop-means-stop on the whole process tree. |
 | ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar. Tray menu, native notifications, start-at-login, and a shutdown that never leaves a run stuck `running`. |
-| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, each built on its own platform and launched from a path with a space. Unsigned, and none published — the workflow that drafts them on a tag has not run on a runner yet. |
+| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, each built on its own platform and launched from a path with a space. Unsigned, but no longer unpublished: the tag workflow built all five on runners and `v0.1.0-alpha` is out. Unsigned still means quarantine on macOS and SmartScreen on Windows — see [Install](#install). |
 | ✅ **Windows** | Run on a real Windows 10 box: install, build, the full test suite, a live `claude-code` run, a stop that takes the process tree to zero, a `taskkill /F` that reconciles to `interrupted`, the NSIS installer, and the installed app launched from a path with a space. Two things are still open: a toast nobody has seen, because the test box has notifications disabled system-wide, and the tray glyph at 16px, which has been decoded and rendered but wants its own proportions. The `.cmd` shim is no longer among them — a Windows-gated test writes a real CRLF `.cmd` and executes it on the runner. |
 | ✅ **Gates** | A `{ gate = … }` cue runs a real second-opinion check: the reviewer gets the diff, its verdict is parsed, and a failed gate holds the run with the findings attached. Needs both CLIs installed — and with them, proven on two real vendors rather than fixtures: `claude-code` wrote a rate limiter, `codex` found unbounded memory growth in it, and the run landed `held` at $0.56. |
-| 📋 **Not built yet** | The Commons, limits and routing, phone pairing, the Caller, On-Call, `ollama`. |
+| 📋 **Not built yet** | The Commons, limits and routing, phone pairing, the Caller, On-Call, `ollama`. Two more that are easy to miss because this README describes them as if they exist: **the `cuesheet` CLI** is an empty package, and **there is no concept of a project** — one config, one run history, and no way to switch between two repos without editing TOML. Both are the next phases in [PLAN-STEP.MD](PLAN-STEP.MD). |
 
 **Concretely, today:** clone it, `npm install`, `npm run build`, `npm run dev -w packages/desktop`. Two harnesses, and a gate between them if you have both CLIs installed. Run records may be discarded on upgrade and the config format can still change under you.
 
@@ -189,6 +189,7 @@ Twelve words and you know the system.
 | **Station** | One model, on one harness, in one role, bound to one workspace, under one leash. The unit you add. |
 | **Harness** | The integration for one runtime — `claude-code`, `codex`, `ollama`. Versioned, swappable, community-maintained. |
 | **Role** | What a Station is *for*: `engineer`, `reviewer`, `worker`, or `caller`. Roles change permissions, not just prompts. |
+| **Project** | A codebase Cuesheet knows about: a folder, its Stations, its cuesheets, and its run history. You open one, and switch between them without losing what is running in the other. *Not built yet* — today there is a single global config. |
 | **Cue** | One step: a Station and an action. |
 | **Cuesheet** | An ordered list of cues and gates. The plan. |
 | **Run** | One execution of a cuesheet: a prompt in, a diff and a set of verdicts out. Durable, replayable, costed. |
@@ -742,8 +743,8 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 
 | Milestone | Contents | State |
 |---|---|---|
-| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | ✅ macOS · 🚧 Windows |
-| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 🚧 Desk and shell done; tray, packaging and signing next |
+| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | ✅ macOS **and** Windows — except the CLI, which is still an empty package |
+| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | ✅ Desk, shell, tray and packaging done on both; signing still open. A rebuild around projects is sequenced next |
 | **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | 📋 |
 | **M3 · Pocket** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
 | **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | 📋 |
@@ -752,6 +753,8 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 | **M7 · On-Call** | Triggers, triage/patch/review cuesheet, hotfix gate, storm control, incident records | 📋 |
 | **M8 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |
 | **M9 · Ecosystem** | Harness SDK published, `gemini-cli` + `opencode`, connector registry, policy packs | 📋 |
+
+**This table is a catalogue, not a running order.** It numbers features for a reader deciding whether to care; what gets built next is decided in [PLAN-STEP.MD](PLAN-STEP.MD), and the two have already diverged — M5 · Gates was built well ahead of M2–M4. The current order puts **projects and a rebuilt Desk ahead of M2 and M4**, because "open the app on the repo you were working on yesterday" is missing from this table entirely, and both of those milestones need it before they can be scoped.
 
 Later candidates: optional container isolation per workspace, [Agent Client Protocol](https://agentclientprotocol.com) as a transport so one harness covers many runtimes, CI mode, team-shared Commons with review.
 
