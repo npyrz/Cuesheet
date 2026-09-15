@@ -67,6 +67,100 @@ export function daemonLockFile(env: HostEnv = hostEnv()): string {
 }
 
 /**
+ * The project registry — `~/.cuesheet/projects.json`.
+ *
+ * The first state Cuesheet keeps that is neither config nor a run record, and
+ * the reason it needs its own file rather than a table in `cuesheet.toml`: a
+ * config belongs to one project, and this list is the thing that knows a
+ * project *exists* before any of its config has been read.
+ */
+export function projectsFile(env: HostEnv = hostEnv()): string {
+  return pathFor(env).join(configDir(env), "projects.json");
+}
+
+/**
+ * A project id is a directory name under `~/.cuesheet/projects` and a URL
+ * segment in `/projects/:id/...`, which is why it lives here beside the
+ * builders rather than with the registry: the constraint *is* a path
+ * constraint. Same rule `isRunId` exists for — anything reaching the
+ * filesystem is matched against this first, so `/projects/..%2f..%2fetc` is a
+ * refusal rather than a directory traversal.
+ *
+ * Lowercase-only is not cosmetic. Windows paths are case-insensitive, so
+ * `API-3f2a1b` and `api-3f2a1b` would be two ids and one directory — a corrupt
+ * registry waiting to happen. Restricting the alphabet makes the collision
+ * unrepresentable rather than handled.
+ *
+ * The trailing `-xxxxxx` is also what keeps a slug clear of Windows' reserved
+ * device names: `con`, `nul` and `lpt1` are unusable as directory names, but
+ * `con-3f2a1b` is an ordinary one, because the reservation matches the whole
+ * name (up to an extension) rather than a prefix.
+ */
+export const PROJECT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}-[0-9a-f]{6}$/;
+
+export type ProjectId = string;
+
+export function isProjectId(value: unknown): value is ProjectId {
+  return typeof value === "string" && PROJECT_ID_PATTERN.test(value);
+}
+
+/**
+ * Enforced, not documented.
+ *
+ * An earlier draft of this file asked callers to validate ids themselves. That
+ * is the guard being advisory, and the next step to be written hands a URL
+ * segment straight to {@link projectDir} — so the check lives where the path is
+ * built, and every caller gets it whether or not they read the comment.
+ */
+function assertProjectId(id: string): asserts id is ProjectId {
+  if (!isProjectId(id)) {
+    throw new Error(
+      `"${id}" is not a project id, so it cannot be used as a path.`,
+    );
+  }
+}
+
+/** `~/.cuesheet/projects` — one directory per project, named by its id. */
+export function projectsDir(env: HostEnv = hostEnv()): string {
+  return pathFor(env).join(configDir(env), "projects");
+}
+
+/**
+ * Per-project private state: the config a project has no repo-committed one
+ * for, and (from Step 32) its runs.
+ *
+ * Throws on anything that is not a project id, because `id` reaches the
+ * filesystem here.
+ */
+export function projectDir(id: string, env: HostEnv = hostEnv()): string {
+  assertProjectId(id);
+  return pathFor(env).join(projectsDir(env), id);
+}
+
+/**
+ * Where a project's config lives when the repo does not carry one.
+ *
+ * **The decision Phase 8 left open, settled: the repo wins when present.** A
+ * `cuesheet.toml` at the project root commits with the code, reviews like
+ * code, and is what a team sharing a set of Stations actually wants — so it is
+ * preferred whenever it exists. This path is the fallback for the ordinary
+ * case of a checkout you do not want to add a file to, and it keeps the
+ * promise that using Cuesheet on someone else's repository leaves no trace in
+ * it.
+ *
+ * That ordering is deliberately the same one `loadConfig` already applies —
+ * nearest-to-the-work first, then the home directory. Step 32 is what replaces
+ * that function's fixed two-candidate search with this pair; nothing in Step 31
+ * changes the loader.
+ */
+export function projectConfigFile(
+  id: string,
+  env: HostEnv = hostEnv(),
+): string {
+  return pathFor(env).join(projectDir(id, env), CONFIG_FILENAME);
+}
+
+/**
  * Expand a leading `~`. The OS does not do this for you — the shell does, and
  * on Windows not even that. Config files are full of `~/code/api`.
  *

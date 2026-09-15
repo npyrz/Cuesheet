@@ -57,7 +57,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
-| **8 · Projects** | 31–34 | 🔵 beta | ⬜ **Next** |
+| **8 · Projects** | 31–34 | 🔵 beta | 🚧 **In progress.** Step 31 done — the registry exists; the daemon does not consume it yet |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ⬜ |
 | 10 · Limits | 37–39 | 🔵 beta | ⬜ |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
@@ -699,13 +699,30 @@ The packaged app makes this sharper than a checkout does. `main.ts` calls `start
 
 **The decision this phase forces, and it belongs at the top rather than in the work: one daemon serving many projects, not one daemon per project.** The port is fixed by design — `findRunningDaemon` and the lockfile exist so that every client, including a second window and later the phone, finds *the* daemon. A daemon per project multiplies ports, lockfiles and trays, and breaks the one contract the architecture is arranged around. So project scope moves onto the routes and into the store, never into the process.
 
-### Step 31 — A project is a thing
+### Step 31 — A project is a thing ✅
 
 `Project` in `@cuesheet/core`: an id, a display name, a root directory, its config. A registry of them at `~/.cuesheet/projects.json` — the first persistent state Cuesheet owns that is neither config nor a run record, which is why it needs its own home and its own answer to "what happens when the folder is gone."
 
 Config becomes per-project. `loadConfig`'s two-candidate search stops being the mechanism and becomes the migration *source*.
 
 **Done when:** a project opened once is in the registry with its last-opened time and survives a daemon restart, and a project whose folder has been deleted or renamed lists as missing rather than crashing the picker.
+
+> **Done, with one clause of that criterion deliberately not ticked.** `project.ts` and 32 tests; `paths.ts` gains `projectsFile`, `projectsDir`, `projectDir`, `projectConfigFile` — and `PROJECT_ID_PATTERN` itself, which lives beside the builders rather than with the registry because the constraint *is* a path constraint. **The guard is enforced there, not documented.** A first draft asked callers to validate an id before handing it over; Step 32 hands a URL segment straight to `projectDir()`, and an obligation in a comment is a guard nobody runs. It throws, and a test proves `projectDir("../../etc")` is refused. **`loadConfig` is untouched, on purpose** — rewiring it is Step 32's first bullet, and doing it here would leave the daemon half-converted with nothing demonstrable. This step ships a registry nothing consumes yet.
+>
+> **"Survives a daemon restart" is not proven, because there is no daemon in this step.** What is proven is the mechanism it will rely on: a second `createProjectRegistry` over the same file reads back exactly what the first wrote, because nothing is held in memory that is not on disk. The restart clause belongs to Step 32 and is not being quietly redefined into something easier — this document has a retrospective about exactly that.
+>
+> **Four decisions, each a fork someone would otherwise take the other way:**
+>
+> - **An id is assigned once, not derived from the path.** Deriving it makes `open()` idempotent for free — and silently mints a *different* project when a folder is renamed, orphaning its run history at the moment a user least expects to lose anything. So the id is stable, the root is mutable data, and idempotency comes from the next decision instead.
+> - **Identity is the resolved root.** `open()` resolves through `realpath` before matching, because a path and a symlink to it are one project. This is the `observe.ts` lesson arriving before it cost anything rather than after — the same asymmetry that made a `/tmp` workspace see its own writes as `/private/tmp/...` would otherwise duplicate an entry every time someone opened a linked checkout.
+> - **Stored roots are compared, never re-resolved.** A deleted folder cannot be `realpath`ed, so re-resolving at compare time would throw `ENOENT` on precisely the case the done-when says must stay calm.
+> - **Config is referenced, never copied in.** The prose above says a Project is "an id, a display name, a root directory, its config" — that is a sentence, not a schema. Persisting parsed config into the registry would create a second source of truth that disagrees with `cuesheet.toml` the moment anyone edits it by hand.
+>
+> **A broken registry throws, and the reason is the opposite of `config.ts`'s.** That file throws on a broken config because an empty Desk would hide a typo. This one throws because starting from an empty list would *discard someone's projects*, which the beta bar forbids outright. Same verb, opposite reason, and in both cases the file is left byte-for-byte alone — asserted, not assumed. A registry written by a newer build is refused for the same reason: three lines now, a migration later, and Step 53 already promises it.
+>
+> **There is no `moved` status.** A renamed folder and a deleted one leave identical evidence without inode tracking, so `missing` covers both and the UI is not handed a guess to present as a fact.
+>
+> **One thing the work found that the step text did not anticipate.** `pathFor(env)` exists so pure string math can be tested for a platform the test is not running on — but `node:fs` is bound to the *real* host, so resolving a POSIX path with `path.win32` produces backslashes the filesystem cannot then find. A Windows-env test failed on macOS and was right to. The rule now stated in the file: **`pathFor(env)` for layout and for strings, ambient `nodePath` for anything that reaches disk.** Worth carrying into Step 32, which will build far more paths than this step does.
 
 ### Step 32 — The daemon serves more than one
 
@@ -731,7 +748,7 @@ The queue is per-daemon and runs are long, so the constraint worth writing down 
 
 ### Open questions to settle in the work, not now
 
-- **Where a project's config lives.** In the repo (`<root>/cuesheet.toml` — shareable, commits with the code, and the thing a team would want) or under `~/.cuesheet/projects/<id>/` (private, survives a clone, asks nobody to gitignore anything). Both have a real argument and the answer may be "either, and the repo wins when present."
+- ~~**Where a project's config lives.**~~ **Settled in Step 31: either, and the repo wins when present.** A `cuesheet.toml` at the project root commits with the code and is what a team sharing a set of Stations wants, so it is preferred whenever it exists; `~/.cuesheet/projects/<id>/cuesheet.toml` is the fallback, which keeps the promise that using Cuesheet on someone else's repository leaves no trace in it. The ordering is deliberately the one `loadConfig` already applies — nearest-to-the-work first, then the home directory — so Step 32 replaces that function's candidates without inverting its semantics. `projectConfigFile()` exists; the loader does not use it yet.
 - **What a project *is*, exactly.** A folder, or a folder plus Stations that may point outside it? Leashes are per-Station and already allow a workspace anywhere, so the two can legitimately diverge and the UI has to show which one it is describing.
 
 ---
