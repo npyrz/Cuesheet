@@ -514,7 +514,7 @@ Don't let signing block Milestone B. Just don't pretend it isn't there.
 
 **Done when:** README install notes match what a stranger actually experiences.
 
-### Step 27 — CI matrix 🚧 (a real bug found and fixed; still unproven on a runner)
+### Step 27 — CI matrix 🚧 (it has run; two ordering bugs and three flakes fixed)
 GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck → test → build the app. Upload installers as artifacts on tags.
 
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
@@ -524,6 +524,14 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 > **And neither *could* have run: the workflows are not on the default branch.** `git ls-tree -r origin/main -- .github/` is empty — both files live only on `alpha`. So `push: branches: [main]` has never had a chance to fire, and `workflow_dispatch` is not merely unused but **unavailable**: GitHub only offers manual dispatch for a workflow present on the default branch, so `gh workflow run ci.yml --ref alpha` cannot find it. `pull_request` is the one trigger that works from here, because a PR runs the workflow from its *head* branch. A PR `alpha → main` is therefore both the first CI run and the merge that makes every later trigger exist. Tagging first is the wrong order: `release.yml` would package a build no runner has ever checked.
 >
 > **The Node version CI pins had never been run either.** Both workflows pin `node-version: 22`; the Windows box ran 24.19.0 and the Mac runs 25.2.1, so the pinned version was the likeliest source of a first red run that reads like a mystery rather than a finding. Reproduced exactly — fresh clone of `alpha`, Node 22.23.2, `npm ci`, then Build → Typecheck → Lint → Format → Test in the committed order — and it is green: 30 files, 460 passed, 1 skipped. A red Windows runner now means something Windows-specific. `ELECTRON_SKIP_BINARY_DOWNLOAD` was checked for the same reason and is safe: no test under `packages/desktop/src` imports `electron` at all — `app-id.test.ts` reads `main.ts` and `electron-builder.yml` as *text* and matches them with a regex.
+>
+> **Then it ran, and it was red — on timing, not on Windows.** Three tests assumed a fixed sleep was long enough for work to arrive, which is true on an idle laptop and not on a loaded runner:
+>
+> - `server.test.ts > answers a waiting standby` slept 20ms for an HTTP round trip *plus* a queue turn *plus* an executor reaching its first `await`, then read `standbys.list()` and asserted on `undefined`. This is the same defect already fixed in `queue.test.ts`, in the file next to it, missed because the sleep was 20ms rather than 5ms. Both files now carry a `waitFor` helper that polls and names what it was waiting for, and every wait-for-state in `server.test.ts` was converted — four sites, not just the one that went red.
+> - `harness-executor.test.ts > produces a full run record in under a second` asserted a **wall-clock budget**. Step 14's "under a second" is a real design constraint, but as an assertion it measures the scheduler: ~600ms idle, over 1000ms with 30 files in parallel. What it is actually guarding — a real model or a network call sneaking into the mock path — costs seconds, so the bound is now 10s and still catches that.
+> - `replays a mid-run backlog` was not flaky but was *silently weakening*: a 30ms sleep decided whether the client attached before or after the event was emitted, and attaching early takes the live path and stops covering replay at all, while staying green. It now waits on the emit itself.
+>
+> The suite then ran five consecutive times clean on Windows. **The lesson is the one the first two flakes already taught: a fixed `setTimeout` is not a synchronisation primitive.** The whole suite was swept for the pattern afterwards — every other `setTimeout` in a test is either a poll interval inside a retry loop or an executor simulating work, and there is exactly one remaining wall-clock assertion, the loosened one above.
 >
 > **The done-when is already met, by something stronger than an OS-gated test.** "A PR fails CI when a Windows-only path bug is introduced" is exactly what `paths.test.ts` and `leash.test.ts` do with an injected `win32` `HostEnv`: they assert `C:\Users\noah\.cuesheet`, drive-letter casing, and the Windows-only `nocase` deny **from macOS**. A Windows-only path regression therefore goes red on *both* runners rather than only the one that can reproduce it. No new test is needed.
 >

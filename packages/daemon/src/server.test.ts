@@ -74,6 +74,31 @@ const done: RunExecutor = () =>
     durationMs: 0,
   });
 
+/**
+ * Waits for a condition instead of guessing how long it takes to arrive.
+ *
+ * Every wait in this file is on the far side of an HTTP round trip *and* a
+ * queue turn *and* an executor reaching its first await, and a runner under
+ * load does not do all three inside a fixed 20ms. It went red on CI exactly
+ * once before this existed. `queue.test.ts` carries the same helper for the
+ * same reason; a timeout here fails with what it was waiting for rather than
+ * with `expected undefined to be …`.
+ */
+async function waitFor(
+  what: string,
+  ready: () => boolean,
+  timeoutMs = 4_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 1));
+  }
+}
+
+const runIsActive = (runId: string) => () =>
+  daemon.queue.activeRunId() === runId;
+
 beforeEach(async () => {
   const home = await mkdtemp(path.join(tmpdir(), "cuesheet-home-"));
   env = { platform: process.platform, homedir: home };
@@ -364,14 +389,17 @@ describe("POST /runs/:id/stop", () => {
     const { url } = await boot(
       (ctx) =>
         new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () =>
-            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-          );
+          const abort = () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          // The shape `spawn.ts` uses: an already-aborted signal fires no
+          // event, so a listener alone would wait forever.
+          if (ctx.signal.aborted) abort();
+          else ctx.signal.addEventListener("abort", abort, { once: true });
         }),
     );
 
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "long one" });
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor("the run to start", runIsActive(body.runId));
 
     const stopped = await post<Stopped>(url, `/runs/${body.runId}/stop`);
     expect(stopped.status).toBe(200);
@@ -400,7 +428,10 @@ describe("POST /standbys/:id", () => {
     });
 
     await post(url, "/runs", { prompt: "ship it" });
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(
+      "the standby to be raised",
+      () => daemon.standbys.list().length > 0,
+    );
 
     const [pending] = daemon.standbys.list();
     expect(pending?.ask).toBe("Write to infra/?");
@@ -504,6 +535,7 @@ describe("GET /ws", () => {
 
   it("replays a mid-run backlog to a client that connects late", async () => {
     let release!: () => void;
+    let emitted = false;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const { url } = await boot(async (ctx) => {
       ctx.emit({
@@ -513,12 +545,17 @@ describe("GET /ws", () => {
         stationId: "opus",
         chunk: "already happened",
       });
+      emitted = true;
       await gate;
       return done(ctx);
     });
 
     await post(url, "/runs", { prompt: "ship it" });
-    await new Promise((r) => setTimeout(r, 30));
+    // Not a sleep: the point of this test is that the event is already in the
+    // backlog *before* the client attaches. Connecting too early would take
+    // the live path instead and the test would quietly stop covering replay —
+    // still green, and no longer testing anything.
+    await waitFor("the event to be emitted before we attach", () => emitted);
 
     // Connecting mid-run must not leave the client staring at nothing.
     const client = listen(url);
@@ -547,8 +584,11 @@ describe("GET /ws", () => {
     expect(daemon.bus.subscriberCount()).toBeGreaterThan(0);
 
     client.socket.close();
-    await new Promise((r) => setTimeout(r, 50));
     // A leaked subscriber per reconnect is how a long session dies.
+    await waitFor(
+      "the server to drop the subscription",
+      () => daemon.bus.subscriberCount() === 0,
+    );
     expect(daemon.bus.subscriberCount()).toBe(0);
   });
 
@@ -596,14 +636,17 @@ describe("close", () => {
     const { url } = await boot(
       (ctx) =>
         new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () =>
-            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-          );
+          const abort = () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          // The shape `spawn.ts` uses: an already-aborted signal fires no
+          // event, so a listener alone would wait forever.
+          if (ctx.signal.aborted) abort();
+          else ctx.signal.addEventListener("abort", abort, { once: true });
         }),
     );
 
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "long one" });
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor("the run to start", runIsActive(body.runId));
 
     // A run caught by a shutdown must land somewhere terminal and readable,
     // never sit `running` forever.
