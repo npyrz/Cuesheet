@@ -280,3 +280,74 @@ async function waitForDeath(pid: number): Promise<boolean> {
   }
   return false;
 }
+
+/**
+ * The `.cmd` shim, for real.
+ *
+ * The `which` tests above inject `isExecutable`, so they prove the PATHEXT
+ * *arithmetic* and never touch the disk. That left the decision this module
+ * exists for — `cross-spawn` instead of `node:child_process.spawn`, because
+ * bare `spawn` cannot execute a `.cmd` at all — resting on a mock. Both of
+ * this repo's Windows machines happened to have a native `claude.exe`, so the
+ * shim path had never once run.
+ *
+ * These write an actual `.cmd`, resolve it against a real PATH with the real
+ * executable check, and then *execute* it. Windows-only: a `.cmd` is not a
+ * program anywhere else, and skipping beats asserting something meaningless.
+ */
+describe.skipIf(process.platform !== "win32")("a real .cmd shim", () => {
+  async function shimDir(body: string): Promise<string> {
+    const dir = await mkdtemp(path.join(tmpdir(), "cuesheet-shim-"));
+    // CRLF on purpose: it is what a real shim has, and `\r` becoming part of
+    // the command is the classic way a hand-written .cmd misbehaves.
+    await writeFile(
+      path.join(dir, "faux-harness.cmd"),
+      `@echo off\r\n${body}\r\n`,
+      "utf8",
+    );
+    return dir;
+  }
+
+  it("is found on PATH by its stem, with no extension given", async () => {
+    const dir = await shimDir("echo hello");
+    // No `isExecutable` override: this is the real filesystem check.
+    const found = await which("faux-harness", { path: dir });
+    // The extension comes back in PATHEXT's casing (`.CMD`), not the file's
+    // own (`.cmd`) — the same way the real `claude.EXE` resolved on Windows.
+    // Same file on a case-insensitive volume, so the comparison folds case;
+    // anything that string-matches this path must do the same.
+    expect(found?.toLowerCase()).toBe(
+      path.join(dir, "faux-harness.cmd").toLowerCase(),
+    );
+    expect(found).toMatch(/\.cmd$/i);
+  });
+
+  it("actually executes — which bare spawn cannot do", async () => {
+    // The whole reason `cross-spawn` is a dependency. Without it this line
+    // fails with EINVAL, which is the bug the Decisions table predicted and
+    // nothing had ever demonstrated.
+    const dir = await shimDir("echo shim ran");
+    const resolved = await which("faux-harness", { path: dir });
+    const result = await run(resolved!, []);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("shim ran");
+  });
+
+  it("passes a prompt on stdin rather than argv", async () => {
+    // `buildArgs` keeps the prompt out of argv precisely because a `.cmd` is
+    // routed through `cmd.exe`, where quoting bugs become injection bugs.
+    const dir = await shimDir("findstr /r .");
+    const resolved = await which("faux-harness", { path: dir });
+    const result = await run(resolved!, [], { stdin: "a prompt & echo pwned" });
+    expect(result.stdout).toContain("a prompt & echo pwned");
+    // If the text had reached `cmd.exe` as a command, `&` would have run the
+    // second half and left `pwned` on its own line.
+    expect(result.stdout).not.toMatch(/^pwned$/m);
+  });
+
+  it("reports a non-zero exit as a result, not an exception", async () => {
+    const dir = await shimDir("exit /b 3");
+    const resolved = await which("faux-harness", { path: dir });
+    await expect(run(resolved!, [])).resolves.toMatchObject({ code: 3 });
+  });
+});

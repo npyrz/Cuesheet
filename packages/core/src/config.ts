@@ -190,13 +190,32 @@ export class ConfigError extends Error {
  * silently, so a schema-only implementation reports nothing and the user
  * quietly loses half their file.
  */
+/**
+ * Drop a leading UTF-8 byte order mark.
+ *
+ * Windows is where this matters and it is not an edge case: Notepad writes a
+ * BOM when it saves UTF-8, and so does PowerShell's `Set-Content -Encoding
+ * utf8` on Windows PowerShell 5.1 — the two most likely ways a person hand-
+ * edits `cuesheet.toml` on that platform. `smol-toml` then reads U+FEFF as the
+ * first character of the first key and rejects the file with *"only letter,
+ * numbers, dashes and underscores are allowed in keys"*, pointing at a
+ * `[[station]]` line that is plainly correct. The daemon refuses to boot, and
+ * the message names neither the BOM nor the real problem, so there is nothing
+ * in it to act on.
+ *
+ * `readFile(…, "utf8")` does not strip it — Node only does that for UTF-16.
+ */
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export function parseConfig(
   text: string,
   sourcePath: string | null = null,
 ): LoadedConfig {
   let raw: unknown;
   try {
-    raw = parseToml(text);
+    raw = parseToml(stripBom(text));
   } catch (cause) {
     throw new ConfigError(
       `${sourcePath ?? "config"} is not valid TOML: ${errorText(cause)}`,

@@ -55,7 +55,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 3 · Harnesses | 13–16 | 🟠 pre-alpha | ✅ Done (macOS **and** Windows) |
 | 4 · Desk | 17–20 | 🟠 pre-alpha → **Milestone A** | ✅ Done (macOS **and** Windows) |
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
-| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | 🚧 Installers real on both · **CI green on both runners** · the tag is the last step |
+| **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | — beyond this plan — | **M5 · Gates** | 🔵 beta | 🚧 Machinery done; `codex` harness outstanding |
 | — beyond this plan — | M2, M4 | 🔵 beta | ⬜ |
 | — beyond this plan — | M3 + hardening | 🟢 1.0 | ⬜ |
@@ -80,7 +80,7 @@ Everything in *this* plan lands you at **alpha**. That is the honest ceiling: th
 - [x] A stranger with Claude Code installed can open the app and complete a run without editing TOML
 - [x] Crash mid-run leaves a readable run record, never a corrupt one — verified on Windows by `taskkill /F` mid-run
 - [x] CI green on both OSes — `macos-latest` in 38s and `windows-latest` in 1m, on `main`, after the ordering fix and the timing-flake pass
-- [ ] Installers uploaded on tag — *unproven: `release.yml` has never run, so the `nsis` and `dmg` builds have only ever happened on local machines*
+- [x] Installers uploaded on tag — `release.yml` proved by `workflow_dispatch` first, then by the tag: five installers built on runners, attached to a draft, and **`v0.1.0-alpha` published**
 - [x] Install caveats (quarantine, SmartScreen) documented, not hidden — in the README and repeated in every release's own notes
 
 **Alpha → beta** — none of this is in this plan; each maps to a README milestone
@@ -489,9 +489,12 @@ Set aside a session for these; they are all one-line fixes that each cost an aft
 > **Done on a real Windows 10 box (19045, Node 24.19.0, npm 11.17.0).** Taking the list in order:
 >
 > - **Long paths.** Not needed, and now measured rather than assumed: `LongPathsEnabled` is `0` on this machine and the install worked anyway. The deepest path in `node_modules` is 148 characters against `MAX_PATH`'s 260, so a checkout root under ~110 characters has room. `C:\Users\noahp\Desktop\Cuesheet` is 31.
-> - **`tray.ico` and close-to-tray.** Verified functionally, which is stronger than looking at it: closing the window left the app alive with no window and the daemon still serving, and that handler returns early unless `tray !== null` — so the tray exists and the icon loaded. A second launch exited without spawning anything and restored the *original* window, which is also the way back. The icon does not appear in the visible notification area because Windows 10 hides new tray icons by default; it was not found in the overflow flyout either, and enumerating the tray through UI Automation does not work on this build. **Whether the glyph reads well at 16×16 is still an eyes-on check.**
+> - **`tray.ico` and close-to-tray.** Verified functionally, which is stronger than looking at it: closing the window left the app alive with no window and the daemon still serving, and that handler returns early unless `tray !== null` — so the tray exists and the icon loaded. A second launch exited without spawning anything and restored the *original* window, which is also the way back.
+> - **The glyph has now been looked at, by decoding the `.ico` rather than hunting the tray.** The file is sound: four PNG-compressed frames (16/24/32/48), every offset and length valid. (`System.Drawing.Icon.ToBitmap()` cannot decode PNG-compressed frames and throws — that is a GDI+ limitation, not a bad file. Windows Shell and Electron read them fine.) Rendered at 8× against both a dark and a light taskbar, **the mark reads from 24px up and is muddy at 16** — the three fader tracks collapse into grey smudges and only the blue centre cap survives. The coloured tile is a deliberate choice, and the reasoning in `make-icons.mjs` is sound, but against Windows 10's *default dark* taskbar the dark tile nearly vanishes, which is the case the tile exists to avoid. `drawMark` uses one set of proportions for every size; 16px wants its own, simpler treatment. **A design decision, left for the author.**
 > - **`openAtLogin` round-trips.** `false → true → false`, read back through `app.getLoginItemSettings()` each time, and restored to its original value. This is the Step 22 feature whose macOS result proved nothing here, and it works.
-> - **Notifications could not be verified, for a reason outside the code.** `Notification.isSupported()` is true and `show()` raises nothing, but no toast appears — because `HKCU:\…\PushNotifications\ToastEnabled` is **`0` on this machine**, so Windows suppresses every app's toasts. Separately, an *unpackaged* Win32 app needs a Start Menu shortcut carrying a matching AppUserModelID before it can toast at all; the NSIS install creates one (`Cuesheet.lnk`). Re-enable notifications in Windows Settings and this can be checked in a minute; nothing in the code is known to be wrong.
+> - **Notifications: everything around them checks out, and the toast itself still has not been seen.** Pursued properly the second time, against the *installed* app rather than a dev process: a gated run raised a real standby (`Gate "default" held this run… Override and continue?`), which is precisely the one event `watchForNotifications` forwards with `{ force: true }`. The shortcut the installer writes does carry the AppUserModelID — `Cuesheet.lnk` contains `io.github.npyrz.cuesheet` in UTF-16, the same shape as Discord's known-good `com.squirrel.Discord.Discord`. And still nothing reached the notification platform: the AUMID never appeared under `…\Notifications\Settings`, which is where Windows records an app that has actually sent one.
+>
+>   The cause is the machine, not the app: this box has toasts disabled system-wide (`ToastEnabled = 0`), and flipping that registry value does **not** re-arm the platform for a session already running — it needs Settings and a sign-out. So the honest state is: the code path is confirmed to execute, the AUMID plumbing is confirmed correct on both sides, and delivery is unproven. **Check it on a machine with notifications actually on.** (The value was set back to `0` afterwards.)
 > - **CI.** It had never run, and it would have failed — see Step 27. Fixed, but still unrun on a runner.
 >
 > `app.setAppUserModelId()` is set at module scope to the same string as `appId` in `electron-builder.yml` — Windows silently drops every notification from a process without one, and a mismatch between those two files is the version of this bug that looks like "notifications just don't work". Nothing enforced that agreement, so `packages/desktop/src/app-id.test.ts` now does, in the spirit of `version.test.ts`.
@@ -565,6 +568,11 @@ Five things the machine found that 451 green tests on macOS could not. Three are
 - **CI had never run and would not have survived its first minute** — on either OS. Recorded under Step 27.
 - **`ELECTRON_RUN_AS_NODE=1` is inherited from a VS Code terminal on Windows too**, and the plan only wrote down the macOS incantation. `env -u ELECTRON_RUN_AS_NODE` has no PowerShell equivalent; there it is `$env:ELECTRON_RUN_AS_NODE = $null` before launching. Without it `electron .` runs as plain Node and dies on `requestSingleInstanceLock` of `undefined` — a message that points at your code and is not about your code.
 
+**Two found later, while chasing the tray and the toast — both from *using* the app rather than testing it.**
+
+- **A UTF-8 BOM stopped the daemon booting, and said nothing useful about why.** Windows PowerShell 5.1's `Set-Content -Encoding utf8` writes a BOM, and **so does Notepad** — the two most likely ways somebody hand-edits `cuesheet.toml` on Windows. `smol-toml` then reads U+FEFF as the first character of the first key and rejects the file with *"only letter, numbers, dashes and underscores are allowed in keys"*, pointing at a `[[station]]` line that is plainly correct. The app showed a bare **Error** window and exited; the daemon refused to boot. Nothing in that message mentions encoding, so there is nothing in it to act on. `parseConfig` now strips a leading BOM — `readFile(…, "utf8")` does not do it for you, Node only strips BOMs for UTF-16. Isolated by removing the BOM from the identical file and watching the same released binary boot. Stripped at the start only: U+FEFF inside a string is the user's data.
+- **The installer will happily take a non-empty directory, and the uninstaller then owns it.** The released `.exe` was pointed at the repo checkout, and afterwards `HKCU\…\Uninstall` read `"C:\Users\noahp\Desktop\Cuesheet\Uninstall Cuesheet.exe" /currentuser`. electron-builder's NSIS uninstaller removes its install directory recursively, so running it from Settings would have taken the working tree with it — `node_modules`, `packages/desktop/release`, and anything unstaged. Nothing tracked was clobbered by the *install* itself, and the app files were removable by name, but that is luck rather than design. `allowToChangeInstallationDirectory: true` is what exposes this. Worth a `beforeInstall` check that refuses a non-empty target, or dropping the directory picker while this is an alpha.
+
 **One thing that is not a bug, so nobody spends an afternoon on it:** `POST /runs/:id/stop` answers `415` to PowerShell's `Invoke-WebRequest -Method POST`, which attaches a form content-type to a body-less request that fastify has no parser for. The Desk sends `fetch(url, { method: "POST" })` with no body and no content-type, which is accepted, as is `curl -X POST`. It is a quirk of the client, not the route.
 
 > ### 🏁 Milestone B — the app ships · `v0.1.0-alpha`
@@ -574,14 +582,16 @@ Five things the machine found that 451 green tests on macOS could not. Three are
 >
 > Downloadable installers for macOS and Windows that a person with Claude Code installed can open and use without reading a config reference. Unsigned, one harness, no gates. Say all three in the release notes.
 >
-> **One step left.** Both installers are real, the app has been installed and driven on Windows as well as macOS, and CI is green on both runners. What remains is the tag itself:
+> ## ✅ Reached — `v0.1.0-alpha` is published.
+>
+> Tagged, built on runners, drafted, and published by hand on 2026-09-15. Five installers: `nsis` for Windows x64, and `dmg` + `zip` for both Mac architectures. The route there, kept because the order turned out to matter:
 >
 > 1. ~~**Step 24.**~~ Done. Nothing in this repo had ever run on Windows; all of it now has — `npm ci`, build, typecheck, lint, format, 455 tests, a real `claude-code` run at `$0.29`, a stop that took the process tree to zero, a `taskkill /F` crash that reconciled to `interrupted`, the NSIS installer, and the installed app launched from a path with a space.
 > 2. ~~**CI green on Windows.**~~ Done. The workflows reached `main` with PR #2, which is what made any trigger fire at all; the first runs were red on the ordering bug, then on three timing flakes, and `main` is now green on both — `macos-latest` 38s, `windows-latest` 1m. Every Windows-specific decision in this repo has now been executed by a machine that is not the author's.
-> 3. **`release.yml` has still never run.** This is the last unproven path, and it is not the same path CI exercises: packaging downloads the Electron binaries, runs `electron-builder`, and on Windows builds the `nsis` target — which has only ever happened on a local box, with `signtool` present. `workflow_dispatch` builds and uploads the artifacts **without** creating a release, so the packaging path can be proven before anything is tagged. Doing that first is cheap; a failed tag build means deleting a tag and re-tagging.
-> 4. **A human pressing publish** on the draft the tag produces.
+> 3. ~~**`release.yml` has never run.**~~ Proven the cheap way first: `workflow_dispatch` builds and uploads the installers **without** creating a release, so the packaging path — Electron download, `electron-builder`, the `nsis` target — was green on both runners before anything was tagged. Then the tag ran it for real, and the two tag-gated steps that a dispatch skips (`Tag matches the version in the tree`, `Create the draft`) both passed. Doing the dispatch first cost one click; a failed tag build costs a deleted tag on a public repo.
+> 4. ~~**A human pressing publish.**~~ Done, by hand, as intended.
 >
-> Two smaller things are worth knowing before the tag: the Windows tray glyph has still not been *looked* at, and notifications could not be observed because toasts are disabled system-wide on the test machine.
+> **Post-release note.** The runner-built `.exe` was installed and run before publishing — but into a *non-empty directory*, which is its own hazard: see the installer warning below. The Windows tray glyph and a real toast are still the two things nobody has confirmed with their eyes; both are recorded under Step 24.
 
 ---
 
@@ -608,7 +618,7 @@ Keep this next to you; every item is something that works on macOS and fails on 
 
 Ticked means *exercised on a Windows machine*, not *handled in code*. The three left open are open for reasons worth reading.
 
-- [ ] `.cmd` shims need `cross-spawn`, not `spawn` — **unexercised.** The test machine's Claude Code is a native `claude.exe`, so `cross-spawn` never met a shim. Still unit-tested only; an npm-installed `claude` would cover it.
+- [x] `.cmd` shims need `cross-spawn`, not `spawn` — no longer taken on trust. The `which` tests inject `isExecutable`, so they only ever proved the PATHEXT arithmetic, and both Windows machines happened to have a native `claude.exe`. `spawn.test.ts` now writes a real CRLF `.cmd`, resolves it against a real PATH with the real executable check, and **executes** it — the thing bare `spawn` cannot do. It also asserts that a prompt with `&` in it goes in on stdin and never reaches `cmd.exe` as a command. Windows-gated, so it runs on the CI runner and skips elsewhere.
 - [x] Killing a child does not kill grandchildren on Windows — `taskkill /T /F`
 - [x] Path separators: normalize to posix before any glob
 - [x] Drive-letter case and `fs.realpath` before leash checks
@@ -617,6 +627,7 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 - [x] `EBUSY` on concurrent file writes — serialize appends
 - [x] `\r\n` in stdout line parsers
 - [x] `~` is not expanded by the OS on Windows
+- [x] **A UTF-8 BOM makes `cuesheet.toml` unparseable** — found by writing a config the way Windows writes files, and fixed in `parseConfig`. See below; this one is not in the original list and should have been.
 - [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
 - [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists); **nobody has looked at the glyph**
 - [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide

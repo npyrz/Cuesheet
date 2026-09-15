@@ -85,7 +85,7 @@ jobs:
         working-directory: packages/desktop
         run: npx electron-builder ${{ matrix.builder }} --publish never
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: installers-${{ matrix.artifact }}
           # The installers themselves. `.blockmap` and `latest*.yml` belong to
@@ -107,7 +107,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: installers-*
           merge-multiple: true

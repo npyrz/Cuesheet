@@ -240,3 +240,27 @@ describe("resolution order", () => {
     expect(loaded.config.desk.name).toBe("user");
   });
 });
+
+describe("a UTF-8 BOM", () => {
+  const BOM = "\uFEFF";
+
+  it("does not stop a config parsing", () => {
+    // Found on Windows, by writing a config the way Windows writes files.
+    // Notepad adds a BOM when it saves UTF-8, and so does PowerShell 5.1's
+    // `Set-Content -Encoding utf8`. Without the strip, smol-toml reports
+    // "only letter, numbers, dashes and underscores are allowed in keys" and
+    // points at a `[[station]]` line that is perfectly valid — and the daemon
+    // will not boot. Nothing in that message tells you to look for a BOM.
+    const toml = `${BOM}[[station]]\nid = "opus"\nharness = "claude-code"\nrole = "engineer"\nworkspace = "/ws"\n`;
+    const loaded = parseConfig(toml, "/cuesheet.toml");
+    expect(loaded.config.station[0]?.id).toBe("opus");
+  });
+
+  it("is stripped only at the start, never mid-document", () => {
+    // U+FEFF inside a string is a zero-width no-break space and belongs to
+    // the user's data. Stripping every occurrence would quietly edit it.
+    const toml = `${BOM}[desk]\nname = "a${BOM}b"\n`;
+    const loaded = parseConfig(toml, "/cuesheet.toml");
+    expect(loaded.config.desk?.name).toBe(`a${BOM}b`);
+  });
+});

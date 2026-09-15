@@ -215,7 +215,11 @@ Twelve words and you know the system.
 
 ### Install
 
-> **Alpha: nothing is published yet.** The installers build — `dmg` and `zip` for Apple Silicon and Intel, an `nsis` installer for Windows — CI is green on macOS and Windows, and a tagged build drafts a GitHub Release. No release has been published yet. Until one is, run it from a checkout:
+> **[`v0.1.0-alpha` is out.](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha)** An `nsis` installer for Windows x64, and `dmg` + `zip` for Apple Silicon and Intel. Both are **unsigned** — see below for what that looks like. It is an alpha in the sense the table above means it: one harness, one Station at a time, config that may change under you.
+>
+> Installing into a **non-empty folder is not supported** on Windows: the installer lets you choose the directory and its uninstaller then removes that directory wholesale. Accept the default, or give it an empty folder of its own — never a folder you keep other files in.
+>
+> To run from a checkout instead:
 
 ```bash
 git clone <this repo> && cd cuesheet
@@ -229,7 +233,7 @@ The window opens on the Desk. Click **add a station**, pick the harness it found
 Prefer a browser? `npx cuesheetd` in one terminal and `npm run dev -w packages/ui` in another puts the same Desk on `http://localhost:5173` — the app and the browser are the same UI talking to the same daemon.
 
 <details>
-<summary><b>When the first installers land, they will be unsigned.</b> Here is what that looks like.</summary>
+<summary><b>The installers are unsigned.</b> Here is what that looks like.</summary>
 
 Code signing costs money and a developer account; neither is worth blocking an alpha on. What it is *not* worth doing is pretending the friction is not there:
 
