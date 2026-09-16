@@ -51,6 +51,11 @@ import {
   type HarnessProber,
   type HarnessRoles,
 } from "./stations.js";
+import {
+  createUsageCache,
+  type UsageCache,
+  type UsageSource,
+} from "./usage.js";
 import { isRunId } from "./ids.js";
 import {
   currentLock,
@@ -114,6 +119,11 @@ export interface StartDaemonOptions {
    * carry a registry to avoid warnings about seats they never configured.
    */
   harnessRoles?: HarnessRoles;
+  /**
+   * The harnesses `GET /usage` reads. Supplied by `harnessRuntime()`; empty
+   * here, so `startDaemon`'s own tests never wait on somebody's CLI.
+   */
+  usageSources?: () => readonly UsageSource[];
   replayLimit?: number;
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
@@ -191,6 +201,20 @@ export async function startDaemon(
   const standbys = createStandbyRegistry();
   const prober = options.prober ?? unprobed;
   const harnessRoles = options.harnessRoles ?? unknownRoles;
+  const usage = createUsageCache({
+    sources: options.usageSources ?? (() => []),
+  });
+
+  // A finished run is the one moment plan usage actually moves — `claude-code`
+  // learns its limits only from inside a run, so its answer changes exactly
+  // here and nowhere else. Dropping the cache means the next `GET /usage`
+  // re-reads instead of serving a window from before the run that consumed it.
+  //
+  // On the daemon-wide bus rather than per project, deliberately: usage is a
+  // property of a plan, and a run in *any* project spends the same one.
+  bus.attach((event) => {
+    if (event.t === "done") usage.clear();
+  });
   const registry = options.projectRegistry ?? createProjectRegistry({ env });
 
   const runtimes = createProjectRuntimes({
@@ -259,6 +283,7 @@ export async function startDaemon(
     standbys,
     prober,
     harnessRoles,
+    usage,
     env,
     registry,
     runtimes,
@@ -474,6 +499,7 @@ interface RouteDeps {
   standbys: StandbyRegistry;
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
+  usage: UsageCache;
   env: HostEnv;
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
@@ -496,9 +522,23 @@ interface RouteDeps {
  * a phone answering a standby should not have to know which project raised it.
  */
 function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { standbys, prober, harnessRoles, env, registry, runtimes } = deps;
+  const { standbys, prober, harnessRoles, usage, env, registry, runtimes } =
+    deps;
 
   app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
+
+  /**
+   * Plan usage — **global, not per project**, and the exception is worth a
+   * line because Step 38 renders this strip *inside* a project and the next
+   * reader will assume the route should have matched.
+   *
+   * A five-hour window belongs to a plan, and a plan belongs to a vendor. It
+   * is the same window whichever repository you are standing in, and serving
+   * it per project would invite a client to add up four projects' copies of
+   * one budget. Which project is spending it is the strip's question to
+   * answer, not this route's.
+   */
+  app.get("/usage", async () => usage.get());
 
   // ── Projects ──────────────────────────────────────────────────────────────
 

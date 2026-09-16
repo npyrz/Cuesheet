@@ -32,6 +32,7 @@ import type {
   RunStatus,
   Station,
   StandbyAnswer,
+  UsageWindow,
   Vendor,
   Verdict,
 } from "@cuesheet/core";
@@ -203,20 +204,14 @@ export interface RunResult {
  */
 export type HarnessProbeResult = Omit<HarnessProbe, "harness">;
 
-/**
- * One usage window a runtime reports — the README's limits strip, in data.
- *
- * Lives here rather than in core because nothing outside a harness produces
- * one yet. It moves to core when M2 puts it on the wire.
+/*
+ * `UsageWindow` moved to `@cuesheet/core` in Step 37 and is re-exported at the
+ * bottom of this file. The comment it replaced said it would move "when M2
+ * puts it on the wire"; `GET /usage` is that. Re-exported rather than
+ * relocated silently, because the README's harness example imports everything
+ * an author needs from this one module and that line has to keep working for
+ * a harness living in someone else's repository.
  */
-export interface UsageWindow {
-  /** Plan window label, e.g. `"5h"` or `"weekly"`. */
-  window: string;
-  /** Fraction consumed, `0`–`1`. */
-  used: number;
-  /** ISO 8601, UTC. Absent when the runtime does not say. */
-  resetsAt?: string;
-}
 
 /** Where a runtime expects always-loaded context, so the Commons can project. */
 export interface ContextFile {
@@ -251,4 +246,13 @@ export interface Harness {
 }
 
 /** Re-exported so a harness module needs one import, as in the README. */
-export type { Cost, DiffStat, HarnessId, HarnessProbe, Role, Station, Vendor };
+export type {
+  Cost,
+  DiffStat,
+  HarnessId,
+  HarnessProbe,
+  Role,
+  Station,
+  UsageWindow,
+  Vendor,
+};

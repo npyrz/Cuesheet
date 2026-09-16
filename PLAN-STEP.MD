@@ -59,7 +59,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
-| 10 · Limits | 37–39 | 🔵 beta | ⬜ |
+| 10 · Limits | 37–39 | 🔵 beta | ◐ **Step 37 done** — `GET /usage`, four distinct answers, `usage()` finally answering |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
@@ -898,13 +898,44 @@ It was left disagreeing on purpose. Widening the facade changes the Phase 7 gate
 
 `usage()` has been on the `Harness` interface since Step 13, returning `[]` from every harness. This phase is the wiring that milestone was shaped for, and Phase 8 gives it the surface the user actually asked for: limits shown per project, next to the roles that are spending them.
 
-### Step 37 — Usage on the wire
+### Step 37 — Usage on the wire ✅
 
 Move `UsageWindow` from `@cuesheet/harness` into `@cuesheet/core` — the type carries a comment saying it moves when M2 puts it on the wire, and this is that. Poll, cache, serve.
 
 The type needs one addition before anything renders it, and Phase 9 is what forces it: a window must be able to say **unmetered** as distinct from **unknown**. A local model has no cap; Codex reports nothing. Collapsing those two into a blank cell tells the operator the same thing about a station that cannot run out and a station that might already have.
 
-**Done when:** `GET /usage` answers with every harness's windows, never blocks on a hung CLI, and distinguishes measured, not-yet-blocked, unmetered and unknown as four different answers.
+**Done when:** `GET /usage` answers with every harness's windows ✅, never blocks on a hung CLI ✅, and distinguishes measured, not-yet-blocked, unmetered and unknown as four different answers ✅.
+
+#### What the work settled
+
+**`UsageWindow` became a union, and that is the whole step.** The addition the plan asked for was one more state; what the three findings actually demanded was that `used` stop existing on the variants that never measured anything:
+
+```ts
+| { window; state: "measured";    used: number; resetsAt?; seenAt? }
+| { window; state: "not-blocked";               resetsAt?; seenAt? }
+| { window; state: "unmetered" }
+| { window; state: "unknown";     reason? }
+```
+
+The strip cannot draw a fabricated percentage because on three of the four variants **there is no field to read**. A `state` discriminant beside an optional `used` would have been the same information and none of the protection: two sources of truth is how the convincing 0% comes back, and this phase's own prose says drawing one is the failure worth avoiding.
+
+**`usage()` answers for `claude-code` now, and it needed no interface change.** The Deferred table predicted that — *"`usage()` already on the interface"* — and it was right for a reason that only became clear here: **there is nothing to poll.** The CLI reports limits as `rate_limit_event` lines *inside* a run and offers no queryable command, so the harness cannot go and look. It remembers what its last run overheard, on the harness instance, and `usage()` returns that. The daemon polls; the harness answers from memory; the interface never moved.
+
+**Which is why `seenAt` is on the window and is load-bearing rather than diagnostic.** Every answer `claude-code` gives is historical. A five-hour window observed forty minutes ago is not a current fact, and a strip that renders it as one is the authoritative-looking screen this phase exists to prevent. It sits on the two observed variants only — `unmetered` carries no time because it is not an observation. A local model has no cap whether or not anyone looked.
+
+**`mapRateLimit` was reading three of six fields.** The captured line carries `status`, `resetsAt`, `rateLimitType`, `overageStatus`, `overageResetsAt` and `isUsingOverage`; the original mapper read the first three and dropped the rest. Overage is a *second* limit with its own clock — the one that decides whether hitting the first costs money or stops you — so one event now yields up to two windows. Dropping it would have been the same lossiness Phase 14 criticises in `Cost`, in a neighbouring file.
+
+**`[]` and "no limits" are different claims, and the daemon is where they separate.** A harness returns `[]` when it has nothing to say — `codex` permanently, `claude-code` until a run has happened — and the cache turns that into an explicit `unknown` row with a reason. Keeping the conversion in the daemon rather than in the harnesses left the `Harness` contract untouched, which is what let `codex.test.ts`'s existing `usage()` assertion keep passing unedited.
+
+**A missing row and a row reading "unknown" must not collapse**, so a hung CLI produces the second, never the first. A harness that vanishes from the response reads as "not installed", which is a different claim from "did not answer". The timeout is therefore an answer with a reason attached, and the read is memoized per harness while in flight — the same rule the project runtimes keep, and the same bug if it is skipped: two concurrent pollers on a cold Desk otherwise spawn the same CLI twice.
+
+**`GET /usage` is global.** Step 38 renders the strip *inside* a project, which makes this look like it should have been `/projects/:id/usage`. A plan window belongs to a vendor, not to a repository — it is the same five-hour window whichever checkout you are standing in, and a per-project copy invites a client to add four of them up. Which project is spending it is the strip's question, not the route's.
+
+**`mock` now reports `unmetered`, truthfully.** It is code in this process, it costs nothing and it cannot run out — and with Step 35 skipped it is the only shipped harness that can exercise the limits strip's hardest row at all. Step 38 can therefore be built against a real fourth answer rather than an imagined one.
+
+**Only `allowed` is mapped, because only `allowed` has ever been captured.** The first draft mapped every other status to `{ state: "measured", used: 1 }` on the reasoning that "not allowed" means the cap is reached. That is a full bar drawn from a string nobody has seen — and if the CLI ever emits a `warning` or an `approaching_limit`, it is this step's own failure mode aimed the other way. An unrecognised status becomes `unknown` carrying the raw string. The rule that produced this repo's flag comments turns out to govern status vocabularies too: read it in a capture, do not recall it.
+
+**The cache is invalidated by a finished run, not only by its TTL.** A run completing is the one moment plan usage moves, because `claude-code` learns its limits only from inside one. Without that hook the strip would serve the window from *before* the run that spent it, for up to a full TTL, at exactly the moment somebody looks. The daemon attaches to its own global bus for it — deliberately global rather than per project, since a run in any project spends the same plan.
 
 ### Step 38 — The strip, and the pre-run check
 

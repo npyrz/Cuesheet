@@ -76,7 +76,12 @@ export function createMockHarness(options: MockHarnessOptions = {}): Harness {
     },
 
     async usage(): Promise<UsageWindow[]> {
-      return [];
+      // Unmetered, and truthfully so: this harness is code in this process, it
+      // costs nothing, and it cannot run out. That makes it the only shipped
+      // harness that can answer the limits strip's hardest question — the row
+      // a percentage cannot describe and a bar chart cannot draw — which until
+      // `ollama` exists is the only way that case is reachable at all.
+      return [{ window: "local", state: "unmetered" }];
     },
 
     contextFiles,

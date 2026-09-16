@@ -196,6 +196,117 @@ interface ApiError {
   error: string;
 }
 
+describe("GET /usage", () => {
+  it("answers with a row for every harness, and nothing by default", async () => {
+    // `startDaemon` is a library and its default is "no harnesses wired", the
+    // same default that makes `unprobed` the default prober. A test suite that
+    // shelled out to whatever is installed on the machine is not a test suite.
+    await boot();
+    const { status, body } = await get<{ harnesses: unknown[] }>(
+      daemon.url,
+      "/usage",
+    );
+    expect(status).toBe(200);
+    expect(body.harnesses).toEqual([]);
+  });
+
+  it("is global, because a plan window is not a property of a repository", async () => {
+    // Step 38 renders this strip inside a project, which makes the route look
+    // like it should have been `/projects/:id/usage`. It is the same five-hour
+    // window whichever repository you are standing in, and serving a copy per
+    // project invites a client to add four of them up.
+    //
+    // Both halves are asserted here rather than in two tests. A 404 under
+    // `/projects/:id` alone would also pass if the route did not exist at all,
+    // or if this file had the path wrong — it would prove the name of the
+    // failure, not the shape of the API.
+    const base = await bootProject();
+    expect((await get(daemon.url, "/usage")).status).toBe(200);
+    expect((await get(base, "/usage")).status).toBe(404);
+  });
+
+  it("serves what the wired harnesses report", async () => {
+    daemon = await startDaemon({
+      port: 0,
+      env,
+      cwd,
+      writeLockFile: false,
+      store: createFileRunStore({ root, newId: createRunIdFactory() }),
+      usageSources: () => [
+        {
+          id: "local",
+          vendor: "ollama",
+          usage: async () => [{ window: "local", state: "unmetered" as const }],
+        },
+      ],
+    });
+
+    const { body } = await get<{
+      harnesses: { harness: string; vendor: string; windows: unknown[] }[];
+    }>(daemon.url, "/usage");
+    expect(body.harnesses).toEqual([
+      {
+        harness: "local",
+        vendor: "ollama",
+        windows: [{ window: "local", state: "unmetered" }],
+      },
+    ]);
+  });
+});
+
+describe("usage after a run", () => {
+  it("re-reads once a run finishes, rather than serving a pre-run window", async () => {
+    // A finished run is the one moment plan usage moves: `claude-code` learns
+    // its limits only from inside a run. Without the invalidation the strip
+    // would show the window from *before* the run that spent it, for up to the
+    // cache's whole TTL — the stalest answer this cache can give, at exactly
+    // the moment somebody looks.
+    let reads = 0;
+    daemon = await startDaemon({
+      port: 0,
+      env,
+      cwd,
+      writeLockFile: false,
+      store: createFileRunStore({ root, newId: createRunIdFactory() }),
+      executor: done,
+      usageSources: () => [
+        {
+          id: "claude-code",
+          vendor: "anthropic",
+          usage: async () => {
+            reads += 1;
+            return [{ window: "5h", state: "not-blocked" as const }];
+          },
+        },
+      ],
+    });
+
+    await get(daemon.url, "/usage");
+    // Cached: a second look inside the TTL must not re-read.
+    await get(daemon.url, "/usage");
+    expect(reads).toBe(1);
+
+    const started = await post<{ runId: string }>(projectBase(), "/runs", {
+      prompt: "spend some tokens",
+    });
+    // Polled rather than slept on: a queue turn plus two HTTP round trips does
+    // not reliably fit inside any fixed delay a loaded runner would honour.
+    let finished = false;
+    for (let attempt = 0; attempt < 200 && !finished; attempt += 1) {
+      const run = await get<{ run: { finishedAt?: string } }>(
+        projectBase(),
+        `/runs/${started.body.runId}`,
+      );
+      finished = run.body.run.finishedAt !== undefined;
+      if (!finished) await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(finished).toBe(true);
+
+    await get(daemon.url, "/usage");
+    expect(reads).toBe(2);
+  });
+});
+
 describe("GET /health", () => {
   it("returns ok and a version", async () => {
     // Step 8's done-when, against a real listening server. Global on purpose:

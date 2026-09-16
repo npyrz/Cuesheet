@@ -16,6 +16,7 @@ import { createHarnessExecutor } from "./harness-executor.js";
 import type { ExecutorFactoryDeps } from "./server.js";
 import type { RunExecutor } from "./executor.js";
 import type { HarnessProber, HarnessRoles } from "./stations.js";
+import type { UsageSource } from "./usage.js";
 
 export interface HarnessRuntimeOptions {
   /** Defaults to the built-ins. Pass your own to add a third-party harness. */
@@ -27,6 +28,7 @@ export interface HarnessRuntime {
   executorFactory: (deps: ExecutorFactoryDeps) => RunExecutor;
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
+  usageSources: () => readonly UsageSource[];
 }
 
 /**
@@ -52,5 +54,10 @@ export function harnessRuntime(
     // warns about nothing — and the one `ollama` gets, since
     // `BUILTIN_HARNESS_IDS` lists it for probe ordering but no build ships it.
     harnessRoles: (harness) => registry.get(harness)?.roles,
+    // Every registered harness, read at call time rather than captured, so a
+    // registry that gains one later is picked up without a restart. A `Harness`
+    // satisfies `UsageSource` structurally — the cache deliberately asks for
+    // less than the interface offers.
+    usageSources: () => registry.list(),
   };
 }

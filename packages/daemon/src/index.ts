@@ -73,6 +73,17 @@ export { createStandbyRegistry, StandbyAbandonedError } from "./standby.js";
 export type { StandbyRegistry, OpenStandby } from "./standby.js";
 
 export { describeStations, unprobed, unknownRoles } from "./stations.js";
+export {
+  createUsageCache,
+  DEFAULT_USAGE_TTL_MS,
+  DEFAULT_USAGE_TIMEOUT_MS,
+} from "./usage.js";
+export type {
+  UsageCache,
+  UsageCacheOptions,
+  UsageResponse,
+  UsageSource,
+} from "./usage.js";
 export type {
   HarnessProber,
   HarnessRoles,

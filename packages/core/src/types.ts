@@ -300,6 +300,78 @@ export interface Verdict {
   at: string;
 }
 
+// ── Plan usage ──────────────────────────────────────────────────────────────
+
+/**
+ * One usage window a runtime reports — the README's limits strip, in data.
+ *
+ * Moved here from `@cuesheet/harness`, where it carried a comment saying it
+ * would move when the limits milestone put it on the wire. This is that.
+ *
+ * **It is a union, and that is the entire design.** Three findings from the
+ * shipped harnesses say a single `used: number` cannot be honest:
+ *
+ * - `claude-code` reports a *status*, not a fraction, and only from inside a
+ *   run. `allowed` means "not yet blocked", which is not the same claim as
+ *   "0% consumed" — and a bar drawn at 0% is a confident lie in the direction
+ *   that gets someone cut off mid-task.
+ * - `codex` reports no plan window at all. Its silence has to look different
+ *   from a measurement.
+ * - A local model cannot run out. A percentage there is a lie in the opposite
+ *   direction, and a bar chart cannot draw it at all.
+ *
+ * So `used` exists only on the variant that measured something. The strip
+ * cannot render a fabricated percentage because there is no field to read.
+ *
+ * `seenAt` is on the two variants that come from an observation, and it is
+ * load-bearing rather than diagnostic. `claude-code`'s numbers exist only
+ * *inside* a run, so the honest answer to "what is your five-hour window" is
+ * always "here is what it said when it last spoke, and that was then". A
+ * five-hour window observed forty minutes ago is not a current fact, and a
+ * strip that draws it as one is exactly the authoritative-looking screen this
+ * phase exists to avoid. `unmetered` carries no time because it is not an
+ * observation — a local model has no cap whether or not anyone looked.
+ */
+export type UsageWindow =
+  /** A real fraction of a real cap, `0`–`1`. */
+  | {
+      window: string;
+      state: "measured";
+      used: number;
+      resetsAt?: string;
+      seenAt?: string;
+    }
+  /** The runtime says only that it has not cut you off yet. */
+  | { window: string; state: "not-blocked"; resetsAt?: string; seenAt?: string }
+  /** There is no cap. A local model, and the row a percentage cannot describe. */
+  | { window: string; state: "unmetered" }
+  /** Nobody said. Distinct from every answer above, including from silence. */
+  | { window: string; state: "unknown"; reason?: string };
+
+export type UsageState = UsageWindow["state"];
+
+/**
+ * What one harness reports, as the wire carries it.
+ *
+ * `vendor` rather than only `harness` because the strip groups by plan, and a
+ * plan belongs to a vendor: two Stations on `claude-code` share one five-hour
+ * window, and showing it twice would read as twice the budget.
+ *
+ * Freshness lives on the windows, not here — see `seenAt` above. An envelope
+ * timestamp would be the time of the *poll*, and reporting when we asked as
+ * though it were when they answered is the specific error this phase's own
+ * prose warns about.
+ *
+ * `windows` is never empty. A harness with nothing to say gets one `unknown`
+ * row, because a missing row and a row reading "unknown" are the two answers
+ * that must not collapse into each other.
+ */
+export interface HarnessUsage {
+  harness: HarnessId;
+  vendor: Vendor;
+  windows: UsageWindow[];
+}
+
 // ── Station liveness ────────────────────────────────────────────────────────
 
 /**

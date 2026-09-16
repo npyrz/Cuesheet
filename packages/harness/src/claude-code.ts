@@ -62,6 +62,12 @@ export function createClaudeCodeHarness(
 ): Harness {
   const bin = options.bin ?? CLAUDE_BIN;
 
+  // Survives between runs, and is lost on restart — which is right rather than
+  // a shortcoming. A window remembered across a restart is of unknown age;
+  // `seenAt` would say so, and "I do not know" is a better answer than a stale
+  // number nobody asked for.
+  let lastSeen: UsageWindow[] = [];
+
   const contextFiles: readonly ContextFile[] = [
     { path: "CLAUDE.md", scope: "project" },
     { path: ".claude/CLAUDE.md", scope: "user" },
@@ -111,11 +117,21 @@ export function createClaudeCodeHarness(
     },
 
     async usage(): Promise<UsageWindow[]> {
-      // The CLI does report limits — as `rate_limit_event` lines *inside* a
-      // run (see the fixture), not as a queryable command. Surfacing those is
-      // M2's job, and `mapRateLimit` below already turns one into a
-      // `UsageWindow` so that milestone is a wiring change, not a parse.
-      return [];
+      // **There is nothing to poll.** The CLI reports limits as
+      // `rate_limit_event` lines *inside* a run, never as a queryable command,
+      // so this cannot go and look — it reports what the last run overheard.
+      // That is why the windows carry `seenAt`: the answer is always
+      // historical, and a strip that forgets it draws this morning's five-hour
+      // window as though it were now.
+      //
+      // Held on the harness instance rather than in the daemon because the
+      // daemon polls `usage()`, and that is the whole seam. Wiring this needed
+      // no change to the `Harness` interface — which is what the plan's
+      // Deferred table predicted when it left the method returning `[]`.
+      //
+      // Empty until a run has happened. The daemon turns that into an explicit
+      // `unknown` row rather than an empty strip.
+      return lastSeen;
     },
 
     contextFiles,
@@ -133,6 +149,9 @@ export function createClaudeCodeHarness(
       const state = createStreamState(
         await observedStation(ctx.station, ctx.workspace.path),
         (event) => ctx.emit(event),
+        (windows) => {
+          lastSeen = windows;
+        },
       );
 
       const reader = jsonLineReader(
@@ -244,9 +263,20 @@ export interface StreamState {
   /** Cost events the mapper has produced but not yet handed to the caller. */
   drainCost(): HarnessEvent[];
   total(): { tokensIn: number; tokensOut: number; usd?: number };
+  /**
+   * The plan windows this run has seen, latest wins.
+   *
+   * On the state rather than emitted as a `HarnessEvent` on purpose. A usage
+   * window is not something that happened *in* the run — it is a fact about
+   * the plan the run happened to overhear — and putting it in the run record
+   * would mean every replay of an old run re-reporting a limit that has since
+   * reset.
+   */
+  usage: UsageWindow[];
 }
 
 interface InternalState extends StreamState {
+  onUsage?: (windows: UsageWindow[]) => void;
   seenMessages: Set<string>;
   tokensIn: number;
   tokensOut: number;
@@ -259,9 +289,13 @@ interface InternalState extends StreamState {
 export function createStreamState(
   station: Station,
   emit: (event: HarnessEvent) => void = () => undefined,
+  /** Called whenever the stream reports a limit, so `usage()` can answer. */
+  onUsage?: (windows: UsageWindow[]) => void,
 ): StreamState {
   const state: InternalState = {
     errored: false,
+    usage: [],
+    ...(onUsage !== undefined && { onUsage }),
     seenMessages: new Set<string>(),
     tokensIn: 0,
     tokensOut: 0,
@@ -309,11 +343,28 @@ export function mapStreamEvent(
       // input, not its output, and rendering them doubles every tool call in
       // the run log. The `tool` event already recorded that the call happened.
       return [];
-    case "rate_limit_event":
-      // Parsed for M2 (see `mapRateLimit`); nothing on the wire consumes a
-      // usage window yet, so it is silently absorbed rather than shown as
-      // unexplained text.
+    case "rate_limit_event": {
+      // Step 37 wired this up. It still produces no `HarnessEvent` — a limit
+      // is a fact about the plan, not something the run did, and showing it in
+      // the run log would wedge "your five-hour window is fine" between two
+      // tool calls forever. It goes to `usage()` instead.
+      //
+      // `seenAt` is stamped here because this is the only moment anyone knows
+      // it: the CLI reports limits only from inside a run, so this instant is
+      // the observation. `/usage` serves it later and has to be able to say
+      // how much later.
+      const at = new Date().toISOString();
+      const windows = mapRateLimit(ev).map((window) =>
+        window.state === "measured" || window.state === "not-blocked"
+          ? { ...window, seenAt: at }
+          : window,
+      );
+      if (windows.length > 0) {
+        s.usage = windows;
+        s.onUsage?.(windows);
+      }
       return [];
+    }
     case "result":
       return mapResult(ev, s);
     default:
@@ -479,29 +530,93 @@ function inputTokens(usage: Record<string, unknown>): number {
 }
 
 /**
- * Turn a `rate_limit_event` into a usage window.
+ * Turn a `rate_limit_event` into usage windows.
  *
- * Unused until M2 and exported anyway, because it is the parse that milestone
- * needs and the fixture proving the shape exists now.
+ * **One event yields up to two windows, not one.** The captured line carries
+ * six fields and the first version of this function read three:
+ *
+ * ```
+ * status, resetsAt, rateLimitType, overageStatus, overageResetsAt, isUsingOverage
+ * ```
+ *
+ * `overageStatus` is a second limit with its own reset clock — the thing that
+ * decides whether hitting the first one stops you or costs you — and dropping
+ * it would have been the same lossiness the `Cost` type is criticised for two
+ * files over. So the plan window and the overage window are both returned, in
+ * that order, and a stream that reports no overage yields one window.
+ *
+ * **Neither window carries a percentage, and none can be inferred.** The CLI
+ * reports a *status*. `allowed` means "not yet blocked", which is a different
+ * claim from "0% consumed" — so these map to `not-blocked`, and `UsageWindow`
+ * deliberately gives that variant no `used` field to fill in.
+ *
+ * Returns `[]` for anything that is not a rate-limit event, so a caller can
+ * spread the result without checking.
  */
-export function mapRateLimit(value: unknown): UsageWindow | null {
+export function mapRateLimit(value: unknown): UsageWindow[] {
   const ev = asRecord(value);
   const info = ev && asRecord(ev["rate_limit_info"]);
-  if (!info) return null;
-  const window =
+  if (!info) return [];
+
+  const label =
     typeof info["rateLimitType"] === "string"
       ? info["rateLimitType"]
       : "unknown";
-  const resetsAt = info["resetsAt"];
+
+  const windows: UsageWindow[] = [
+    limitWindow(label, info["status"], info["resetsAt"]),
+  ];
+
+  // Only when the CLI actually says something about overage. An absent field
+  // is not "no overage" — it is a version of the CLI that does not report one,
+  // and inventing an `allowed` row for it would be a claim nobody made.
+  if (info["overageStatus"] !== undefined) {
+    windows.push(
+      limitWindow(
+        `${label} overage`,
+        info["overageStatus"],
+        info["overageResetsAt"],
+      ),
+    );
+  }
+
+  return windows;
+}
+
+/** One status-plus-clock pair, as the only two variants a status can justify. */
+function limitWindow(
+  window: string,
+  status: unknown,
+  resetsAt: unknown,
+): UsageWindow {
+  if (typeof status !== "string") {
+    return {
+      window,
+      state: "unknown",
+      reason: "The stream reported no status.",
+    };
+  }
+
+  const resets =
+    typeof resetsAt === "number" && Number.isFinite(resetsAt)
+      ? { resetsAt: new Date(resetsAt * 1000).toISOString() }
+      : {};
+
+  // `allowed` is the **only** value any capture has shown, so it is the only
+  // one this maps with confidence. An unrecognised status becomes `unknown`
+  // carrying the raw string rather than a guess at what it meant.
+  //
+  // The temptation was to treat anything else as "the cap is reached" and
+  // report `used: 1`. That is a full bar drawn from a string nobody has seen —
+  // and if the CLI ever emits something like `warning`, it is this step's own
+  // failure mode pointed the other way. The rule that produced this file's
+  // flag comments applies to status vocabularies too: read it in a capture,
+  // do not recall it.
+  if (status === "allowed") return { window, state: "not-blocked", ...resets };
   return {
     window,
-    // The CLI reports a status, not a fraction. `allowed` is not "0% used" —
-    // it is "not yet blocked" — so the honest mapping is a floor, and M2 has
-    // to decide what to render rather than inherit a fabricated number.
-    used: info["status"] === "allowed" ? 0 : 1,
-    ...(typeof resetsAt === "number" && {
-      resetsAt: new Date(resetsAt * 1000).toISOString(),
-    }),
+    state: "unknown",
+    reason: `The stream reported status "${status}", which no capture has explained.`,
   };
 }
 
