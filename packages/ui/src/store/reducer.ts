@@ -22,6 +22,7 @@
  */
 import type {
   Cost,
+  HarnessUsage,
   Run,
   RunEvent,
   RunId,
@@ -56,6 +57,15 @@ export interface DeskState {
   connection: ConnectionStatus;
   /** `null` until the first `/stations` fetch lands. */
   stations: StationsResponse | null;
+  /**
+   * Plan usage, `null` until the first `/usage` fetch lands.
+   *
+   * Kept across a project switch rather than cleared with everything else: a
+   * plan window belongs to a vendor, not to a repository, so it is the one
+   * thing on this Desk that is still true about the project you just moved to.
+   * Blanking it would make the strip flicker on every switch for no reason.
+   */
+  usage: HarnessUsage[] | null;
   /** Newest first, matching `GET /runs`. */
   runs: Run[];
   /** The run the log pane is showing. */
@@ -72,6 +82,7 @@ export interface DeskState {
 export const initialState: DeskState = {
   connection: "connecting",
   stations: null,
+  usage: null,
   runs: [],
   selectedRunId: null,
   events: {},
@@ -83,6 +94,7 @@ export const initialState: DeskState = {
 export type DeskAction =
   | { type: "connection"; status: ConnectionStatus }
   | { type: "stations"; stations: StationsResponse }
+  | { type: "usage"; usage: HarnessUsage[] }
   /** Replaces the run list wholesale. The reconnect path depends on this. */
   | { type: "snapshot"; runs: Run[] }
   /** A full `GET /runs/:id`, which replaces that run's events. */
@@ -116,6 +128,9 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
 
     case "stations":
       return { ...state, stations: action.stations };
+
+    case "usage":
+      return { ...state, usage: action.usage };
 
     case "snapshot": {
       const runs = action.runs;
@@ -191,7 +206,13 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
       // dispatches this, so "connecting" is the truth for the moment in
       // between; and a failure that belonged to the project you left is not
       // one to keep showing over the one you arrived at.
-      return initialState;
+      //
+      // `usage` is the one exception, and it is an exception for the same
+      // reason `GET /usage` is not a project route: a plan window belongs to a
+      // vendor. It is the only thing on this Desk that is still true about the
+      // project being arrived at, so blanking it would make the strip flicker
+      // on every switch and tell the operator nothing they did not know.
+      return { ...initialState, usage: state.usage };
 
     case "error":
       return { ...state, error: action.message };

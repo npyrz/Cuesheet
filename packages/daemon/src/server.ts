@@ -14,6 +14,7 @@ import websocket from "@fastify/websocket";
 import { stat } from "node:fs/promises";
 import {
   addStation,
+  checkLimits,
   ConfigError,
   configFile,
   createProjectRegistry,
@@ -777,13 +778,46 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const stationIds = resolveStationIds(loaded, cuesheet);
     const workspace = resolveWorkspace(loaded, stationIds);
 
+    // **The pre-run check.** The README's complaint is that no vendor tells
+    // you where you stand until you hit the wall, "usually eleven minutes into
+    // something that mattered" — so a run that cannot finish is refused here,
+    // at second zero, rather than dying halfway with a partial diff.
+    //
+    // Scoped to the harnesses this run will actually use. A run that only
+    // touches `claude-code` must not be refused because a Codex Station
+    // elsewhere in the config is capped; it would never have reached it.
+    //
+    // Only a *measured* window can refuse anything. `not-blocked`, `unknown`
+    // and `unmetered` all start the run, because refusing on one of those
+    // would be inventing a measurement — the same failure the strip avoids,
+    // aimed at the operator's ability to work instead of at their bill.
+    const check = checkLimits({
+      limits: loaded.config.limits,
+      usage: (await usage.get()).harnesses,
+      harnesses: harnessesFor(loaded, stationIds),
+    });
+    if (check.decision === "block") {
+      return reply.code(409).send({
+        error: check.findings[0]?.reason ?? "A usage cap blocks this run.",
+        // The windows, not just a sentence: the Desk has to be able to say
+        // *which* vendor stopped it and how long until it resets.
+        limits: check.findings,
+      });
+    }
+
     const run = await runtime.queue.enqueue({
       prompt,
       workspace,
       ...(cuesheet !== undefined && { cuesheetId: cuesheet }),
       stationIds,
     });
-    return reply.code(202).send({ runId: run.id });
+    // A warned run still starts. The threshold is a heads-up, not a gate —
+    // `block_at` is the gate — so the findings ride along on the acceptance
+    // rather than turning into a second request the client has to make.
+    return reply.code(202).send({
+      runId: run.id,
+      ...(check.findings.length > 0 && { limits: check.findings }),
+    });
   });
 
   app.post("/projects/:id/runs/:runId/stop", async (request, reply) => {
@@ -884,6 +918,24 @@ function resolveStationIds(loaded: LoadedConfig, cuesheet?: string): string[] {
   }
   const first = loaded.config.station[0];
   return first ? [first.id] : [];
+}
+
+/**
+ * The distinct harnesses a run will touch, for the pre-run check.
+ *
+ * A Station naming a harness that is not configured is left in rather than
+ * filtered out: the run will fail on it either way, and dropping it here would
+ * mean a capped harness silently stopped counting toward the check.
+ */
+function harnessesFor(loaded: LoadedConfig, stationIds: string[]): string[] {
+  const harnesses = new Set<string>();
+  for (const id of stationIds) {
+    const station = loaded.config.station.find(
+      (candidate) => candidate.id === id,
+    );
+    if (station) harnesses.add(station.harness);
+  }
+  return [...harnesses];
 }
 
 function resolveWorkspace(loaded: LoadedConfig, stationIds: string[]): string {

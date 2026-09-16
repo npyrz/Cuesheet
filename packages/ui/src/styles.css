@@ -134,6 +134,109 @@ textarea {
   background: color-mix(in srgb, var(--warn) 14%, var(--panel));
 }
 
+/* ── Limits strip ────────────────────────────────────────────────────────── */
+
+.limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.limits-vendor {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.limits-name {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.limits-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  min-width: 0;
+}
+
+.limits-row {
+  display: flex;
+  /* `baseline`, not `center`: a wrapped note is taller than the label beside
+     it, and centring would float the window name against nothing. */
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.limits-window {
+  color: var(--muted);
+}
+
+.limits-bar {
+  display: inline-block;
+  width: 96px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.limits-fill {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.tone-warn .limits-fill {
+  background: var(--warn);
+}
+
+.tone-over .limits-fill {
+  background: var(--bad);
+}
+
+.tone-warn .limits-value {
+  color: var(--warn);
+}
+
+.tone-over .limits-value {
+  color: var(--bad);
+}
+
+/*
+ * The no-bar row. It carries the *sentence* where a bar would go, rather than
+ * an empty track: an empty track reads as "0% of a real cap", which is exactly
+ * the claim a vendor reporting a status has not made.
+ *
+ * It wraps rather than truncating, and that is not a style preference. This
+ * sentence is the entire honesty argument of the limits strip — "not blocked
+ * yet, this vendor reports a status, not a number" — and an ellipsis after
+ * "reports a stat…" leaves a row that reads as *less* forthcoming than the
+ * blank it replaced. Hiding the explanation behind a hover defeats the point
+ * of having written it.
+ */
+.limits-nobar {
+  color: var(--muted);
+  max-width: 56ch;
+  white-space: normal;
+}
+
+.limits-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.tone-free .limits-value {
+  color: var(--muted);
+}
+
 main {
   flex: 1;
   padding: 16px;

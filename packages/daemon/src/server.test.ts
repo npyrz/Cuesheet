@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import type { HostEnv, Run, RunEvent, Standby, Station } from "@cuesheet/core";
+import type {
+  HostEnv,
+  Run,
+  RunEvent,
+  Standby,
+  Station,
+  UsageWindow,
+} from "@cuesheet/core";
 import { startDaemon, type DaemonHandle } from "./server.js";
 import {
   createFileRunStore,
@@ -46,6 +53,9 @@ require = "1-of-1"
 
 [limits]
 warn_at = 0.85
+
+[remote]
+tailnet = true
 `;
 
 let env: HostEnv;
@@ -307,6 +317,104 @@ describe("usage after a run", () => {
   });
 });
 
+describe("the pre-run check", () => {
+  /** A daemon whose one wired harness reports whatever this test needs. */
+  async function bootWithUsage(windows: UsageWindow[]): Promise<string> {
+    daemon = await startDaemon({
+      port: 0,
+      env,
+      cwd,
+      writeLockFile: false,
+      store: createFileRunStore({ root, newId: createRunIdFactory() }),
+      executor: done,
+      usageSources: () => [
+        { id: "claude-code", vendor: "anthropic", usage: async () => windows },
+      ],
+    });
+    return projectBase();
+  }
+
+  it("refuses a run that cannot finish, with the window that stopped it", async () => {
+    // The README's complaint, answered: no vendor tells you where you stand
+    // until you hit the wall, "usually eleven minutes into something that
+    // mattered". This is the refusal at second zero instead.
+    const url = await bootWithUsage([
+      { window: "five_hour", state: "measured", used: 1 },
+    ]);
+    const { status, body } = await post<{
+      error: string;
+      limits: { vendor: string; window: string }[];
+    }>(url, "/runs", { prompt: "something that mattered" });
+
+    expect(status).toBe(409);
+    expect(body.error).toContain("would not finish");
+    // The windows, not just a sentence — the Desk has to name the vendor.
+    expect(body.limits[0]).toMatchObject({
+      vendor: "anthropic",
+      window: "five_hour",
+    });
+
+    // And nothing was queued. A refusal that still enqueues is a run that dies
+    // halfway, which is the thing being prevented.
+    const { body: listed } = await get<{ runs: Run[] }>(url, "/runs");
+    expect(listed.runs).toEqual([]);
+  });
+
+  it("starts a warned run, and hands back what it was warned about", async () => {
+    const url = await bootWithUsage([
+      { window: "weekly", state: "measured", used: 0.9 },
+    ]);
+    const { status, body } = await post<{
+      runId: string;
+      limits?: { used: number }[];
+    }>(url, "/runs", { prompt: "carry on" });
+
+    expect(status).toBe(202);
+    expect(body.runId).toBeTruthy();
+    expect(body.limits?.[0]?.used).toBe(0.9);
+  });
+
+  it("never refuses on an answer nobody measured", async () => {
+    // The three states that are not measurements. Refusing on any of them
+    // would be inventing a number — the strip's failure mode, aimed at the
+    // operator's ability to work instead of at their bill.
+    for (const window of [
+      { window: "5h", state: "not-blocked" as const },
+      { window: "plan", state: "unknown" as const },
+      { window: "local", state: "unmetered" as const },
+    ]) {
+      await daemon?.close();
+      const url = await bootWithUsage([window]);
+      const { status } = await post(url, "/runs", { prompt: "go" });
+      expect(status).toBe(202);
+    }
+  });
+
+  it("ignores a capped harness this run would never reach", async () => {
+    // The config's only Station is on `claude-code`. A capped Codex in the
+    // same daemon must not stop it.
+    daemon = await startDaemon({
+      port: 0,
+      env,
+      cwd,
+      writeLockFile: false,
+      store: createFileRunStore({ root, newId: createRunIdFactory() }),
+      executor: done,
+      usageSources: () => [
+        {
+          id: "codex",
+          vendor: "openai",
+          usage: async () => [
+            { window: "plan", state: "measured" as const, used: 1 },
+          ],
+        },
+      ],
+    });
+    const { status } = await post(projectBase(), "/runs", { prompt: "go" });
+    expect(status).toBe(202);
+  });
+});
+
 describe("GET /health", () => {
   it("returns ok and a version", async () => {
     // Step 8's done-when, against a real listening server. Global on purpose:
@@ -353,18 +461,25 @@ describe("GET /stations", () => {
 
   it("surfaces the loader's warnings for unimplemented tables", async () => {
     // Step 6 collects these precisely so this route can report them; without
-    // it a user never learns their `[limits]` table is parsed but not live.
-    // This used to assert on `[gate]`, which is implemented now.
+    // it a user never learns which of their tables are parsed but not live.
+    //
+    // The table under test has now moved twice, which is the point: this
+    // asserted on `[gate]` until Gates shipped and on `[limits]` until Step 38,
+    // and `[remote]` is what is still deferred today. A warning that outlives
+    // the thing it warns about is worse than none.
     const url = await bootProject();
     const { body } = await get<StationsResponse>(url, "/stations");
     const warnings = body.warnings as Array<{
       table?: string;
       message: string;
     }>;
-    expect(warnings.some((w) => w.table === "limits")).toBe(true);
-    expect(warnings.some((w) => w.message.includes("Usage limits"))).toBe(true);
-    // And the gate table no longer warns at all.
+    expect(warnings.some((w) => w.table === "remote")).toBe(true);
+    expect(warnings.some((w) => w.message.includes("Phone pairing"))).toBe(
+      true,
+    );
+    // Neither of the two that have since shipped warns any more.
     expect(warnings.some((w) => w.table === "gate")).toBe(false);
+    expect(warnings.some((w) => w.table === "limits")).toBe(false);
   });
 
   it("reports which file the config came from", async () => {
@@ -960,7 +1075,7 @@ describe("POST /stations", () => {
   it("preserves the tables the test config carries, gates included", async () => {
     // The writer appends to the file's *text*, so nothing it did not write is
     // at risk — whether or not this build parses it. Both cases are checked:
-    // `[gate.default]` is implemented now, `[limits]` is still deferred.
+    // `[limits]` is implemented now, `[remote]` is still deferred.
     const url = await bootProject();
     await post(url, "/stations", {
       id: "qwen",
@@ -973,6 +1088,7 @@ describe("POST /stations", () => {
     expect(text).toContain('require = "1-of-1"');
     expect(text).toContain("[limits]");
     expect(text).toContain("warn_at = 0.85");
+    expect(text).toContain("[remote]");
   });
 
   it("409s a duplicate id instead of silently shadowing a tile", async () => {

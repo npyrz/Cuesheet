@@ -110,11 +110,45 @@ export const GateSchema = z
   })
   .loose();
 
+/**
+ * `[limits]` — where the pre-run check gets its thresholds.
+ *
+ * The defaults are the README's own numbers, and they are defaults rather than
+ * required fields because the table is the *tuning*, not the feature: a config
+ * with no `[limits]` block still gets warned before it is cut off.
+ *
+ * `.loose()` for the same reason `GateSchema` is: `when_capped` is the shape
+ * most likely to grow, and dropping a key someone wrote would silently discard
+ * their intent.
+ */
+export const LimitsSchema = z
+  .object({
+    /** Fraction of a window at which the strip goes amber. */
+    warn_at: z.number().min(0).max(1).default(0.85),
+    /** Fraction at which a run is refused rather than started. */
+    block_at: z.number().min(0).max(1).default(0.97),
+    /**
+     * `{ codex = "qwen" }` — which Station takes over when one is capped.
+     *
+     * Parsed and kept for Step 39's fallback routing; **nothing reads it yet**,
+     * the same standing `merges` has on a Gate. Accepting it now means a
+     * config written against the README survives a round trip through the
+     * Desk's own writer rather than being dropped as an unknown key.
+     */
+    when_capped: z.record(Identifier, Identifier).default({}),
+  })
+  .loose();
+
 export const ConfigSchema = z.object({
   desk: DeskSchema.default({}),
   station: z.array(StationSchema).default([]),
   gate: z.record(Identifier, GateSchema).default({}),
   cuesheet: z.record(Identifier, CuesheetSchema).default({}),
+  // `prefault` rather than `default`: an absent `[limits]` table has to be run
+  // *through* the schema so the field defaults inside it apply. `.default({})`
+  // hands back the literal empty object, which on a `.loose()` schema does not
+  // typecheck and would not carry `warn_at` even if it did.
+  limits: LimitsSchema.prefault({}),
 });
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -126,6 +160,7 @@ export type GateRef = z.infer<typeof GateRefSchema>;
 export type CueStep = z.infer<typeof CueStepSchema>;
 export type Cuesheet = z.infer<typeof CuesheetSchema>;
 export type Gate = z.infer<typeof GateSchema>;
+export type Limits = z.infer<typeof LimitsSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function isGateRef(step: CueStep): step is GateRef {
@@ -140,7 +175,6 @@ export function isGateRef(step: CueStep): step is GateRef {
  */
 export const DEFERRED_TABLES: Readonly<Record<string, string>> = {
   caller: "The Caller is M6, post-1.0.",
-  limits: "Usage limits and fallback routing are M2.",
   oncall: "On-Call is M7, post-1.0.",
   trigger: "Triggers arrive with On-Call (M7).",
   commons: "The Commons is M4.",
@@ -235,7 +269,13 @@ export function parseConfig(
   const table = raw as Record<string, unknown>;
   const warnings: ConfigWarning[] = [];
   const deferred: Record<string, unknown> = {};
-  const implemented = new Set(["desk", "station", "gate", "cuesheet"]);
+  const implemented = new Set([
+    "desk",
+    "station",
+    "gate",
+    "cuesheet",
+    "limits",
+  ]);
 
   for (const key of Object.keys(table)) {
     if (implemented.has(key)) continue;
@@ -286,6 +326,20 @@ function lint(config: Config): ConfigWarning[] {
         message: `Station "${station.id}" has no workspace; it cannot run until one is set.`,
       });
     }
+  }
+
+  // A threshold pair that cannot fire in the order it describes. Warned rather
+  // than rejected, because `lint` exists precisely so a half-written config
+  // still opens the app — refusing to start the Desk over a transposed pair of
+  // numbers is a worse outcome than saying so on screen.
+  if (config.limits.warn_at > config.limits.block_at) {
+    warnings.push({
+      table: "limits",
+      message:
+        `warn_at (${String(config.limits.warn_at)}) is above block_at ` +
+        `(${String(config.limits.block_at)}), so a run is refused before it ` +
+        `is ever warned about. Swap them.`,
+    });
   }
 
   for (const [name, sheet] of Object.entries(config.cuesheet)) {

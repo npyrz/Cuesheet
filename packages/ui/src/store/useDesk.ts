@@ -23,6 +23,7 @@ import {
   fetchRun,
   fetchRuns,
   fetchStations,
+  fetchUsage,
   startRun,
   stopRun,
   type NewStation,
@@ -32,6 +33,17 @@ import { deskReducer, initialState, type DeskState } from "./reducer.js";
 
 /** How many runs the list pane holds. Plenty for a session; not unbounded. */
 const RUN_LIMIT = 50;
+
+/**
+ * How often the strip re-asks.
+ *
+ * Matched to the daemon's own usage TTL rather than chosen independently:
+ * polling faster would return the same cached answer, and polling slower would
+ * leave the strip behind a reading the daemon already has. The daemon drops
+ * its cache when a run finishes, which is the moment the number actually
+ * moves, so this interval is only catching drift between runs.
+ */
+const USAGE_POLL_MS = 30_000;
 
 /**
  * Which project the Desk is showing, and how it got there.
@@ -182,6 +194,17 @@ export function useDesk(): DeskApi {
           fetchRuns(id, RUN_LIMIT),
           fetchStations(id),
         ]);
+        // Usage is fetched but *not* awaited alongside those two. It is a
+        // global route with nothing project-scoped about it, and a vendor CLI
+        // that is slow to answer must not hold up the tiles and the run list.
+        void fetchUsage()
+          .then((usage) => {
+            if (current()) dispatch({ type: "usage", usage: usage.harnesses });
+          })
+          .catch(() => {
+            // A strip that cannot be read is a strip that is not drawn. It is
+            // never worth the error banner that belongs to the work.
+          });
         // 3. Replace. Anything the UI believed that the daemon does not is now
         //    gone, which is the point of a resync — but only if this is still
         //    the project the Desk is on. `snapshot` replaces wholesale, so a
@@ -249,6 +272,25 @@ export function useDesk(): DeskApi {
         known.current.delete(runId);
       })
       .finally(() => fetching.current.delete(runId));
+  }, []);
+
+  // The strip's own clock. Separate from the resync because usage is global:
+  // it keeps ticking across a project switch, and it does not need a socket.
+  useEffect(() => {
+    let live = true;
+    const poll = (): void => {
+      void fetchUsage()
+        .then((usage) => {
+          if (live) dispatch({ type: "usage", usage: usage.harnesses });
+        })
+        .catch(() => undefined);
+    };
+    poll();
+    const timer = setInterval(poll, USAGE_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {

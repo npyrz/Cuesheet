@@ -41,8 +41,8 @@ cues = [
   { station = "sonnet", action = "review" },
 ]
 
-[limits]
-warn_at = 0.85
+[remote]
+tailnet = true
 `;
 
 const loaded = (): LoadedConfig => parseConfig(TOML, "/ws/cuesheet.toml");
@@ -119,11 +119,12 @@ describe("describeStations", () => {
   });
 
   it("passes the loader's warnings straight through", async () => {
-    // `[limits]` rather than `[gate]`: gates are implemented now, so they no
-    // longer warn. The route's job — telling a user which of their tables are
-    // parsed but not live — is unchanged.
+    // `[remote]` rather than `[gate]` or `[limits]`: both of those have since
+    // shipped and no longer warn. The route's job — telling a user which of
+    // their tables are parsed but not live — is unchanged, and the table it
+    // has to name keeps moving.
     const response = await describeStations(loaded(), unprobed);
-    expect(response.warnings.some((w) => w.table === "limits")).toBe(true);
+    expect(response.warnings.some((w) => w.table === "remote")).toBe(true);
     expect(response.sourcePath).toBe("/ws/cuesheet.toml");
   });
 
@@ -213,7 +214,7 @@ workspace = "/ws"
 
   it("keeps the loader's own warnings alongside its own", async () => {
     const response = await describeStations(loaded(), unprobed, realRoles);
-    expect(response.warnings.some((w) => w.table === "limits")).toBe(true);
+    expect(response.warnings.some((w) => w.table === "remote")).toBe(true);
     // `TOML`'s ollama station is a worker in a worker seat, so the only seat
     // warning that could appear is one that should not.
     expect(

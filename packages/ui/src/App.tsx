@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddStationPanel } from "./components/AddStationPanel.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
+import { LimitsStrip } from "./components/LimitsStrip.js";
 import { RunLog } from "./components/RunLog.js";
 import { StationTile } from "./components/StationTile.js";
 import { bridge } from "./api/base.js";
@@ -204,6 +205,16 @@ export function App(): React.JSX.Element {
           <span>{warning.message}</span>
         </div>
       ))}
+
+      {/*
+        Above the tiles, because it is what an operator checks *before*
+        starting work rather than after. Renders nothing at all until the
+        first `/usage` fetch lands — an empty frame tells them less than the
+        space it takes.
+      */}
+      {state.stations && (
+        <LimitsStrip usage={state.usage} limits={state.stations.limits} />
+      )}
 
       <main>
         {state.standbys.length > 0 && (

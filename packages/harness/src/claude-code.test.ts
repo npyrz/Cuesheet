@@ -328,6 +328,37 @@ describe("mapRateLimit", () => {
   it("is empty for anything else, so a caller can spread it", () => {
     expect(mapRateLimit({ type: "result" })).toEqual([]);
   });
+
+  it("treats `isUsingOverage` as a measurement, because it is one", () => {
+    // The one field in this line that is not a status vocabulary. Overage
+    // *begins* where the plan allowance ends, so a runtime reporting it is in
+    // overage has reported the plan window spent — `used: 1` as a definition
+    // rather than an interpretation.
+    //
+    // It is also the only route by which any shipped harness reaches
+    // `state: "measured"`, and therefore the only way Step 38's pre-run check
+    // can refuse a run on real data instead of a test double.
+    const [plan] = mapRateLimit({
+      rate_limit_info: {
+        rateLimitType: "five_hour",
+        status: "allowed",
+        isUsingOverage: true,
+        overageStatus: "allowed",
+      },
+    });
+    expect(plan).toMatchObject({
+      window: "five_hour",
+      state: "measured",
+      used: 1,
+    });
+  });
+
+  it("does not call a plan in good standing a measurement", () => {
+    // The captured line carries `isUsingOverage: false`, and `false` must not
+    // become a number in either direction.
+    const [plan] = mapRateLimit(rateLimit());
+    expect(plan).toMatchObject({ state: "not-blocked" });
+  });
 });
 
 describe("usage()", () => {

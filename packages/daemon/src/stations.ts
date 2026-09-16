@@ -16,6 +16,7 @@ import {
   type ConfigWarning,
   type HarnessId,
   type HarnessProbe,
+  type Limits,
   type LoadedConfig,
   type Role,
   type Station,
@@ -54,6 +55,17 @@ export interface StationsResponse {
    * cuesheet the UI cannot see is a Gate nobody can reach without curl.
    */
   cuesheets: CuesheetView[];
+  /**
+   * The `[limits]` thresholds, so the strip can colour a window without a
+   * second request.
+   *
+   * Here rather than on `GET /usage` because the two answer different
+   * questions and change at different rates: usage is a reading taken from a
+   * vendor, and this is configuration the operator wrote. Putting the
+   * thresholds on the reading would mean re-sending them every poll and would
+   * imply the vendor had something to do with them.
+   */
+  limits: Limits;
   /** Which file the config came from; `null` when defaults were used. */
   sourcePath: string | null;
 }
@@ -134,6 +146,7 @@ export async function describeStations(
       gates: sheet.cues.filter(isGateRef).map((cue) => cue.gate),
     })),
     warnings: [...loaded.warnings, ...seatWarnings(configured, rolesOf)],
+    limits: loaded.config.limits,
     sourcePath: loaded.sourcePath,
   };
 }

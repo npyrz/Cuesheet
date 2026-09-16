@@ -8,6 +8,8 @@
  */
 import type {
   HarnessProbe,
+  HarnessUsage,
+  Limits,
   ListedProject,
   Project,
   Role,
@@ -33,6 +35,8 @@ export interface StationsResponse {
   harnesses: HarnessProbe[];
   warnings: ConfigWarning[];
   cuesheets: CuesheetView[];
+  /** `[limits]` thresholds — what the strip colours a window against. */
+  limits: Limits;
   sourcePath: string | null;
 }
 
@@ -152,6 +156,20 @@ export async function fetchStations(
   projectId: string,
 ): Promise<StationsResponse> {
   return request(`${scope(projectId)}/stations`);
+}
+
+export interface UsageResponse {
+  harnesses: HarnessUsage[];
+}
+
+/**
+ * Plan usage — **not scoped to a project**, and the one call in this file that
+ * is not. A five-hour window belongs to a plan; it is the same window
+ * whichever repository the Desk is looking at. The strip renders it inside a
+ * project, which is why this is worth a line rather than looking like a typo.
+ */
+export async function fetchUsage(): Promise<UsageResponse> {
+  return request("/usage");
 }
 
 export async function fetchRuns(

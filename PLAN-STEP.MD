@@ -59,7 +59,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
-| 10 · Limits | 37–39 | 🔵 beta | ◐ **Step 37 done** — `GET /usage`, four distinct answers, `usage()` finally answering |
+| 10 · Limits | 37–39 | 🔵 beta | ◐ **Steps 37–38 done** — `GET /usage`, the strip, and a run refused before it starts. Step 39 open |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
@@ -937,13 +937,39 @@ The strip cannot draw a fabricated percentage because on three of the four varia
 
 **The cache is invalidated by a finished run, not only by its TTL.** A run completing is the one moment plan usage moves, because `claude-code` learns its limits only from inside one. Without that hook the strip would serve the window from *before* the run that spent it, for up to a full TTL, at exactly the moment somebody looks. The daemon attaches to its own global bus for it — deliberately global rather than per project, since a run in any project spends the same plan.
 
-### Step 38 — The strip, and the pre-run check
+### Step 38 — The strip, and the pre-run check ✅
 
 Render every vendor's windows on one strip. `warn_at`, `block_at`. Refuse to *start* a run that cannot finish.
 
 The README's own framing is the acceptance criterion: every vendor meters differently and none of them tell you where you stand until you hit the wall, *"usually eleven minutes into something that mattered."*
 
-**Done when:** a Station near its cap is visibly near it, and a run that cannot finish is refused with a reason rather than dying halfway.
+**Done when:** a Station near its cap is visibly near it ✅, and a run that cannot finish is refused with a reason rather than dying halfway ✅.
+
+#### What the work settled
+
+**`[limits]` stopped being deferred**, which is the quiet half of the step and the one that touched the most tests. It had sat in `DEFERRED_TABLES` since Step 6, and four existing assertions were pinning *that* — two of which had already been migrated once when Gates shipped. They now assert on `[remote]`, and the test comment says the table under test keeps moving, because it will. `when_capped` parses and nothing reads it: Step 39's job, the same standing `merges` has on a Gate.
+
+A transposed `warn_at`/`block_at` pair is a **warning, not a parse error**. `lint()` exists precisely so a half-written config still opens the app, and refusing to start the Desk over two swapped numbers is a worse outcome than saying so on screen.
+
+**Only a measured window can refuse a run, and that is the point rather than a gap.** `not-blocked` means the vendor has not cut you off *yet* and says nothing about how close you are. `unknown` means nobody said. `unmetered` means there is no cap. Refusing on any of those three would be inventing a measurement — the same failure Step 37's union prevents, aimed at the operator's ability to work instead of at their bill.
+
+**Which made `isUsingOverage` matter far out of proportion to its size.** Without it the block path would have been provable only against a test double, because no shipped harness produces a `measured` window: Step 37 deliberately maps unrecognised statuses to `unknown`, `codex` reports nothing and `mock` is unmetered. `isUsingOverage` is the one field in the captured line that is **not** a status vocabulary — it is a boolean whose meaning is definitional rather than interpreted, since overage *begins* where the plan allowance ends. A runtime reporting it is in overage has reported the plan window spent. That is `used: 1` as a fact, and it is the only route by which a real vendor reaches the refusal.
+
+**The check is scoped to the harnesses the run will actually touch.** A run that only uses `claude-code` is not refused because a Codex Station elsewhere in the config is capped; it would never have reached it. A Station naming an unconfigured harness is deliberately *not* filtered out — the run fails on it either way, and dropping it would mean a capped harness silently stopped counting.
+
+**409, with the windows attached rather than only a sentence.** The Desk has to be able to say which vendor stopped the run and how long until it resets. A warned run still starts, and its findings ride along on the 202 rather than becoming a second request.
+
+**The strip's decisions are in `ui/src/limits.ts`, not in the component**, and the reason is specific to this repo: vitest collects colocated `.test.ts` only and **does not collect `.tsx`**, so a rule living in a component is a rule no test here can reach. `describeWindow` returns `bar: number | null`, and the component cannot draw a track when it is `null` — which is the union's guarantee surviving all the way to the DOM. The `?? 0` that would have made a progress element happy is the exact lie the phase is about.
+
+**A row with no measurement carries its sentence where the bar would go.** An empty track reads as "0% of a real cap", which is precisely the claim a vendor reporting a status has not made. So `not-blocked` renders *"Not blocked yet — this vendor reports a status, not a number"*, `unmetered` renders `∞`, and `unknown` renders the reason the daemon gave.
+
+**Freshness is rendered, not just stored.** Step 37 put `seenAt` on the observed variants; this is where it becomes visible. Past a minute old, the row says how old — a five-hour window from this morning shown without its age is worse than a blank row, because it looks current.
+
+**The strip groups by vendor, and the state survives a project switch.** Two Stations on one CLI share one window; drawing it per harness would read as twice the budget. And `usage` is the single field `case "project"` does not clear, for the same reason `GET /usage` is not a project route: a plan belongs to a vendor, so it is the one thing on the Desk still true about the project being arrived at.
+
+#### What an operator actually sees today, stated plainly
+
+**No bars.** With the shipped harnesses and a plan in good standing, every row is a sentence: `claude-code` says "not blocked yet", `codex` says it reports no plan windows, `mock` says it cannot run out. A test asserts exactly that — `every(w => w.bar === null)` — because it is the honest strip, not a broken one, and the next person to look at it should not "fix" it into a row of zeroes.
 
 ### Step 39 — The ledger and fallback routing
 

@@ -563,8 +563,29 @@ export function mapRateLimit(value: unknown): UsageWindow[] {
       ? info["rateLimitType"]
       : "unknown";
 
+  // **`isUsingOverage` is the one field here that yields a measurement.**
+  //
+  // Everything else in this line is a status vocabulary, and this file refuses
+  // to guess what an unseen status means. This is a boolean, and its meaning
+  // is definitional rather than interpreted: overage *begins* where the plan
+  // allowance ends, so a runtime that reports it is in overage has reported
+  // that the plan window is spent. That is `used: 1` as a fact.
+  //
+  // It matters out of proportion to its size: it is the only path by which any
+  // shipped harness reaches `state: "measured"`, and therefore the only way
+  // the pre-run check of Step 38 can refuse a run on real data rather than on
+  // a test double.
+  const inOverage = info["isUsingOverage"] === true;
+
   const windows: UsageWindow[] = [
-    limitWindow(label, info["status"], info["resetsAt"]),
+    inOverage
+      ? {
+          window: label,
+          state: "measured",
+          used: 1,
+          ...resetsFrom(info["resetsAt"]),
+        }
+      : limitWindow(label, info["status"], info["resetsAt"]),
   ];
 
   // Only when the CLI actually says something about overage. An absent field
@@ -583,6 +604,13 @@ export function mapRateLimit(value: unknown): UsageWindow[] {
   return windows;
 }
 
+/** Epoch seconds to an ISO string, or nothing when the field is absent. */
+function resetsFrom(resetsAt: unknown): { resetsAt?: string } {
+  return typeof resetsAt === "number" && Number.isFinite(resetsAt)
+    ? { resetsAt: new Date(resetsAt * 1000).toISOString() }
+    : {};
+}
+
 /** One status-plus-clock pair, as the only two variants a status can justify. */
 function limitWindow(
   window: string,
@@ -597,10 +625,7 @@ function limitWindow(
     };
   }
 
-  const resets =
-    typeof resetsAt === "number" && Number.isFinite(resetsAt)
-      ? { resetsAt: new Date(resetsAt * 1000).toISOString() }
-      : {};
+  const resets = resetsFrom(resetsAt);
 
   // `allowed` is the **only** value any capture has shown, so it is the only
   // one this maps with confidence. An unrecognised status becomes `unknown`
