@@ -15,15 +15,19 @@ import { stat } from "node:fs/promises";
 import {
   addStation,
   ConfigError,
+  configFile,
   createProjectRegistry,
   DEFAULT_PORT,
   expandHome,
   hostEnv,
   isProjectId,
+  legacyProjectRoot,
   loadConfig,
-  pathFor,
+  migrateLegacyConfig,
+  migrateLegacyRuns,
   ProjectRegistryError,
   resolveUserPath,
+  runsDir,
   stationIdTaken,
   type HostEnv,
   type LoadedConfig,
@@ -198,14 +202,21 @@ export async function startDaemon(
         : {}),
   });
 
-  const defaultProject = await bootstrapProject({
+  const bootstrapped = await bootstrapProject({
     registry,
     runtimes,
     cwd,
     env,
   });
+  const defaultProject = bootstrapped.runtime;
 
   const app = Fastify({ logger: options.logger ?? false });
+
+  // Logged here rather than inside `bootstrapProject`, which runs before there
+  // is a logger to log to — and the migration has to finish before any runtime
+  // is built, so it cannot simply be moved down.
+  for (const note of bootstrapped.notes) app.log.info(note);
+  for (const problem of bootstrapped.problems) app.log.error(problem);
 
   // Treat an empty JSON body as `{}`.
   //
@@ -299,7 +310,8 @@ export async function startDaemon(
 }
 
 /**
- * Give an existing install its project back.
+ * Give an existing install its project back — and, on the first boot of a build
+ * that has projects, bring the whole of an alpha profile forward with it.
  *
  * Bootstrapped from **the config that exists**, never from `cwd`. That
  * distinction is the whole point: in the packaged app `process.cwd()` is
@@ -314,40 +326,134 @@ export async function startDaemon(
  * Step 40 is what asks. Inventing a project for someone who has never had one
  * would put a folder in their picker that they did not choose.
  *
- * **This is a seam for Step 33, not the migration.** A user whose config is
- * the global `~/.cuesheet/cuesheet.toml` gets a project rooted at
- * `~/.cuesheet`, which is not where their code is — and their existing run
- * history under `~/.cuesheet/runs` is not moved here at all. Both are Step
- * 33's job, which is the step that owns "the upgrade that loses nothing".
+ * **Step 33 changed two things here and deliberately not a third.** The root
+ * now comes from {@link legacyProjectRoot} rather than being `dirname` of the
+ * config, so a user whose only config was the global one lands on their code
+ * instead of on `~/.cuesheet`; and the legacy config and run history are
+ * relocated, in that order, **before any runtime is built**. What did not
+ * change is which project the daemon comes up on — still the most recently
+ * opened one that is still there. Step 32's retrospective asked for exactly
+ * that, because `server.test.ts` alone hangs 41 call sites off `defaultProject`
+ * and a migration that re-based them would be proving something else.
+ *
+ * The ordering is not incidental. `runtimes.get` reconciles a project's store
+ * the first time it is touched, and reconciliation happens exactly once; moving
+ * the history in afterwards would leave every alpha run that a killed daemon
+ * left `running` marked `running` with nothing left to correct it.
  */
 async function bootstrapProject(deps: {
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
   cwd: string;
   env: HostEnv;
-}): Promise<ProjectRuntime | null> {
+}): Promise<BootstrapReport> {
   const { registry, runtimes, cwd, env } = deps;
+  const report: BootstrapReport = { runtime: null, notes: [], problems: [] };
 
   const known = await registry.list();
   const existing = known.find((project) => project.status === "ok");
-  if (existing) return runtimes.get(existing.id);
+  if (existing) {
+    // A retry, not a second migration. The move below is guarded on its target
+    // being absent, so in the ordinary case this is one `stat` that returns
+    // ENOENT forever after. It exists because a failed move registers nothing:
+    // without this the first boot would be the only chance, and a history left
+    // behind by a transient error would be orphaned permanently.
+    //
+    // **Only while there is exactly one project.** Legacy runs belong to the
+    // install, not to a folder, and with one project that is unambiguous. With
+    // two, the daemon would be picking which one inherits a history that names
+    // neither, so it leaves them alone rather than attributing them wrongly.
+    if (known.length === 1) await relocateRuns(existing.id, env, report);
+    report.runtime = await runtimes.get(existing.id);
+    return report;
+  }
   // Every known project's folder is gone. Opening a new one on top would be a
   // surprise; the picker says `missing` and the operator decides.
-  if (known.length > 0) return null;
+  if (known.length > 0) return report;
 
   const legacy = await loadConfig(cwd, env);
-  if (legacy.sourcePath === null) return null;
+  const root = await legacyProjectRoot(legacy, env);
+  if (root === null) return report;
 
-  const root = pathFor(env).dirname(legacy.sourcePath);
+  let project: Project;
   try {
-    const project = await registry.open(root);
-    return await runtimes.get(project.id);
+    project = await registry.open(root);
   } catch (error) {
     // A config in a folder that cannot be opened is not a reason to refuse to
     // boot: the daemon still serves `/projects`, and the operator can pick.
-    if (error instanceof ProjectRegistryError) return null;
+    if (error instanceof ProjectRegistryError) return report;
     throw error;
   }
+
+  // Config first, then runs, then the runtime. Config first only because it is
+  // the move that decides whether the Desk has any Stations at all — if exactly
+  // one of the two is going to fail, the operator is better served by the
+  // failure they can see.
+  try {
+    const moved = await migrateLegacyConfig({
+      projectId: project.id,
+      root,
+      sourcePath: legacy.sourcePath,
+      env,
+    });
+    if (moved) {
+      report.notes.push(
+        `Upgraded: moved ${moved.from} to ${moved.to} for project "${project.name}".`,
+      );
+    }
+  } catch (error) {
+    // Nothing is lost — the config is still where it was — but this project
+    // will come up on defaults until the move succeeds, so it is an error and
+    // not a note.
+    report.problems.push(
+      `Could not move the existing ${configFile(env)} into project "${project.name}": ` +
+        `${errorText(error)}. It has not been changed.`,
+    );
+  }
+
+  await relocateRuns(project.id, env, report);
+  report.runtime = await runtimes.get(project.id);
+  return report;
+}
+
+/** What `startDaemon` needs back: the project to serve, and what to log. */
+interface BootstrapReport {
+  runtime: ProjectRuntime | null;
+  notes: string[];
+  problems: string[];
+}
+
+/**
+ * One call site's worth of the run-history move, shared by the mint path and
+ * the retry above so the two cannot drift into disagreeing about the guards.
+ *
+ * A failure here is survivable in a way the config's is not: the history is
+ * still at `~/.cuesheet/runs`, the target is still absent, and the next boot
+ * arrives back at this same call. So the daemon boots, says so, and tries
+ * again — rather than refusing to start over a directory rename.
+ */
+async function relocateRuns(
+  projectId: string,
+  env: HostEnv,
+  report: BootstrapReport,
+): Promise<void> {
+  try {
+    const moved = await migrateLegacyRuns({ projectId, env });
+    if (moved) {
+      report.notes.push(
+        `Upgraded: moved run history from ${moved.from} to ${moved.to}.`,
+      );
+    }
+  } catch (error) {
+    report.problems.push(
+      `Could not move the existing run history at ${runsDir(env)}: ${errorText(error)}. ` +
+        `Nothing has been deleted, and this will be retried on the next start.`,
+    );
+  }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 interface RouteDeps {

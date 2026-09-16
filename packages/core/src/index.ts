@@ -6,3 +6,4 @@ export * from "./gate.js";
 export * from "./verdict.js";
 export * from "./config-write.js";
 export * from "./project.js";
+export * from "./migrate.js";

@@ -36,13 +36,12 @@ import {
   loadConfigFrom,
   projectConfigFile,
   projectConfigSearchPaths,
-  projectDir,
+  projectRunsDir,
   type HostEnv,
   type LoadedConfig,
   type Project,
   type ProjectRegistry,
 } from "@cuesheet/core";
-import { pathFor } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
 import { createFileRunStore, type RunStore } from "./store.js";
 import { createRunQueue, type RunQueue } from "./queue.js";
@@ -120,9 +119,7 @@ export function createProjectRuntimes(
 
     const store =
       options.storeFactory?.(project) ??
-      createFileRunStore({
-        root: pathFor(env).join(projectDir(project.id, env), "runs"),
-      });
+      createFileRunStore({ root: projectRunsDir(project.id, env) });
 
     let loaded = await loadConfigFrom(
       projectConfigSearchPaths(project.root, project.id, env),

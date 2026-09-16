@@ -138,6 +138,18 @@ export function projectDir(id: string, env: HostEnv = hostEnv()): string {
 }
 
 /**
+ * A project's run store root — `~/.cuesheet/projects/<id>/runs`.
+ *
+ * Exists so the daemon's store root and Step 33's migration target are one
+ * expression rather than two `join(projectDir(id), "runs")` calls that agree
+ * until somebody changes one. A migration that moves history to a directory
+ * the store does not read loses it just as completely as deleting it would.
+ */
+export function projectRunsDir(id: string, env: HostEnv = hostEnv()): string {
+  return pathFor(env).join(projectDir(id, env), "runs");
+}
+
+/**
  * Where a project's config lives when the repo does not carry one.
  *
  * **The decision Phase 8 left open, settled: the repo wins when present.** A
