@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -516,6 +516,43 @@ describe("GET /stations", () => {
     );
     expect(status).toBe(200);
     expect(body.projects).toEqual([]);
+  });
+
+  it("says a folder is not there rather than failing obscurely", async () => {
+    // Step 40's second clause. The launch surface disables a `missing` recent
+    // so this should be hard to reach — but "hard to reach" is not "cannot
+    // happen": a folder can go away between the list being drawn and the row
+    // being clicked, and a typed path reaches here directly.
+    await boot();
+    const gone = path.join(cwd, "not-a-folder-anybody-made");
+    const { status, body } = await post<ApiError>(daemon.url, "/projects", {
+      root: gone,
+    });
+    expect(status).toBe(400);
+    // The registry's own message, which names the path. A generic failure
+    // would leave somebody re-typing a path that was never mistyped.
+    expect(body.error).toContain(gone);
+  });
+
+  it("forgets a project without touching its folder", async () => {
+    // What makes a `missing` recent dismissable rather than a permanent dead
+    // end in the launch list.
+    const base = await bootProject();
+    const id = base.slice(base.lastIndexOf("/") + 1);
+
+    const before = await get<{ projects: unknown[] }>(daemon.url, "/projects");
+    expect(before.body.projects).toHaveLength(1);
+
+    const removed = await fetch(`${daemon.url}/projects/${id}`, {
+      method: "DELETE",
+    });
+    expect(removed.status).toBe(200);
+
+    const after = await get<{ projects: unknown[] }>(daemon.url, "/projects");
+    expect(after.body.projects).toEqual([]);
+    // The directory is still there. Forgetting is a registry operation and has
+    // never been a delete.
+    expect((await stat(cwd)).isDirectory()).toBe(true);
   });
 });
 

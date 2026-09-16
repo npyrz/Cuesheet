@@ -134,6 +134,148 @@ textarea {
   background: color-mix(in srgb, var(--warn) 14%, var(--panel));
 }
 
+/* ── Launch surface ──────────────────────────────────────────────────────── */
+
+/*
+ * Answering Phase 11's open question here, at the first surface drawn, because
+ * the phase says to decide it while the shell is being drawn rather than at
+ * M3: **this UI is built responsive from the start, not as a desktop screen
+ * with a phone rewrite behind it.** The cost is a `max-width` and a couple of
+ * `min()` calls per surface; the alternative is discovering at M3 that every
+ * screen assumes a window. Nothing here is phone-*specific* — that is a
+ * different question, and a later one — but nothing here breaks at 380px.
+ */
+.launch {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: min(8vh, 64px) 16px;
+  background: var(--bg);
+}
+
+.launch-inner {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.launch-brand {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+.launch-title {
+  font-size: 20px;
+  margin: 0;
+}
+
+.launch-detail,
+.launch-hint {
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.launch-error {
+  color: var(--bad);
+  margin: 0;
+}
+
+.recents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.recent {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+}
+
+.recent:last-child {
+  border-bottom: none;
+}
+
+.recent-open {
+  flex: 1;
+  display: grid;
+  /* One column under a narrow window: the name and the path stacked reads
+     better at 380px than three columns squeezed into ellipses. */
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  text-align: left;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.recent-open:hover:not(:disabled) {
+  background: var(--panel);
+}
+
+/*
+ * A folder that is not there is dimmed and inert rather than clickable. The
+ * daemon already knows the answer; making somebody discover it by pressing is
+ * a worse version of telling them.
+ */
+.recent-open:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.recent-name {
+  font-weight: 500;
+}
+
+.recent-where,
+.recent-when {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-when {
+  text-align: right;
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.recent[data-openable="false"] .recent-when {
+  color: var(--warn);
+  /* The reason is a sentence, not a date, and it is the thing worth reading on
+     that row — so it wraps rather than being clipped to "This folder is not…". */
+  white-space: normal;
+  grid-column: 1 / -1;
+  grid-row: 3;
+  text-align: left;
+}
+
+.recent-forget {
+  align-self: center;
+  margin-right: 8px;
+}
+
+.launch-open {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
 /* ── Ledger ──────────────────────────────────────────────────────────────── */
 
 .ledger-table {

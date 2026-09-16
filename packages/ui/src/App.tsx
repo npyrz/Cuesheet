@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddStationPanel } from "./components/AddStationPanel.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
+import { LaunchSurface } from "./components/LaunchSurface.js";
 import { LedgerPanel } from "./components/LedgerPanel.js";
 import { LimitsStrip } from "./components/LimitsStrip.js";
 import { RunLog } from "./components/RunLog.js";
@@ -92,45 +93,17 @@ export function App(): React.JSX.Element {
   // No project, no Desk. A first-run install has nothing to show tiles *of*,
   // and the daemon deliberately does not invent a project to fill the gap.
   //
-  // This is the smallest honest placeholder, not the launch surface: Step 40
-  // builds recents, a folder picker and a missing-folder state, and Step 41
-  // puts a switcher above all of it. Anything more here would be thrown away.
+  // Step 40's launch surface. Step 41 puts a switcher above the open project;
+  // this is what there is when none is open.
   if (desk.project.status !== "open") {
     return (
-      <div className="desk">
-        <header className="topbar">
-          <span className="brand">CUESHEET</span>
-          <span className="spacer" />
-        </header>
-        <main className="empty">
-          {desk.project.status === "loading" ? (
-            <p>Looking for your projects…</p>
-          ) : (
-            <>
-              <p>No project yet.</p>
-              {chooseDirectory ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void chooseDirectory().then((picked) => {
-                      if (picked !== null) void desk.openFolder(picked);
-                    });
-                  }}
-                >
-                  open a folder…
-                </button>
-              ) : (
-                <p className="hint">
-                  Start the daemon in a directory that has a{" "}
-                  <code>cuesheet.toml</code>, or open a folder from the desktop
-                  app.
-                </p>
-              )}
-              {state.error !== null && <p className="hint">{state.error}</p>}
-            </>
-          )}
-        </main>
-      </div>
+      <LaunchSurface
+        projects={desk.project.status === "loading" ? null : desk.projects}
+        chooseDirectory={chooseDirectory}
+        onOpen={(root) => void desk.openFolder(root)}
+        onForget={(id) => void desk.forget(id)}
+        error={state.error}
+      />
     );
   }
 

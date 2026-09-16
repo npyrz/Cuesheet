@@ -69,6 +69,10 @@ describe("createUsageCache", () => {
       state: "unknown",
       reason: expect.stringContaining("no plan windows"),
     });
+    // Rendered as bare text in the limits strip, so no markdown punctuation.
+    // Found by looking at the running app, not by a test.
+    const window = harnesses[0]?.windows[0];
+    expect(window?.state === "unknown" ? window.reason : "").not.toContain("`");
   });
 
   it("does not block on a hung CLI, and says which one hung", async () => {

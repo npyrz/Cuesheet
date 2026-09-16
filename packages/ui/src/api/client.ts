@@ -142,6 +142,18 @@ export async function openProject(
 }
 
 /**
+ * Forget a project. **Never touches the folder itself.**
+ *
+ * Here because the launch surface needs it: a recent whose folder is gone
+ * cannot be opened, and a list entry that can neither be opened nor removed is
+ * a dead end a stranger hits in their first minute. `DELETE /projects/:id`
+ * unregisters the entry and leaves the directory, wherever it now is, alone.
+ */
+export async function forgetProject(projectId: string): Promise<void> {
+  await request(scope(projectId), { method: "DELETE" });
+}
+
+/**
  * Everything below is project-scoped.
  *
  * The id is a parameter rather than module state on purpose: which project a

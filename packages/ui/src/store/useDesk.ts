@@ -24,6 +24,7 @@ import {
   fetchRuns,
   fetchStations,
   fetchUsage,
+  forgetProject,
   startRun,
   stopRun,
   type NewStation,
@@ -66,10 +67,12 @@ export interface DeskApi {
   project: ProjectState;
   /** Every project the daemon knows, newest-opened first. */
   projects: ListedProject[];
-  /** Open a folder as a project and show it. Step 40 gives this a real surface. */
+  /** Open a folder as a project and show it. */
   openFolder(root: string): Promise<void>;
   /** Show a project the daemon already knows. See {@link switchTo}. */
   switchTo(id: string): Promise<void>;
+  /** Drop a recent from the registry. Never touches the folder. */
+  forget(id: string): Promise<void>;
   start(prompt: string, cuesheet?: string): Promise<void>;
   stop(runId: RunId): Promise<void>;
   select(runId: RunId): Promise<void>;
@@ -474,6 +477,25 @@ export function useDesk(): DeskApi {
     [projectId, projects, fail],
   );
 
+  /**
+   * Drop a recent from the list. The folder is untouched.
+   *
+   * Refreshes from the daemon rather than filtering locally: the registry is
+   * the authority for what is remembered, and a list that diverged from it
+   * would come back on the next launch and look like the delete had failed.
+   */
+  const forget = useCallback(
+    async (id: string) => {
+      try {
+        await forgetProject(id);
+        setProjects(await fetchProjects());
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [fail],
+  );
+
   const dismissError = useCallback(() => {
     dispatch({ type: "error", message: null });
   }, []);
@@ -485,6 +507,7 @@ export function useDesk(): DeskApi {
       projects,
       openFolder,
       switchTo,
+      forget,
       start,
       stop,
       select,
@@ -499,6 +522,7 @@ export function useDesk(): DeskApi {
       projects,
       openFolder,
       switchTo,
+      forget,
       start,
       stop,
       select,

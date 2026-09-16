@@ -12,7 +12,15 @@
  * strip refuses to tell, in a place where it would change what someone
  * optimises.
  */
-import { cacheHitRate, type Ledger, type LedgerTotals } from "@cuesheet/core";
+// From `@cuesheet/core/ledger`, not the barrel, and the distinction is not
+// cosmetic: `cacheHitRate` is a *value*, and a value import from the barrel
+// pulls `leash`, `config` and `project` with it — all of which reach
+// `node:fs`. Vite externalizes those for the browser, the module throws on
+// first access, and the whole Desk renders blank with nothing in any test to
+// say so. `reducer.ts` and `AddStationPanel.tsx` already take the subpath
+// route for the same reason.
+import { cacheHitRate } from "@cuesheet/core/ledger";
+import type { Ledger, LedgerTotals } from "@cuesheet/core";
 
 export interface LedgerCell {
   label: string;

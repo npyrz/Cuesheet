@@ -60,7 +60,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
-| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Step 40 done** — launch surface, and a blank-page bug found by running the app |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
@@ -1032,11 +1032,50 @@ The honest case for a rebuild rather than an extension is structural, not aesthe
 
 **What survives, because it is tested logic and not layout:** the reducer and its tests, `format.ts`, the WebSocket client and reconnect handling, the command palette's chord matching, and the add-a-Station flow's TOML writing. This is a re-shell, not a rewrite of the client. `App.tsx` was written with a comment saying that anything here which starts deciding things belongs in the reducer or in `format.ts`; that discipline is what makes this affordable.
 
-### Step 40 — The launch surface
+### Step 40 — The launch surface ✅
 
 What the app opens on when no project is active: recents, with last-opened and a live "is this folder still there" state, plus **Open a folder…** — which already exists as `window.cuesheet.chooseDirectory()`, built in Phase 5 for the add-a-Station panel and reusable here as-is.
 
-**Done when:** a first-ever launch and a launch with six known projects both look deliberate, and a folder that has been moved says so rather than failing on open.
+**Done when:** a first-ever launch and a launch with six known projects both look deliberate ✅, and a folder that has been moved says so rather than failing on open ✅.
+
+#### The step turned out to be entirely client-side, and that is the good news
+
+Every piece of daemon surface this needed already existed: `GET /projects` returns `ListedProject[]` carrying `status: "ok" | "missing"`, sorted newest-opened first; `DELETE /projects/:id` forgets an entry without touching the folder; and `POST /projects` already answers 400 with the registry's own message, which names the path. Phase 8 cut those seams without knowing what would sit on them. Two of them had no test, and now do.
+
+**The missing-folder clause has two halves and only one was built.** `switchTo` already opened before switching, so a folder that vanished left the Desk where it was — tested since Step 34. What was absent is the *first* half: a `missing` recent presenting itself as an ordinary click target. It is now dimmed, inert, and carries its reason, because the daemon already knows the answer and making somebody discover it by pressing is a worse version of telling them.
+
+**There is deliberately no "moved" wording**, matching the note on `ProjectStatus` in core: without tracking inodes across platforms, a renamed folder and a deleted one are indistinguishable, and a surface claiming to tell them apart would be guessing at the user. A test asserts the string never says moved, renamed or deleted.
+
+**`forget` is in scope even though the done-when does not name it.** An entry that can neither be opened nor removed is a dead end a stranger hits in their first minute, and the route already existed.
+
+#### Running the app found a bug five green CI commands did not
+
+**The Desk was rendering blank, and had been since Step 38.** `ui/src/limits.ts` and `ui/src/ledger.ts` import *values* — `measuredFraction`, `percent`, `cacheHitRate` — and took them from the `@cuesheet/core` barrel. That barrel re-exports `leash`, `config`, `project` and `migrate`, all of which reach `node:fs`. Vite externalizes those for the browser, the module throws on first access, and the entire app renders an empty body.
+
+Nothing caught it. `npm run build` succeeded — Vite bundles it happily and the failure is at runtime. `npm run typecheck` succeeded — the types are real. `npm test` succeeded — vitest runs in node, where `node:fs` resolves fine. **The only thing that finds this is opening the page**, and two steps shipped over it.
+
+The repo already had the answer and it was one file away: `reducer.ts` and `AddStationPanel.tsx` both import values from `@cuesheet/core/types`, a subpath. `core`'s export map now also publishes `./limits` and `./ledger` — both are pure arithmetic whose only imports are `import type`, so they carry nothing into a browser bundle. The rule, written at both call sites: **types from the barrel, values from a subpath.**
+
+**And the strip was printing backticks.** `"\`claude-code\` reports no plan windows."` renders in the Desk as bare text, so the markdown punctuation arrived on screen as punctuation — the identical defect corrected for the seat warning in Step 36, in a place nothing caught until somebody looked. Fixed in `usage.ts` and `fallback.ts`, with an assertion in each suite that the string contains no backtick.
+
+#### What was actually looked at
+
+An isolated daemon on a scratch `homedir` — never the developer's real `~/.cuesheet/projects.json`, which the testing conventions warn is invisible locally and permanent — plus the Vite dev server and a headless browser:
+
+- a first-ever launch with no projects,
+- six registered projects with one folder deleted after registration,
+- the Desk itself, confirming the blank page was gone and Step 38's strip renders its sentences honestly,
+- and the launch surface at **380px**, which is the next point.
+
+#### Phase 11's open question, answered here because this is the first surface drawn
+
+**Responsive from the start, not a desktop screen with a phone rewrite behind it.** The phase asks this be settled "while the shell is being drawn, rather than discovering it at M3", and the launch list is the cheapest possible place to settle it. The cost is a `max-width` and a couple of `min()` calls per surface; the alternative is finding at M3 that every screen assumes a window. This is *not* a commitment to phone-specific surfaces — that is a separate and later question — only that nothing breaks at phone width. Verified at 380px with no horizontal scroll.
+
+#### One gap this step does not close, named rather than left to be found
+
+**With openable recents, the launch surface is currently unreachable.** The boot rule reopens the most recently opened project that still exists — Step 34's promise, and the README's — so the recents list appears only when *nothing* is openable. That is why the six-project screenshot above is six broken folders rather than five good ones and a bad one.
+
+It is not a defect in this step and it is not fixed by widening it: what an operator needs is a way *back* to the launch surface from an open project, which is the switcher, which is **Step 41**. Recording it here so the next step inherits a known requirement rather than rediscovering it.
 
 ### Step 41 — The project shell and the switcher
 

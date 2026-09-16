@@ -117,7 +117,11 @@ describe("chooseFallback", () => {
     });
     expect(decision.kind).toBe("refused");
     if (decision.kind !== "refused") throw new Error("expected refusal");
-    expect(decision.reason).toContain("no `when_capped` fallback");
+    expect(decision.reason).toContain('no "when_capped" fallback');
+    // No backticks in anything user-facing: these reasons are rendered as bare
+    // text in a run log and in a 409 body, where markdown punctuation arrives
+    // on screen as punctuation.
+    expect(decision.reason).not.toContain("`");
   });
 
   it("refuses a fallback that is not a configured Station", () => {

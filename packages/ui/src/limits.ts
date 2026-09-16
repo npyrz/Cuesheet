@@ -14,13 +14,11 @@
  * a progress element happy. A bar drawn at 0% for a plan that has not reported
  * a fraction is the authoritative-looking lie the whole phase is about.
  */
-import {
-  measuredFraction,
-  percent,
-  type HarnessUsage,
-  type Limits,
-  type UsageWindow,
-} from "@cuesheet/core";
+// Values from the subpath, types from the barrel. A value import from
+// `@cuesheet/core` drags `node:fs` into the browser bundle — see the note in
+// `ledger.ts`, which is where that was found the hard way.
+import { measuredFraction, percent } from "@cuesheet/core/limits";
+import type { HarnessUsage, Limits, UsageWindow } from "@cuesheet/core";
 
 /** How a row reads. Colour is the component's business; this is the meaning. */
 export type UsageTone = "ok" | "warn" | "over" | "free" | "silent";

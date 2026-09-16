@@ -149,7 +149,7 @@ async function withTimeout(
           {
             window: "plan",
             state: "unknown",
-            reason: `\`${source.id}\` did not report usage within ${String(timeoutMs)}ms.`,
+            reason: `"${source.id}" did not report usage within ${String(timeoutMs)}ms.`,
           },
         ]),
       timeoutMs,
@@ -182,9 +182,13 @@ async function withTimeout(
  * that no cap exists.
  */
 function silent(id: HarnessId): UsageWindow {
+  // Double quotes, not backticks. This string is rendered as bare text in the
+  // Desk's limits strip, where markdown punctuation arrives on screen as
+  // punctuation — the same correction the seat warning needed in Step 36, in a
+  // place nothing caught until the app was actually looked at.
   return {
     window: "plan",
     state: "unknown",
-    reason: `\`${id}\` reports no plan windows.`,
+    reason: `"${id}" reports no plan windows.`,
   };
 }

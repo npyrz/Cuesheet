@@ -62,7 +62,7 @@ export function chooseFallback(input: FallbackInput): FallbackDecision {
     return {
       kind: "refused",
       reason:
-        `Station "${station.id}" is capped and has no \`when_capped\` ` +
+        `Station "${station.id}" is capped and has no "when_capped" ` +
         `fallback configured.`,
     };
   }
@@ -72,7 +72,7 @@ export function chooseFallback(input: FallbackInput): FallbackDecision {
     return {
       kind: "refused",
       reason:
-        `\`when_capped\` routes "${station.id}" to "${fallbackId}", which is ` +
+        `"when_capped" routes "${station.id}" to "${fallbackId}", which is ` +
         `not a configured Station.`,
     };
   }
@@ -92,7 +92,7 @@ export function chooseFallback(input: FallbackInput): FallbackDecision {
     return {
       kind: "refused",
       reason:
-        `"${fallbackId}" runs on \`${fallback.harness}\`, which cannot play the ` +
+        `"${fallbackId}" runs on "${fallback.harness}", which cannot play the ` +
         `${station.role} seat.`,
     };
   }
