@@ -43,6 +43,7 @@
  */
 import {
   checkPath,
+  writeDeniedByRole,
   type HarnessProbe,
   type StandbyAnswer,
   type Station,
@@ -240,7 +241,14 @@ export const codexHarness: Harness = createCodexHarness();
  * workspace.
  */
 export function sandboxFor(station: Station): string {
-  return station.role === "reviewer" || station.role === "caller"
+  // `worker` joins the read-only seats, and it is the one of the three the
+  // CLI can enforce *completely*: the shell-command hole documented at the
+  // top of this file is a hole in path observation, not in the sandbox, so a
+  // worker's `printf > file` is refused by Codex itself rather than merely
+  // noticed by us. That makes this the strongest form the seat takes anywhere.
+  return station.role === "reviewer" ||
+    station.role === "caller" ||
+    station.role === "worker"
     ? "read-only"
     : "workspace-write";
 }
@@ -486,6 +494,17 @@ function fileChangeEvents(
     if (path === null) continue;
 
     events.push({ t: "file", path, op: "write" });
+
+    // Same rule as `claude-code.ts`: leaving the seat is reported before the
+    // path is judged. Here it should also be unreachable, because `sandboxFor`
+    // runs a worker `read-only` and the CLI refuses the patch before it is
+    // ever announced. Kept anyway — this is the half that still works if a
+    // future Codex renames the flag.
+    const roleDenial = writeDeniedByRole(state.station);
+    if (roleDenial !== undefined) {
+      events.push({ t: "denial", reason: roleDenial, path });
+      continue;
+    }
 
     const decision = checkPath(state.station, path);
     if (!decision.allowed) {

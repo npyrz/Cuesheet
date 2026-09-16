@@ -161,6 +161,16 @@ describe("sandboxFor", () => {
     expect(sandboxFor(station({ role: "caller" }))).toBe("read-only");
   });
 
+  it("gives a worker a read-only sandbox, which is the seat's strongest form", () => {
+    // Worth stating why this line matters more than the other two: the
+    // documented hole in this harness is that a write inside a shell command
+    // emits no `file_change` and so cannot be *observed*. The sandbox has no
+    // such hole — Codex refuses the write itself — so a worker on `codex` is
+    // the one place the seat is enforced rather than reported.
+    expect(sandboxFor(station({ role: "worker" }))).toBe("read-only");
+    expect(buildArgs(station({ role: "worker" }))).toContain("read-only");
+  });
+
   it("gives an engineer write access, scoped to the workspace", () => {
     expect(sandboxFor(station())).toBe("workspace-write");
   });

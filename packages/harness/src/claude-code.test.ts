@@ -400,3 +400,26 @@ describe("observedStation", () => {
     expect(observed.deny).toEqual(["**/*.env"]);
   });
 });
+
+describe("the worker seat, observed", () => {
+  it("reports a worker's write as a denial, even inside its own leash", () => {
+    // The captured stream's Station allows `**`, so nothing here is a leash
+    // violation. What is violated is the seat, and the harness can only say
+    // so after the fact: the CLI's Write tool has already run by the time the
+    // line arrives. A report, not a prevention — the same honest limit this
+    // file's header states for leashes.
+    const { events } = mapAll({ role: "worker" });
+    const denials = events.filter((event) => event.t === "denial");
+    expect(denials).toContainEqual(
+      expect.objectContaining({
+        t: "denial",
+        reason: expect.stringContaining("never writes"),
+      }),
+    );
+  });
+
+  it("says nothing about an engineer writing the same file", () => {
+    const { events } = mapAll();
+    expect(events.filter((event) => event.t === "denial")).toEqual([]);
+  });
+});

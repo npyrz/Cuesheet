@@ -109,6 +109,31 @@ export function createMockHarness(options: MockHarnessOptions = {}): Harness {
         return { status: "done", cost: ctx.meter.total() };
       }
 
+      // A worker classifies, summarizes, writes a commit message, dedupes a
+      // memory — all of it reading. It gets its own branch rather than being
+      // allowed to fall through to the engineer script for the same reason
+      // the reviewer does: the engineer script ends in a write, a worker's
+      // write is refused by the facade, and a "worker" that always fails its
+      // run would test the refusal while proving nothing about the seat.
+      if (ctx.station.role === "worker") {
+        ctx.emit({ t: "text", chunk: "Classifying.\n" });
+        ctx.meter.record({ tokensIn: 80, tokensOut: 0 });
+        await pause();
+
+        ctx.emit({ t: "tool", name: "list", input: { path: "." } });
+        await ctx.workspace.list(".").catch(() => []);
+        await pause();
+
+        ctx.emit({ t: "text", chunk: `chore: ${summarize(ctx.brief)}\n` });
+        ctx.meter.record({ tokensIn: 0, tokensOut: 12 });
+
+        // No diff, and not because there is nothing to report: a worker that
+        // returned `ctx.workspace.diff()` would attribute somebody else's
+        // changes in a shared workspace to the one Station that cannot make
+        // any.
+        return { status: "done", cost: ctx.meter.total() };
+      }
+
       ctx.emit({ t: "text", chunk: `Reading the brief: ${ctx.brief}\n` });
       await pause();
 
@@ -194,6 +219,12 @@ const REVIEW_REPLIES: Record<"pass" | "fail" | "blocking", string> = {
 
 /** The default instance, registered by {@link defaultHarnesses}. */
 export const mockHarness: Harness = createMockHarness();
+
+/** What the worker seat produces: a short line, never a file. */
+function summarize(brief: string): string {
+  const first = brief.trim().split("\n")[0] ?? "";
+  return first.length > 60 ? `${first.slice(0, 57)}...` : first;
+}
 
 function scriptedOutput(brief: string): string[] {
   return [

@@ -58,11 +58,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
-| 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ⬜ |
+| 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
 | 10 · Limits | 37–39 | 🔵 beta | ⬜ |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ⬜ — Steps 57–58 pull forward into 🔵 beta on demand |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -837,7 +838,14 @@ So the honest small version is the one the README already specifies, and this ph
 
 **That is a feature rather than a shortfall.** A harness that never writes to a workspace has no partial-leash story to document, because it has no write path at all — the thing that made `codex`'s leash structurally weaker than `claude-code`'s does not arise. And the README's own argument for the role is a safety argument: *"a small local model is not a reviewer. A 7–30B model reviewing a frontier model's output approves nearly everything, which is worse than no review because it manufactures confidence."* Shipping with `roles: ["worker"]` makes that structural instead of advisory.
 
-### Step 35 — The harness
+### Step 35 — The harness ⏭ skipped for now
+
+> **Skipped deliberately, 2026-09-16, and the blocker is environmental.** Ollama is not installed here and nothing is listening on `127.0.0.1:11434`, so there is no `/api/tags` document and no `/api/chat` stream to capture — and this repo does not write a mapper from memory. The operator was offered the install and chose to skip the step rather than pull a model, which is a decision about their disk, not about the design.
+>
+> **What that costs, precisely:** nothing structural. `BUILTIN_HARNESS_IDS` already lists `"ollama"`, so `GET /stations` reports it as a harness nobody registered rather than pretending it does not exist, and Step 36 below was built and proven without it. What is still owed is the harness itself.
+>
+> **What to check before believing this note:** it is the *environment* kind of blocker, which the Status section warns expires silently. An `ollama` on the PATH and a model pulled is the whole of it — no design question is outstanding, and the step body below is unchanged and still correct.
+
 
 `packages/harness/src/ollama.ts`. `vendor: "ollama"`, `roles: ["worker"]`, `contextFiles: []` — Ollama keeps no context file of its own, which is precisely the hole Phase 12 exists to fill, and the README already names it: *"Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, Ollama keeps nothing."*
 
@@ -850,11 +858,37 @@ Written against a **captured** stream like the other two: `/api/chat` with `"str
 
 **Done when:** with Ollama running, the harness appears in `/stations` with the models actually pulled on that machine; with Ollama stopped, it reports not-running without failing the request or hanging it.
 
-### Step 36 — The worker seat means something
+### Step 36 — The worker seat means something ✅
 
 A `worker` cue: classify, summarize, write a commit message, dedupe a memory. No workspace writes. And the warning the README promises out loud — a `worker`-class harness dropped into a `reviewer` seat is a config error the daemon names at `GET /stations`, not a surprise three steps into a run.
 
-**Done when:** that config produces a warning rather than a plausible-looking approval, and a `worker` cue completes having touched zero files.
+**Done when:** that config produces a warning rather than a plausible-looking approval ✅, and a `worker` cue completes having touched zero files ✅.
+
+#### What the work settled
+
+**Built without `ollama`, which turned out to be the right order rather than a workaround.** The seat is a property of the *daemon*, not of any harness — `mock` already declared `roles: ["worker"]` and had no worker branch, which is precisely the gap this step existed to close. Building it against a real local model would have proved the same two clauses while hiding which layer was enforcing them.
+
+**Three places enforce it, and they are not redundant — they are three different strengths, in descending order:**
+
+| Where | What it does | Strength |
+|---|---|---|
+| `codex --sandbox read-only` | The CLI refuses the write | **Prevention**, and complete — the shell-command hole documented in `codex.ts` is a hole in path *observation*, not in the sandbox, so `printf > file` is refused too |
+| `Workspace.write` (`workspace.ts`) | The facade refuses | **Prevention**, for harnesses that do their own I/O — which is `mock` today and every in-process harness later |
+| `fileEvents` / `fileChangeEvents` | A `denial` event on the run record | **Report**, after the fact. It is what covers `claude-code`, and it is honest about being a report |
+
+`claude-code`'s `buildArgs` was deliberately **not** touched. No read-only `--permission-mode` has been verified against a real `--help` on this machine, and the rule that produced `codex.ts`'s flag comment — *read the help, do not recall it* — applies to permission modes as much as to stream shapes. So a worker on `claude-code` is covered by the facade and by observation, and the comment at the check says exactly that rather than implying more.
+
+**The warning lives in the daemon, not in `config.ts`'s `lint()`, and the dependency direction is why.** Every other cross-field warning is in the loader, which made that the obvious home — until the check turned out to need a harness's `roles`, and `core` sits *below* `harness`. The loader knows what you wrote; only the daemon knows what the harnesses can do. So `describeStations` takes a `HarnessRoles` lookup alongside its prober, `harnessRuntime()` supplies it from the registry, and `stations.ts` still does not know what a registry is.
+
+**`HarnessRoles` is a second function rather than a field on `HarnessProbe`**, because the two answer different questions. A probe is liveness; roles are static capability. Folding them together would make a harness's roles unknown exactly when its binary is missing — and the warning earns its keep *before* you install anything, while the config is still being written.
+
+**`undefined` and `[]` mean different things, and the distinction carries the whole design.** An unregistered harness answers `undefined` and warns about nothing. `[]` would mean "plays no seat" and would warn about every Station in every config the moment no registry was wired — including `startDaemon`'s own tests, and including the `ollama` entry `BUILTIN_HARNESS_IDS` lists but no build ships. Third-party harnesses are a supported case; a config that cannot be opened without the plugin declaring its roles would make the README's "most valuable contribution" hostile to write.
+
+#### A finding this step deliberately did not act on
+
+**`writeDeniedByRole` names only `worker`, and `sandboxFor` already denies more than that.** A `reviewer` and a `caller` both run `read-only` under Codex's sandbox, so the CLI-flag layer encodes "engineer is the only writing seat" while the facade encodes "worker cannot write". Those two rules disagree, and the facade is the weaker one.
+
+It was left disagreeing on purpose. Widening the facade changes the Phase 7 gate path, and **no test covers a reviewer writing in either direction** — every writing test in the repo uses `engineer`, which means nothing would have caught a regression and nothing would have proven the change correct either. That is a decision to make with a reason, not as a tidy-up inside a step about a different seat. It belongs to whoever writes the reviewer's read-only clone.
 
 ---
 
@@ -893,6 +927,7 @@ Three findings land squarely here, and together they are why this is harder than
 - **Claude Code reports plan limits, but only from *inside* a run** — as `rate_limit_event` lines, not as a queryable command. `mapRateLimit()` already turns one into a `UsageWindow`. It also reports a *status* rather than a fraction, so `used` is a floor (`allowed` → 0) and not a real percentage. **The strip will have to render "not yet blocked" honestly instead of drawing a convincing 0%.**
 - **Codex reports no plan window at all**, and no dollar figure either — its stream carries token counts and nothing else. So `usage()` returns `[]` truthfully, and a two-vendor run's dollar total is currently the Anthropic half only. Finding OpenAI's numbers is its own piece of work; until then the honest strip has a blank row rather than a reassuring one.
 - **Ollama is unmetered and free**, which sounds like the easy row and is the one that breaks a naive design: a bar chart of "usage" cannot draw it at all, and a percentage would be a lie in the opposite direction from Codex's.
+- **`Cost` cannot express a cache hit, and both vendors are already telling us about one.** `core/types.ts` defines `Cost` as `{ tokensIn, tokensOut, usd? }` and that is the whole vocabulary. `claude-code.ts`'s `inputTokens()` *sums* `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` into `tokensIn`, and `codex.ts` reads `input_tokens` and discards `cached_input_tokens` as the subset it is. Both are correct as totals and both are lossy: cached input is billed at a fraction of fresh input, so two runs with identical `tokensIn` can differ severalfold in price, and the ledger of Step 39 has no field in which to say which one you just paid for. **This is the one place the limits work needs a `core` type change rather than a harness change** — see Step 57, which is where it is done, because widening `Cost` before anything reads the extra fields buys nothing.
 
 **Which means the first real decision of this phase is a presentation problem, not a parsing one:** what a limits strip shows when one vendor reports a status, another reports nothing, and a third cannot run out. Getting that wrong produces a strip that is worse than no strip, because it looks authoritative.
 
@@ -974,7 +1009,32 @@ Plain files in a repo the operator owns, deliberately: the README promises "you 
 
 Render the store into `CLAUDE.md` and `AGENTS.md` at the workspace root, from `contextFiles`. Regenerate on change. Never clobber a hand-written file — generated content goes between markers, and anything outside them survives.
 
-**Done when:** one fact written once is visible to both harnesses without either being told the other exists, and re-running the projection twice produces no diff.
+#### How one store reaches several AIs across several projects
+
+This is the question Phase 8 existed to make answerable, and the answer is a layer split rather than a merge strategy:
+
+```
+  ~/.cuesheet/commons/            one store · one fact per file · each fact tagged with the projects it belongs to
+         │
+         ├── scope: "user"  ────▶  ~/.claude/CLAUDE.md           rendered once per machine, never per project
+         │                         ~/.codex/AGENTS.md
+         │
+         └── scope: "project" ──▶  <project A root>/CLAUDE.md    one project's facts, two dialects, same body
+                                   <project A root>/AGENTS.md
+                                   <project B root>/CLAUDE.md
+                                   <project B root>/AGENTS.md
+```
+
+- **`scope` on `contextFiles` is the mechanism, and it has been sitting there since Step 13 meaning nothing.** Phase 8 gives the first half of it a referent: `scope: "project"` renders into *that project's root*, resolved the same way config is. `scope: "user"` is the crew layer — how you work, true in every repo — and is rendered once per machine.
+- **A `scope: "user"` file is never re-rendered per project.** Both harnesses read exactly one of each: there is one `~/.claude/CLAUDE.md` on the machine, not one per project, so a per-project render into it is a last-writer-wins race between projects that happen to be open at the same time, and it leaks project A's facts into every run of project B. Two projects can be active at once — Phase 8 made sure of that — so this is a live bug, not a theoretical one.
+- **The two files are the same body in two filenames.** A fact is stored once and rendered twice; `claude-code` reads `CLAUDE.md`, `codex` reads `AGENTS.md`, and neither is told the other exists. That is the README's claim in one sentence, and it is only true if the renderer is one function with the path as a parameter.
+- **Two Stations in one project share one file, not one file each.** The projection is keyed by project and harness, never by Station. A per-Station file would need a per-Station working directory, and the harnesses resolve their context file from the workspace root they are given — which, for two Stations on the same repo, is the same directory. What narrows a Station is its leash and its role, not a private copy of the memory.
+- **Markers, on every file, including the user-scope ones.** A hand-written `CLAUDE.md` at a project root is the common case, not the exception, and clobbering one is the kind of data loss nobody forgives. Everything outside `<!-- cuesheet:begin --> … <!-- cuesheet:end -->` survives untouched, and a file with no markers gets the block appended rather than replaced.
+- **Generated content is written in place and `.gitignore` is not touched.** Committing the block is a legitimate team choice — it is how a colleague without Cuesheet gets the same context — and silently adding a rule to someone's ignore file to prevent that is a decision that is not ours to make.
+
+**What was nearly decided instead, and why it lost:** one shared `CLAUDE.md` in `~/.cuesheet/`, symlinked into each project root. It is cheaper, it is one file to keep correct, and it is wrong twice over — every project would then see every other project's facts, which is the leak above with extra steps, and symlink creation on Windows needs Developer Mode or elevation, which is already a ticked line on the gotcha checklist for a reason.
+
+**Done when:** one fact written once is visible to both harnesses without either being told the other exists, re-running the projection twice produces no diff, a hand-written paragraph outside the markers survives a regeneration, and a fact tagged for one project does not appear in another project's file or in either user-scope file.
 
 ### Step 48 — The approval inbox
 
@@ -1004,7 +1064,8 @@ A git remote the operator controls. Push, pull, and a conflict that a human reso
 
 - **What a "fact" is.** Too granular and the store becomes a junk drawer; too coarse and it is a second README nobody reads. The approval inbox is the pressure valve either way.
 - **What Gates and the Commons owe each other.** Phase 7 left a known limitation: a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs this store or per-cue diffs. Worth deciding here rather than inheriting the ambiguity.
-- **Scope, now that projects exist.** `contextFiles` carries `scope: "project" | "user"` and Phase 8 makes the first of those mean something concrete. What remains is what an operator expects when the same Station serves two projects — which is now a question with a defined vocabulary rather than an open one.
+- ~~**Scope, now that projects exist.**~~ Settled in Step 47 above: project-scope files render per project root, user-scope files render once per machine, and a fact carries the projects it belongs to. What is *left* of the question is narrower and still open — **what a Station carries between projects.** A Station is configured per project today, so "the same Station serves two projects" is really two Stations that share a harness and a name. If Stations ever become machine-level, this reopens.
+- **Whether a projection should be filtered by leash.** A reviewer denied `infra/**` is still handed every fact about `infra/**` in its context file, because the projection is per project and the leash is per Station. Filtering would make the two agree; it would also mean two Stations in one project can no longer share one file, which Step 47 relies on. Worth deciding with a real store in front of you rather than now.
 
 ---
 
@@ -1062,6 +1123,88 @@ Crash and error reporting with no telemetry — the constraint the README sets a
 
 ---
 
+# Phase 14 · The context economy
+
+> ⚪ **Post-1.0 track, and the first phase that is about the *price* of the thesis rather than the thesis.** It sits outside the 1.0 bar deliberately: that bar is *"the README is true as written"*, and a phase whose own README sections are marked 📋 cannot be part of the definition of its own completion.
+>
+> A gated two-model workflow burns roughly 3× a single session. The README says so in the FAQ and that number is not going away — a second opinion costs a second read of the code. What *is* going away is the waste around it: an agent that re-derives your repo from `ls` on every run, a reviewer handed forty thousand lines of lockfile diff, and a ledger that cannot tell a cached token from a fresh one.
+>
+> **It sits after Phase 13 because it measures things that do not exist yet** — the ledger is Step 39, the projections are Step 47, and tuning a context budget before there is a context to budget is guesswork. It is not, however, load-bearing for the beta: **Steps 57 and 58 can be pulled forward into Phase 10 the moment they are wanted**, and Step 57 is a prerequisite for the ledger being honest rather than merely present.
+
+### Step 57 — Cache-aware cost
+
+Widen `Cost` and `CostDelta` with optional `cacheRead` and `cacheWrite`, and stop collapsing the vendors' cache figures into one number.
+
+The finding is in Phase 10 and the detail is worth repeating at the point of work, because the two harnesses are lossy in *opposite* directions and a single fix will not do both: `claude-code.ts` adds `cache_creation_input_tokens` and `cache_read_input_tokens` into `tokensIn` (correct as a total, and the comment above it says why — counting only `input_tokens` under-reports a run severalfold), while `codex.ts` reads `input_tokens` and drops `cached_input_tokens`, which is a *subset* rather than an addend. Summing both vendors the same way would double-bill one of them; this is the same asymmetry the house rule about captured streams exists to catch.
+
+`tokensIn` keeps meaning what it means today — the total billed input — so nothing that reads it breaks. The new fields are the breakdown, absent when a runtime does not report one, which is a different claim from zero.
+
+**Done when:** a run that hits a warm cache shows a hit rate, two runs with the same `tokensIn` and different cache mixes show different prices, and a harness that reports nothing about caching still produces a valid `Cost`.
+
+### Step 58 — The brief has a budget
+
+`ctx.brief` is assembled by the daemon and handed to a harness. Nothing caps it.
+
+Two places this bites, both real today. A reviewer in a Gate is handed the *whole workspace diff* — Phase 7 recorded that limitation for attribution reasons, and it is a spending limitation too: a run that regenerates a lockfile sends every line of it to a second vendor at full price. And `skip_if_diff_under` is the only lever, which is a line count and therefore blind in both directions — a five-line change to an auth path is worth reviewing and a five-hundred-line vendored bump is not.
+
+- A byte budget on the assembled brief, with per-file elision rather than truncation, so a diff that overruns loses whole files with a note instead of stopping mid-hunk.
+- Path-weighted gate skipping alongside the line count: `always_review` and `never_review` globs, matched with the same posix-normalized, Windows-`nocase` matcher the leash already uses. **Reuse `core/leash.ts`'s matcher — do not write a second one.** Two glob implementations in one product will disagree, and the one that disagrees about `infra/**` is a security bug.
+- Local, approximate token counting for the pre-run check of Step 38. Approximate because the only exact answer is a vendor endpoint, and the README's no-credential promise means Cuesheet will never hold the key to call one. The number is labelled an estimate wherever it is shown.
+
+**Done when:** a Gate over a 40k-line diff sends a bounded brief and says what it left out, a lockfile-only change skips review on a path rule rather than a line count, and a run refused for budget is refused before it spends anything.
+
+### Step 59 — The repo map
+
+A symbol index of the workspace, rendered into the projection as part of the generated block: files, their exported symbols, and where they live. Regenerated on change, stable-ordered.
+
+This is the largest token sink in an agent run and the one nobody bills you for explicitly — every session opens by rediscovering the shape of a repository that has not changed since yesterday. The captured Codex fixture in this repo shows it happening: the first two tool calls of a real run are `rg --files` and a `cat` loop hunting for `AGENTS.md`.
+
+Tooling, and the constraint that picks it: **`web-tree-sitter` (wasm), not the native `tree-sitter` binding.** A native module means a rebuild against Electron's ABI on three platforms, which is exactly the risk Step 10 chose files over SQLite to avoid, and packaging is the part of this repo with the most scar tissue. Grammar wasm files ship as resources the way the tray icon does.
+
+Where it lives is a dependency-direction question with an unobvious answer: `core` owns the map's *format* (it is a type, and `core` owns the vocabulary), the **daemon** builds it, because building it reaches disk and `core` only touches disk through an injected `HostEnv`. It is not a harness's job — a map built per harness is the same work three times, and harnesses never import each other.
+
+**Done when:** a cold run on a mapped repo reaches its first edit in measurably fewer tool calls than the same run unmapped, and regenerating the map twice produces no diff.
+
+### Step 60 — Rewind, for every harness
+
+`cuesheet rewind <run>` reverse-applies a run's stored patch.
+
+Every run record already holds `diff.patch`; this step is mostly the CLI surface and the safety rail. One vendor ships rewind and the other does not, and neither can rewind the other's run — which is the whole argument of the project, available here for the price of reading a file Cuesheet already wrote.
+
+The rail: refuse when the working tree has moved under the patch rather than applying it partially. A half-reverted tree is worse than a bad commit, because the bad commit is at least in the log.
+
+**Done when:** a run that made a mess is undone from the record, and a rewind that would conflict refuses with the conflicting paths named.
+
+### Step 61 — Hooks as cues, and the capability question
+
+A `hook` cue kind: run a command after a Station finishes, with the run's id, diff and status on stdin. Formatters, test runs, a notification, a commit.
+
+The seam is the one Gates went through — cues were already an ordered list, and a gate was a cue kind, so a hook is too. What it buys is parity in the direction that matters: one harness has a hooks system and the other has a notify shim, and a hook *cue* gives hooks to every harness including the local models of Phase 9, which will never have their own.
+
+**And here is the honest part, which should not be softened in the work:** the same trick does not extend to everything. `Harness` has `probe`, `usage`, `contextFiles`, `writeConnectors` and `run`, and **nothing that expresses what a runtime can do**. There is no seam for "this one supports plan mode", "this one can resume a session", "this one enforces a sandbox itself". Adding `capabilities` to the interface would be the first change to it since Step 13 — additive, but a change — and the alternative is feature-detecting on `vendor`, which re-couples the daemon to the harnesses the interface exists to keep it away from. **Decide it here, deliberately, rather than discovering it while writing the third harness.**
+
+**Done when:** a hook cue runs the project's formatter after every engineer step regardless of which vendor ran it, and the capability question is answered in writing — either `capabilities` is on the interface or there is a recorded reason it is not.
+
+### Step 62 — What your context already costs
+
+A read-only audit, in the Desk and in the CLI: how large every always-loaded file is, in estimated tokens, multiplied by the Stations that load it and the runs that load them.
+
+This is the smallest step in the phase and probably the most useful one. A 40k-token hand-written `CLAUDE.md` is paid by every Station on every run forever, and nothing in any tool tells anybody that. It also keeps the rest of this phase honest, since it is the only thing here that produces a before and an after.
+
+**Done when:** the Desk can answer "what am I paying for context, per run, across this project's Stations" with a number, and a projection that grows by 10k tokens shows up as a cost change rather than a bigger file.
+
+### The rule that makes all of this work, written down before it is broken
+
+**A projection, a repo map and an assembled brief must be byte-stable across runs when nothing has changed.** Prompt caching is prefix-based: one reordered line near the top invalidates everything after it, and a cache miss on a 30k-token context costs an order of magnitude more than a hit. So no timestamps, no run ids, no usage figures, and no map ordering that depends on `readdir` order or mtime in any generated context. Step 47 already requires "re-running the projection twice produces no diff" for a different reason — that clause is load-bearing twice, and this is the second reason.
+
+### Open questions to settle in the work, not now
+
+- **Whether the repo map belongs in the context file at all**, or behind the MCP recall server of Step 49. Files are free and always loaded; a map is the single largest thing anyone would put in one. The answer probably differs by repo size, which means it is a setting, which means picking a default.
+- **What "maximize tokens" means when the user has a plan, not a bill.** Under a subscription the scarce thing is the 5-hour window, not dollars, and the cheapest run is not the one that finishes soonest. Phase 10's strip and this phase's ledger may want to optimize different quantities.
+- **Whether elision can be honest.** A brief that drops files to fit is a brief that reviewed less than it appears to have reviewed, and a Gate verdict over an elided diff should probably say so on the record.
+
+---
+
 ## Deferred on purpose
 
 Most of this table has now been claimed by Phases 8–13, which is what the seams were cut for. The rows are kept rather than deleted, because *which* seam absorbed each one is the evidence that the interfaces were drawn in the right places — nothing below required changing `Harness`, `RunStore` or the HTTP transport to become additive.
@@ -1074,6 +1217,8 @@ Most of this table has now been claimed by Phases 8–13, which is what the seam
 | ~~Gates, reviewer role, verdicts~~ | 🔵 beta | Done. Cues were already an ordered list; a gate was a cue kind | Phase 7 ✅ |
 | ~~Commons, MCP recall~~ | 🔵 beta | `contextFiles` already on the interface | Phase 12 |
 | **Projects** | 🔵 beta | **No seam — this is the one nothing was cut for.** `cwd`, `loadConfig` and the store root each assume exactly one, which is why it is a phase and not a step | Phase 8 |
+| Cache-aware accounting | ⚪ post-1.0 | **No seam — `Cost` is three fields and none of them is a cache.** Additive to widen, but it is a `core` type change, not a harness one | Step 57 |
+| Hooks, rewind, plan mode | ⚪ post-1.0 | Cues, for the first two — a hook is a cue kind exactly as a gate was. **Not for the third:** `Harness` has no way to say what a runtime supports | Steps 60–61 |
 | Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) | still deferred |
 | Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change | still deferred |
 | Caller, On-Call | ⚪ post-1.0 | Both are cuesheets + a trigger over the existing queue | still deferred |
@@ -1112,8 +1257,10 @@ If you want the shortest path to something you can play with, do **Steps 1, 4, 5
 
 **Past alpha, the phase number is the order** — see the numbering rule under [Status](#status). Phase 7 came first because a second opinion is the thesis and it was the one claim the README could not back. Phases 8–13 then run in sequence, and the chain is a dependency chain rather than a ranking:
 
-**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product.**
+**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product → 14 the context economy.**
 
 Projects because nothing above it can be scoped without them. `ollama` before Limits because a strip designed without a station that cannot run out is a strip that will need redesigning the week one arrives. Limits before the Desk because half the screen the operator asked for renders usage, and `usage()` returns `[]` from every harness today. The Desk after all three because a rebuilt UI full of placeholders is the expensive kind of mistake — you ship it, and then you cannot tell whether it is wrong or merely empty. The Commons after the Desk because its scoping question is answered by Phase 8 and its inbox needs somewhere to live. And the product last because signing, migrations and a CLI are the work that only pays off once the thing is worth installing.
+
+Phase 14 comes last because every measurement it makes is of something the six phases before it build, and a context budget tuned against a store that does not exist yet is a guess with a number on it. The exception is stated in the phase itself: Step 57 widens `Cost`, and a ledger shipped without it is a ledger that cannot explain its own numbers — pull it forward into Phase 10 if Phase 10 is what you are writing.
 
 **If you want the shortest path to the thing the request actually described** — open the app, pick a project, see who is on it and what they are spending — that is Steps 31–34 and 40–42, with 37 for real numbers. Phases 9, 12 and 13 can slip without making that incoherent.

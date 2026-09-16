@@ -44,7 +44,13 @@ import {
   type ProjectRuntimes,
 } from "./projects.js";
 import { createStandbyRegistry, type StandbyRegistry } from "./standby.js";
-import { describeStations, unprobed, type HarnessProber } from "./stations.js";
+import {
+  describeStations,
+  unknownRoles,
+  unprobed,
+  type HarnessProber,
+  type HarnessRoles,
+} from "./stations.js";
 import { isRunId } from "./ids.js";
 import {
   currentLock,
@@ -102,6 +108,12 @@ export interface StartDaemonOptions {
   projectRegistry?: ProjectRegistry;
   bus?: EventBus;
   prober?: HarnessProber;
+  /**
+   * What each harness can be. Supplied by `harnessRuntime()` from the
+   * registry; left unknown here so `startDaemon`'s own tests do not have to
+   * carry a registry to avoid warnings about seats they never configured.
+   */
+  harnessRoles?: HarnessRoles;
   replayLimit?: number;
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
@@ -178,6 +190,7 @@ export async function startDaemon(
     });
   const standbys = createStandbyRegistry();
   const prober = options.prober ?? unprobed;
+  const harnessRoles = options.harnessRoles ?? unknownRoles;
   const registry = options.projectRegistry ?? createProjectRegistry({ env });
 
   const runtimes = createProjectRuntimes({
@@ -245,6 +258,7 @@ export async function startDaemon(
   const routeDeps: RouteDeps = {
     standbys,
     prober,
+    harnessRoles,
     env,
     registry,
     runtimes,
@@ -459,6 +473,7 @@ function errorText(error: unknown): string {
 interface RouteDeps {
   standbys: StandbyRegistry;
   prober: HarnessProber;
+  harnessRoles: HarnessRoles;
   env: HostEnv;
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
@@ -481,7 +496,7 @@ interface RouteDeps {
  * a phone answering a standby should not have to know which project raised it.
  */
 function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { standbys, prober, env, registry, runtimes } = deps;
+  const { standbys, prober, harnessRoles, env, registry, runtimes } = deps;
 
   app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
 
@@ -573,7 +588,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/projects/:id/stations", async (request, reply) => {
     const runtime = await runtimeFor(request, reply);
     if (!runtime) return reply;
-    return describeStations(runtime.config(), prober);
+    return describeStations(runtime.config(), prober, harnessRoles);
   });
 
   /**
@@ -626,7 +641,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       // Reload before responding, so the caller never sees a Station it then
       // cannot run. `describeStations` is re-derived from the fresh config.
       const reloaded = await runtime.reload();
-      const stations = await describeStations(reloaded, prober);
+      const stations = await describeStations(reloaded, prober, harnessRoles);
       return reply.code(201).send({
         station: result.station,
         sourcePath: result.sourcePath,

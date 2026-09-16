@@ -3,8 +3,14 @@ import {
   parseConfig,
   type HarnessProbe,
   type LoadedConfig,
+  type Role,
 } from "@cuesheet/core";
-import { describeStations, unprobed } from "./stations.js";
+import {
+  describeStations,
+  unknownRoles,
+  unprobed,
+  type HarnessRoles,
+} from "./stations.js";
 
 const TOML = `
 [[station]]
@@ -138,5 +144,80 @@ describe("describeStations", () => {
     // up as a Station, just an unusable one.
     expect(response.stations).toHaveLength(1);
     expect(response.stations[0]?.probe.harness).toBe("third-party");
+  });
+});
+
+/** What the real registry answers, for the two harnesses these configs use. */
+const ROLE_TABLE: Record<string, readonly Role[]> = {
+  "claude-code": ["engineer", "reviewer", "caller"],
+  ollama: ["worker"],
+};
+
+const realRoles: HarnessRoles = (harness) => ROLE_TABLE[harness];
+
+describe("seats a harness cannot play", () => {
+  const seated = (harness: string, role: string) =>
+    parseConfig(
+      `
+[[station]]
+id = "local"
+harness = "${harness}"
+role = "${role}"
+workspace = "/ws"
+`,
+      "/ws/cuesheet.toml",
+    );
+
+  it("warns when a worker-only harness is put in a reviewer seat", async () => {
+    // The README promises this out loud, and the reason is not pedantry: a
+    // small local model asked to review a frontier model's diff approves
+    // nearly everything, so the failure looks exactly like a pass.
+    const response = await describeStations(
+      seated("ollama", "reviewer"),
+      unprobed,
+      realRoles,
+    );
+    const warning = response.warnings.find((w) =>
+      w.message.includes('Station "local"'),
+    );
+    expect(warning?.table).toBe("station");
+    expect(warning?.message).toContain(
+      '"ollama" harness can only play the worker seat',
+    );
+    // No backticks: the Desk renders a warning as bare text in a banner.
+    expect(warning?.message).not.toContain("`");
+    expect(warning?.message).toContain("worse than none");
+  });
+
+  it("says nothing when the seat fits", async () => {
+    const response = await describeStations(
+      seated("ollama", "worker"),
+      unprobed,
+      realRoles,
+    );
+    expect(response.warnings).toEqual([]);
+  });
+
+  it("says nothing about a harness nobody has registered", async () => {
+    // `BUILTIN_HARNESS_IDS` lists `ollama` for probe ordering, but no build
+    // ships one — and third-party harnesses are a supported case. A config
+    // that could not be opened without the plugin declaring its roles would
+    // make writing one hostile.
+    const response = await describeStations(
+      seated("ollama", "reviewer"),
+      unprobed,
+      unknownRoles,
+    );
+    expect(response.warnings).toEqual([]);
+  });
+
+  it("keeps the loader's own warnings alongside its own", async () => {
+    const response = await describeStations(loaded(), unprobed, realRoles);
+    expect(response.warnings.some((w) => w.table === "limits")).toBe(true);
+    // `TOML`'s ollama station is a worker in a worker seat, so the only seat
+    // warning that could appear is one that should not.
+    expect(
+      response.warnings.some((w) => w.message.includes("can only be")),
+    ).toBe(false);
   });
 });

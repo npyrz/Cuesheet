@@ -150,6 +150,34 @@ export function checkPath(
 }
 
 /**
+ * Whether this Station's *role* forbids writing, whatever its leash allows.
+ *
+ * A leash answers "which paths?"; this answers "at all?". They are separate
+ * questions and they are enforced in separate places, which is why this is a
+ * function of its own rather than another branch inside `checkPath` — that
+ * one has no notion of an operation, and a `worker` must still be able to
+ * read. Classifying a diff, writing a commit message and deduping a memory
+ * are all reads.
+ *
+ * Only `worker` is listed, and the omission is deliberate rather than an
+ * oversight. `codex.ts`'s `sandboxFor` already runs a `reviewer` and a
+ * `caller` `read-only`, so the CLI-flag layer encodes a wider rule than this
+ * one does — but extending the *facade* to match would change the Phase 7
+ * gate path, and no test covers it in either direction. The README's claim
+ * that is overdue is this one: a `worker` "cannot review; cannot write code."
+ *
+ * Returns the reason, so the caller can put it in a denial the operator reads,
+ * and `undefined` when the role may write.
+ */
+export function writeDeniedByRole(station: Station): string | undefined {
+  if (station.role !== "worker") return undefined;
+  return (
+    `Station "${station.id}" is a worker, and a worker never writes. ` +
+    `Give it the \`engineer\` role if it is meant to change code.`
+  );
+}
+
+/**
  * Compile one leash rule into a matcher.
  *
  * A rule with no glob syntax in it — `paths = ["src/config"]` — is expanded to

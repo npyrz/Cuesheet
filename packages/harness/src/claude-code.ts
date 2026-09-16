@@ -27,6 +27,7 @@
  */
 import {
   checkPath,
+  writeDeniedByRole,
   type HarnessProbe,
   type StandbyAnswer,
   type Station,
@@ -410,6 +411,18 @@ function fileEvents(
 
   const op: "read" | "write" = name === "Read" ? "read" : "write";
   const events: HarnessEvent[] = [{ t: "file", path, op }];
+
+  // A worker that writes is out of its seat regardless of where it wrote, so
+  // this is reported before the path is even considered. It is observation
+  // rather than prevention — the tool has already run — but a seat nobody can
+  // see being left is a seat that does not mean anything.
+  if (op === "write") {
+    const roleDenial = writeDeniedByRole(state.station);
+    if (roleDenial !== undefined) {
+      events.push({ t: "denial", reason: roleDenial, path });
+      return events;
+    }
+  }
 
   const decision = checkPath(state.station, path);
   if (!decision.allowed) {

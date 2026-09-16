@@ -158,3 +158,32 @@ describe("createWorkspace", () => {
     expect(await workspace.list("src")).toEqual(["src/a.ts", "src/b.ts"]);
   });
 });
+
+describe("the worker seat", () => {
+  it("refuses a write even where the leash allows one", async () => {
+    const { workspace, events } = build({ role: "worker" });
+    await expect(
+      workspace.write("src/app.ts", "export {};\n"),
+    ).rejects.toBeInstanceOf(LeashDeniedError);
+    // The reason names the seat, not the path. Someone told "outside your
+    // allowed paths" goes off to widen a glob that was never the problem.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        t: "denial",
+        reason: expect.stringContaining("never writes"),
+      }),
+    );
+  });
+
+  it("leaves nothing on disk when it tries", async () => {
+    const { workspace } = build({ role: "worker" });
+    await workspace.write("src/app.ts", "x").catch(() => undefined);
+    expect(await workspace.exists("src/app.ts")).toBe(false);
+  });
+
+  it("still reads, because that is the whole job", async () => {
+    await writeFile(path.join(root, "src", "app.ts"), "export {};\n");
+    const { workspace } = build({ role: "worker" });
+    expect(await workspace.read("src/app.ts")).toBe("export {};\n");
+  });
+});

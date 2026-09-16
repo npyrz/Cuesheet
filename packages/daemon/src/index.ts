@@ -72,9 +72,10 @@ export type {
 export { createStandbyRegistry, StandbyAbandonedError } from "./standby.js";
 export type { StandbyRegistry, OpenStandby } from "./standby.js";
 
-export { describeStations, unprobed } from "./stations.js";
+export { describeStations, unprobed, unknownRoles } from "./stations.js";
 export type {
   HarnessProber,
+  HarnessRoles,
   StationView,
   StationsResponse,
 } from "./stations.js";

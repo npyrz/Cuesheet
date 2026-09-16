@@ -19,6 +19,7 @@ import {
   pathFor,
   resolveAndCheck,
   toPosix,
+  writeDeniedByRole,
   type HostEnv,
   type Station,
 } from "@cuesheet/core";
@@ -110,6 +111,24 @@ export function createWorkspace(options: WorkspaceOptions): Workspace {
     },
 
     async write(target, contents) {
+      // The role is checked before the leash, and the order is the message:
+      // a worker denied here is not denied *this path*, it is denied writing,
+      // and saying "outside your allowed paths" would send someone off to
+      // widen a glob that was never the problem.
+      //
+      // For `claude-code` and `codex` this is the in-process half only — both
+      // hand the work to a subprocess with its own file tools. `codex` gets
+      // the other half from `--sandbox read-only`. `claude-code` does not:
+      // no read-only `--permission-mode` has been verified against its
+      // `--help` on a real install, and this file does not guess at flags.
+      // What covers it there is observation — `fileEvents` reports the write
+      // as a denial — which is a report, not a prevention, exactly as the
+      // note at the top of `claude-code.ts` says.
+      const roleDenial = writeDeniedByRole(station);
+      if (roleDenial !== undefined) {
+        options.emit?.({ t: "denial", reason: roleDenial, path: target });
+        throw new LeashDeniedError(target, roleDenial);
+      }
       const file = await guard(target);
       await mkdir(dirname(file), { recursive: true });
       await writeFile(file, contents, "utf8");

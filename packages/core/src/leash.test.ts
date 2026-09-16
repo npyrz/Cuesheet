@@ -2,7 +2,12 @@ import { mkdtemp, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkPath, resolveAndCheck, type Leash } from "./leash.js";
+import {
+  checkPath,
+  resolveAndCheck,
+  writeDeniedByRole,
+  type Leash,
+} from "./leash.js";
 import type { Station } from "./config.js";
 import type { HostEnv } from "./paths.js";
 
@@ -346,5 +351,31 @@ describe.skipIf(!symlinksSupported)("resolveAndCheck (symlinks)", () => {
       path.join(ws, "src", ".env"),
     );
     expect(decision).toMatchObject({ allowed: false, rule: "**/*.env" });
+  });
+});
+
+describe("writeDeniedByRole", () => {
+  it("denies a worker, whatever its leash allows", () => {
+    // The leash here is as permissive as one gets. The point of the seat is
+    // that it is not the leash's decision.
+    const worker: Station = {
+      ...station,
+      id: "qwen",
+      role: "worker",
+      paths: ["**"],
+      deny: [],
+    };
+    expect(writeDeniedByRole(worker)).toMatch(/never writes/);
+    expect(writeDeniedByRole(worker)).toContain("qwen");
+  });
+
+  it("lets every other seat past, including the ones a sandbox blocks", () => {
+    // `reviewer` and `caller` run `read-only` under Codex's own sandbox, and
+    // this function deliberately does not duplicate that: it is the rule the
+    // facade enforces, and widening it here would change the Phase 7 gate path
+    // for reasons no test covers. See the note on the function.
+    for (const role of ["engineer", "reviewer", "caller"] as const) {
+      expect(writeDeniedByRole({ ...station, role })).toBeUndefined();
+    }
   });
 });

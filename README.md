@@ -488,6 +488,19 @@ One store. Two projections. One server. Synced across every machine you work on.
 
 Today Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, Ollama keeps nothing, none of them can read the others', and every tool re-learns your codebase from zero, forever. Cuesheet keeps one store and projects it into whatever each harness expects.
 
+**One store, many projects, and the files land where each AI already looks.** A fact carries the projects it belongs to, and the projection has two layers:
+
+```
+  scope: project   →  <each project root>/CLAUDE.md      that project's facts
+                      <each project root>/AGENTS.md      same body, Codex's filename
+  scope: user      →  ~/.claude/CLAUDE.md                how you work · written once per machine
+                      ~/.codex/AGENTS.md                 never re-written per project
+```
+
+The split is not cosmetic. There is exactly one `~/.claude/CLAUDE.md` on your machine, so rendering a project's facts into it would mean the last project you opened wins and every other project's agents read someone else's context. Project-scope facts go to project roots; the user-scope files hold only what is true in every repo. Two Stations working the same project share one file rather than getting one each — what narrows a Station is its role and its leash, not a private copy of your memory.
+
+Generated content lives between markers, so a hand-written `CLAUDE.md` survives untouched, and committing the generated block is your call: it is how a teammate without Cuesheet gets the same context.
+
 Why both static files *and* an MCP server: files cost nothing and are always loaded, including by local models that will never reliably decide to call a tool. The MCP server carries the long tail that would blow your context budget if it were pasted into every session.
 
 Captured memories land in an **approval inbox**, not straight into the store — without a gate, agent-written memory drifts, duplicates, and quietly poisons every future session. Provenance is attached to every entry: which Station, which Run, when.
@@ -509,6 +522,43 @@ grant   = ["opus", "codex"]        # which Stations get it
 Cuesheet renders it into `.mcp.json` and `~/.codex/config.toml` and keeps them in sync.
 
 > **Known limit, stated honestly:** vendor-hosted connectors (the Gmail/Drive/Microsoft 365 integrations managed inside claude.ai) hold OAuth grants tied to that vendor's account and **cannot** be shared with another vendor's agent. To give every Station the same reach you must run your own MCP servers against your own OAuth clients. Cuesheet will help you wire them; it cannot repeal the constraint.
+
+### 🪙 The context economy
+
+📋 **Not built.** A gated two-model workflow burns roughly 3× a single session — that is the honest price of a second opinion and it is not going away. What *is* going away is the waste around it.
+
+| Lever | What it does | Why it is Cuesheet's to pull |
+|---|---|---|
+| **Cache-aware ledger** | Separates cached input from fresh input, per run and per Station | Cached input is billed at a fraction of fresh. Both CLIs already report it and Cuesheet currently throws it away — Claude Code's figures get summed into one input total, Codex's `cached_input_tokens` is dropped. So today the ledger can tell you what a run cost and not why |
+| **Brief budgets** | A byte cap on what a Station is handed, eliding whole files with a note rather than truncating mid-hunk | A reviewer gets the whole workspace diff today. Regenerate a lockfile and you have sent every line of it to a second vendor at full price |
+| **Path-weighted gates** | `always_review` / `never_review` globs alongside `skip_if_diff_under` | A line count is blind in both directions: five lines of auth is worth a review, five hundred lines of vendored bump is not |
+| **Repo map** | A stable symbol index in the projected context — files, exports, where they live | The biggest token sink in an agent run is rediscovering a repo that has not changed since yesterday. A captured Codex run in this repo opens with `rg --files` and a `cat` loop hunting for `AGENTS.md` |
+| **Context audit** | What every always-loaded file costs, per run, times the Stations that load it | A 40k-token hand-written `CLAUDE.md` is paid on every run by every Station forever, and no tool tells anybody |
+| **Local first pass** | Triage, labelling and commit messages on a `worker` Station | The cheapest token is the one a local model spent. This is the same argument On-Call makes, applied to ordinary work |
+
+**Everything generated must be byte-stable when nothing changed.** Prompt caching is prefix-based — one reordered line near the top of a context file invalidates the whole cache behind it, and a miss on 30k tokens costs an order of magnitude more than a hit. So no timestamps, no run ids and no `readdir`-ordered maps in anything Cuesheet writes into context.
+
+**Token counting is local and approximate, and says so.** The exact answer lives behind a vendor endpoint, and Cuesheet never holds the key to call one.
+
+### 🔀 One set of features, every harness
+
+Each CLI has something the other lacks, and neither can lend it across. The point of a manager is that the feature becomes yours rather than your vendor's.
+
+| What you would miss | Claude Code | Codex | The Cuesheet concept that covers both |
+|---|---|---|---|
+| A second opinion | subagents, same vendor only | — | **Stations + Gates** — any vendor reviews any other, and `distinct_vendors` makes it structural |
+| Always-loaded memory | `CLAUDE.md` | `AGENTS.md` | **The Commons** — one store, both files, per project |
+| Named repeatable workflows | slash commands, skills | prompts | **Cuesheets** — the same named flow whichever model runs it |
+| Run something after every change | hooks | none in 0.154.0 | **Hook cues** — a cue kind, so every harness has hooks, including local models |
+| Propose before doing | plan mode | — | **The Caller** — vendor-neutral, and the plan is config you can keep |
+| Undo a bad run | rewind | — | **Run records** — every run stores its patch; reverse-apply it |
+| Scoped permissions | `--permission-mode` | `--sandbox` | **Roles + leashes** — one vocabulary, mapped onto whichever flag the CLI speaks, and enforced in the daemon either way |
+| Pick up where you left off | its own sessions | its own sessions | **Run records** — honestly, this re-briefs from the record; it cannot resume a vendor's own session state, which lives in their store |
+| Connectors | `.mcp.json` | `~/.codex/config.toml` | **Declare once** — rendered into both |
+
+**The vendor columns describe what this repo has actually exercised** — `codex` 0.154.0, whose flags were read out of `--help` rather than recalled, and `claude-code` as captured in `packages/harness/src/fixtures/`. Both churn; the right-hand column is the part that is meant to survive them.
+
+**The mechanism is the cue list, which is why most of this is cheap.** Cues were an ordered list before Gates existed, and a gate turned out to be a cue kind; a hook is one too. The one place this does *not* work is worth stating: a harness cannot currently say what it supports — there is no `capabilities` on the interface — so "use plan mode if the runtime has one" has nowhere to live yet. That is a real gap, not a rounding error, and [PLAN-STEP.MD](PLAN-STEP.MD) Step 61 is where it gets decided.
 
 ### 🛡 Leashes
 
@@ -755,6 +805,8 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 | **M7 · On-Call** | Triggers, triage/patch/review cuesheet, hotfix gate, storm control, incident records | 📋 |
 | **M8 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |
 | **M9 · Ecosystem** | Harness SDK published, `gemini-cli` + `opencode`, connector registry, policy packs | 📋 |
+| **M10 · Economy** | Cache-aware ledger, brief budgets, path-weighted gates, repo map, context audit | 📋 |
+| **M11 · Parity** | Hooks as cues, rewind from a run record, harness capability probing | 📋 |
 
 **This table is a catalogue, not a running order.** It numbers features for a reader deciding whether to care; what gets built next is decided in [PLAN-STEP.MD](PLAN-STEP.MD), and the two have already diverged — M5 · Gates was built well ahead of M2–M4. The current order puts **projects and a rebuilt Desk ahead of M2 and M4**, because "open the app on the repo you were working on yesterday" is missing from this table entirely, and both of those milestones need it before they can be scoped.
 
@@ -808,7 +860,7 @@ It runs on your machine, against your working tree, with your credentials, over 
 No. It opens a branch and a PR, and that is the end of its authority. It cannot merge, cannot reach your infrastructure, and cannot arm at all without a reviewer from a second vendor. If it could not reproduce the bug with a failing test, it does not hand you a patch — it hands you what it found and stops.
 
 **Can I use only local models?**
-Yes, and Cuesheet runs fully offline. It will warn you when a `worker`-class model is placed in a `reviewer` seat, because that combination produces false confidence rather than safety.
+Yes, and Cuesheet runs fully offline. It warns you when a `worker`-class model is placed in a `reviewer` seat, because that combination produces false confidence rather than safety — the daemon says so at `GET /stations`, while you are still writing the config rather than three steps into a run.
 
 **What does it cost to run?**
 Cuesheet is free. The models are not. A gated two-model workflow runs roughly 3× the tokens of a single session — which is why `skip_if_diff_under` exists and why limits and the ledger are headline features rather than footnotes.

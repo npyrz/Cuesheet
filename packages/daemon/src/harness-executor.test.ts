@@ -10,6 +10,7 @@
  */
 import {
   mkdtemp,
+  readdir,
   readFile,
   writeFile,
   realpath,
@@ -415,3 +416,67 @@ async function waitForStatus(
   }
   throw new Error(`Run ${runId} never reached ${status}`);
 }
+
+describe("a worker cue", () => {
+  /** Rewrites this project's config so its only Station is a worker. */
+  async function workerProject(): Promise<string> {
+    await writeFile(
+      path.join(cwd, "cuesheet.toml"),
+      `
+[[station]]
+id = "qwen"
+harness = "mock"
+role = "worker"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+deny = [".git/**"]
+`,
+      "utf8",
+    );
+    return bootProject();
+  }
+
+  it("completes having touched zero files", async () => {
+    // Step 36's second done-when clause, end to end: HTTP into the queue,
+    // into a harness in a worker seat, out to the store. The leash here is
+    // `**` — nothing about this run is denied by *path*, which is the point.
+    const url = await workerProject();
+    const before = await readdir(path.join(workspace, "src"));
+
+    const response = await post(`${url}/runs`, { prompt: "label this change" });
+    const { runId } = (await response.json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("done");
+    expect(await readdir(path.join(workspace, "src"))).toEqual(before);
+    expect(await readdir(workspace)).toEqual(["src"]);
+
+    // And it did real work rather than doing nothing: a commit-message line
+    // and the tokens it cost. A seat that means something has to still be a
+    // seat somebody would put a Station in.
+    const text = stored.events
+      .filter((event) => event.t === "text")
+      .map((event) => (event as { chunk: string }).chunk)
+      .join("");
+    expect(text).toContain("chore:");
+    expect(stored.run.cost.tokensOut).toBeGreaterThan(0);
+  });
+
+  it("is refused by the facade if it reaches for a write anyway", async () => {
+    // The mock's worker branch never writes, so this drives the refusal
+    // directly rather than through a run — proving the facade, not the script.
+    const { createWorkspace } = await import("@cuesheet/harness");
+    const ws = createWorkspace({
+      station: {
+        id: "qwen",
+        harness: "mock",
+        role: "worker",
+        workspace,
+        paths: ["**"],
+        deny: [],
+      },
+    });
+    await expect(ws.write("src/notes.md", "x")).rejects.toThrow(/never writes/);
+    expect(await readdir(path.join(workspace, "src"))).toEqual([]);
+  });
+});

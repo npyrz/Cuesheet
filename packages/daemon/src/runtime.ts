@@ -15,7 +15,7 @@ import {
 import { createHarnessExecutor } from "./harness-executor.js";
 import type { ExecutorFactoryDeps } from "./server.js";
 import type { RunExecutor } from "./executor.js";
-import type { HarnessProber } from "./stations.js";
+import type { HarnessProber, HarnessRoles } from "./stations.js";
 
 export interface HarnessRuntimeOptions {
   /** Defaults to the built-ins. Pass your own to add a third-party harness. */
@@ -26,6 +26,7 @@ export interface HarnessRuntime {
   registry: HarnessRegistry;
   executorFactory: (deps: ExecutorFactoryDeps) => RunExecutor;
   prober: HarnessProber;
+  harnessRoles: HarnessRoles;
 }
 
 /**
@@ -47,5 +48,9 @@ export function harnessRuntime(
     executorFactory: ({ config, env }) =>
       createHarnessExecutor({ registry, config, env }),
     prober: (harness) => registry.probe(harness),
+    // `undefined` for a harness nobody registered, which is the answer that
+    // warns about nothing — and the one `ollama` gets, since
+    // `BUILTIN_HARNESS_IDS` lists it for probe ordering but no build ships it.
+    harnessRoles: (harness) => registry.get(harness)?.roles,
   };
 }
