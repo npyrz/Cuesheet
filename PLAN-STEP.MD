@@ -57,7 +57,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
-| **8 · Projects** | 31–34 | 🔵 beta | 🚧 **In progress.** Step 31 done — the registry exists; the daemon does not consume it yet |
+| **8 · Projects** | 31–34 | 🔵 beta | 🚧 **In progress.** Steps 31–32 done — one daemon serves many projects, isolated. 33 (migration) and 34 (switching) open |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ⬜ |
 | 10 · Limits | 37–39 | 🔵 beta | ⬜ |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
@@ -724,13 +724,41 @@ Config becomes per-project. `loadConfig`'s two-candidate search stops being the 
 >
 > **One thing the work found that the step text did not anticipate.** `pathFor(env)` exists so pure string math can be tested for a platform the test is not running on — but `node:fs` is bound to the *real* host, so resolving a POSIX path with `path.win32` produces backslashes the filesystem cannot then find. A Windows-env test failed on macOS and was right to. The rule now stated in the file: **`pathFor(env)` for layout and for strings, ambient `nodePath` for anything that reaches disk.** Worth carrying into Step 32, which will build far more paths than this step does.
 
-### Step 32 — The daemon serves more than one
+### Step 32 — The daemon serves more than one ✅
 
 Project-scoped routes. `/runs` and `/stations` are implicitly global today; they become `/projects`, `/projects/:id/stations`, `/projects/:id/runs`. One run-store root per project, or one root keyed by project — decided in the work, on whether `store.list(limit)` can stay O(recent) either way.
 
 Three places bake in single-project scope and all three are in this step: the single `loaded = await loadConfig(cwd, env)` and its `reload` closure, the single `createFileRunStore({ env })`, and `reconcileInterruptedRuns({ store })` at boot, which today repairs one store and would need to repair every project's.
 
 **Done when:** two projects are open at once, a run started in one never appears in the other's list, and `GET /projects` answers before any project has been opened.
+
+> **Done, and it also discharges Step 31's deferred clause.** `projects.ts` in the daemon holds a `ProjectRuntime` per project — config, reload closure, store, queue, bus — memoized and built on first touch. `server.ts` lost its single `store`, `queue`, `config` and `reload`; `DaemonHandle` lost `store`, `queue` and `reloadConfig` and gained `projects`, `registry` and `defaultProject`. The UI cut over with it. 549 tests pass.
+>
+> Step 31 could not prove "survives a daemon restart" because it was core-only, and that was recorded rather than quietly redefined. **It is proven here**: a project opened, a daemon closed, a second daemon started over the same home, and `GET /projects` still lists it — with the daemon coming back up *on* it rather than making the operator pick again. A project whose folder has gone is listed `missing` and is deliberately not booted into.
+>
+> **The routes cut over rather than aliasing, and the reason is the architecture.** Keeping `/runs` working would mean it addressed *something*, and the only available meaning is "the active project" — a daemon-side notion of which project is current. That is exactly what Phase 8 decided against at the top. Two clients, or a window and a phone, looking at different projects makes it incoherent; and Step 34's requirement that switching never disturb a run is trivially true only while the daemon has no opinion about which project you are in. So which project a client means is a path segment, and `defaultProject` on the programmatic handle is a convenience for tests that never changes for the life of the process.
+>
+> **Five decisions, and the first was nearly a shipped bug:**
+>
+> - **Bootstrap reads the config that exists, never `cwd`.** An existing install has to get its project back, and the obvious source is the working directory. But this phase's own opening paragraph is that `process.cwd()` is `/` in the packaged app — so `open(cwd)` would mint a permanent registry entry rooted at the filesystem root, on macOS, for every user, and `registry.open()` would not stop it because `/` is a directory. It bootstraps from `loadConfig`'s `sourcePath` instead, which is the honest answer to "which folder was this person working in". **A test asserts a cwd with no config contributes nothing.**
+> - **Each project gets its own bus, mirrored into a daemon-wide one.** A filtered shared bus would have had to drop backlog it could not attribute — and `attach()` returning its replay synchronously is load-bearing (see `bus.ts`). The tray keeps one subscription and is notified whichever project raised a standby; `DaemonHandle.bus` is documented as interleaved so nobody later reads a per-project backlog off it.
+> - **A store root per project**, which the step text left open. The deciding property is `store.list(limit)`: run ids are timestamp-prefixed so a lexical sort of directory names *is* chronological, and `list()` answers off `readdir` alone. A shared root keyed by project means filtering every run ever — the O(all runs) shape `reconcile.ts` already flags — or an index. It also makes Step 33's migration a directory move.
+> - **Reconciliation moved from boot to first touch.** `reconcile.ts`'s safety argument is unchanged: nothing can *observe* a run left `running` by a dead process. But it is now discharged per project when its runtime is built, which is O(projects actually opened) rather than O(every project ever registered) on every boot forever.
+> - **`/standbys/:id` stayed global.** Standby ids are unique daemon-wide because one registry is shared by every runtime, and a phone answering a standby should not have to know which project raised it. One registry per runtime would have broken that route for every project but the first, silently.
+>
+> **Two bugs the work produced and the tests caught, both worth recording because neither would have failed loudly:**
+>
+> - **The memoization was not memoizing.** `get(id)` awaited `registry.get(id)` *before* inserting into the map, so three concurrent requests for a cold project all passed the cache check while that lookup was in flight and each built its own queue over one store root — the lost-update shape `projects.json` is serialized against, arriving through a different door. The promise is now inserted synchronously, before the first `await`. The test that caught it asserts identity across three concurrent cold `get`s, and nothing else in the suite would have noticed.
+> - **`registry` collided with `registry`.** `harnessRuntime()` spreads a registry of *harnesses* into `startDaemon`'s options, and a new `registry?: ProjectRegistry` silently took the same name. TypeScript caught it only because a call site passed both explicitly — through the spread it would have compiled. Renamed `projectRegistry`.
+>
+> **One hazard found in the tests themselves:** a test that calls `startDaemon` without an isolated `env` now writes to the developer's real `~/.cuesheet/projects.json`. `reconcile.test.ts` was doing exactly that. Every `startDaemon` in the suite now passes its own home — worth remembering for every step after this one, because the failure is invisible locally and permanent.
+>
+> **The shell needed one button, or the cutover would have shipped an app nobody could open.** With no config anywhere a fresh install bootstraps no project, which is correct — and left the Desk on a placeholder with no way out, because nothing in the shell could create one. `window.cuesheet.chooseDirectory()` has existed since Step 5 for the add-a-Station panel, and `POST /projects` now exists, so the empty state offers **open a folder…** in Electron and an instruction in a browser. It is deliberately not a picker: Step 40 builds recents, the missing-folder state and the real launch surface, and Step 41 puts a switcher above it.
+>
+> **Two things carried forward rather than assumed:**
+>
+> - **Step 34's constraint is now cheap to test and is not tested yet.** Per-project queues and per-project sockets make "a switch is not a stop" *likely* true, and the retrospective above argues it from the design. That is an argument, not evidence. The test — start a long run in A, drop A's socket, attach to B, assert A's run is still `running`, reattach and assert the backlog replays it — belongs to Step 34's done-when and is where it will be written.
+> - **Step 33 must not change what `defaultProject` means.** Every daemon test now boots through bootstrap-from-`sourcePath` and addresses routes through that one project; `server.test.ts` alone has 41 call sites hanging off it. A migration that changes which project a daemon comes up on re-bases the entire suite, so it should move run history and re-root the bootstrapped project *without* changing the rule that the daemon reopens the most recently opened one.
 
 ### Step 33 — The upgrade that loses nothing
 

@@ -695,3 +695,25 @@ button.link {
 .sev-info {
   color: var(--dim);
 }
+
+/* Step 32: the active project's name in the top bar, and the placeholder the
+   Desk shows before Step 40 builds a real launch surface. */
+.topbar .project {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--tile, #1b1d22);
+  color: var(--muted, #9aa0a6);
+}
+
+main.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 60vh;
+  text-align: center;
+  color: var(--muted, #9aa0a6);
+}

@@ -59,15 +59,21 @@ export function apiUrl(path: string): string {
 }
 
 /**
- * The WebSocket URL.
+ * The WebSocket URL for one project's events.
  *
- * `/ws` is registered at the daemon's root, not under `/api`, and the dev
- * proxy forwards it there — so this deliberately does not go through
- * {@link apiUrl}.
+ * Project-scoped since Step 32: a socket carries the events of the project you
+ * asked for and no other, because the daemon gives each project its own bus
+ * rather than filtering a shared one.
+ *
+ * It now goes through `/api` like every other call. It used to be the one
+ * exception — `/ws` at the daemon root, with its own proxy entry — and keeping
+ * that would have meant a second spelling of the project path in the dev proxy
+ * for no benefit. One prefix, one proxy rule.
  */
-export function socketUrl(): string {
+export function socketUrl(projectId: string): string {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/ws`;
   const origin = apiOrigin();
-  if (origin !== "") return `${origin.replace(/^http/, "ws")}/ws`;
+  if (origin !== "") return `${origin.replace(/^http/, "ws")}${path}`;
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/ws`;
+  return `${scheme}//${location.host}${path}`;
 }

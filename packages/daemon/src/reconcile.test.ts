@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { RunEvent } from "@cuesheet/core";
+import type { HostEnv, RunEvent } from "@cuesheet/core";
 import { createFileRunStore, readEvents } from "./store.js";
 import { createRunIdFactory } from "./ids.js";
 import { INTERRUPTED_REASON, reconcileInterruptedRuns } from "./reconcile.js";
@@ -166,7 +166,7 @@ describe("reconcileInterruptedRuns", () => {
 });
 
 describe("startDaemon", () => {
-  it("reconciles on boot, so a relaunch never shows a dead run as live", async () => {
+  it("reconciles before a project can serve a dead run as live", async () => {
     const crashed = store();
     const run = await crashed.create({
       prompt: "ship it",
@@ -177,13 +177,27 @@ describe("startDaemon", () => {
 
     // A second process over the same runs directory — which is what a
     // relaunch is.
+    //
+    // Step 32 moved the moment this happens: reconciliation is no longer a
+    // single pass at boot but part of building a project's runtime, the first
+    // time that project is touched. The guarantee is unchanged and is what
+    // this asserts — nothing can *observe* a run left `running` by a dead
+    // process — but it is now discharged per project rather than for the one
+    // store there used to be.
+    const { env, cwd } = await isolatedHome();
     const handle = await startDaemon({
       port: 0,
+      env,
+      cwd,
       store: store(),
       writeLockFile: false,
     });
     try {
-      const response = await fetch(`${handle.url}/runs/${run.id}`);
+      const project = handle.defaultProject;
+      expect(project).not.toBeNull();
+      const response = await fetch(
+        `${handle.url}/projects/${project!.project.id}/runs/${run.id}`,
+      );
       const body = (await response.json()) as { run: { status: string } };
       expect(body.run.status).toBe("interrupted");
     } finally {
@@ -200,8 +214,11 @@ describe("startDaemon", () => {
     });
     await crashed.update(run.id, { status: "running" });
 
+    const { env, cwd } = await isolatedHome();
     const handle = await startDaemon({
       port: 0,
+      env,
+      cwd,
       store: store(),
       writeLockFile: false,
       reconcile: false,
@@ -213,3 +230,26 @@ describe("startDaemon", () => {
     }
   });
 });
+
+/**
+ * A home and a working directory of this test's own, with a config in it.
+ *
+ * Both are needed now: the config is what `startDaemon` bootstraps a project
+ * from, and an isolated home keeps the project registry out of the real
+ * `~/.cuesheet/projects.json`. Without the second, running this suite would
+ * add entries to the developer's own picker.
+ */
+async function isolatedHome(): Promise<{ env: HostEnv; cwd: string }> {
+  const home = await realpath(
+    await mkdtemp(path.join(tmpdir(), "cuesheet-rc-home-")),
+  );
+  const cwd = await realpath(
+    await mkdtemp(path.join(tmpdir(), "cuesheet-rc-cwd-")),
+  );
+  await writeFile(
+    path.join(cwd, "cuesheet.toml"),
+    '[[station]]\nid = "opus"\nharness = "claude-code"\nrole = "engineer"\n',
+    "utf8",
+  );
+  return { env: { platform: process.platform, homedir: home }, cwd };
+}

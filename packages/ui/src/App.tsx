@@ -10,12 +10,16 @@ import { AddStationPanel } from "./components/AddStationPanel.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
 import { RunLog } from "./components/RunLog.js";
 import { StationTile } from "./components/StationTile.js";
+import { bridge } from "./api/base.js";
 import { isPaletteChord, modifierKey } from "./format.js";
 import { selectedEvents, selectedRun } from "./store/reducer.js";
 import { useDesk } from "./store/useDesk.js";
 
 export function App(): React.JSX.Element {
   const desk = useDesk();
+  // The native picker the Electron preload exposes. Absent in a browser, which
+  // is why the placeholder below has a second branch rather than a dead button.
+  const chooseDirectory = bridge()?.chooseDirectory;
   const { state } = desk;
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -77,10 +81,58 @@ export function App(): React.JSX.Element {
     [desk, run, state.stations],
   );
 
+  // No project, no Desk. A first-run install has nothing to show tiles *of*,
+  // and the daemon deliberately does not invent a project to fill the gap.
+  //
+  // This is the smallest honest placeholder, not the launch surface: Step 40
+  // builds recents, a folder picker and a missing-folder state, and Step 41
+  // puts a switcher above all of it. Anything more here would be thrown away.
+  if (desk.project.status !== "open") {
+    return (
+      <div className="desk">
+        <header className="topbar">
+          <span className="brand">CUESHEET</span>
+          <span className="spacer" />
+        </header>
+        <main className="empty">
+          {desk.project.status === "loading" ? (
+            <p>Looking for your projects…</p>
+          ) : (
+            <>
+              <p>No project yet.</p>
+              {chooseDirectory ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void chooseDirectory().then((picked) => {
+                      if (picked !== null) void desk.openFolder(picked);
+                    });
+                  }}
+                >
+                  open a folder…
+                </button>
+              ) : (
+                <p className="hint">
+                  Start the daemon in a directory that has a{" "}
+                  <code>cuesheet.toml</code>, or open a folder from the desktop
+                  app.
+                </p>
+              )}
+              {state.error !== null && <p className="hint">{state.error}</p>}
+            </>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="desk">
       <header className="topbar">
         <span className="brand">CUESHEET</span>
+        <span className="project" title={desk.project.project.root}>
+          {desk.project.project.name}
+        </span>
         <span className="conn" data-status={state.connection}>
           <span className="dot" aria-hidden="true" />
           {state.connection === "open"

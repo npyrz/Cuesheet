@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -97,12 +97,48 @@ async function waitFor(
 }
 
 const runIsActive = (runId: string) => () =>
-  daemon.queue.activeRunId() === runId;
+  defaultRuntime().queue.activeRunId() === runId;
+
+/**
+ * The project the daemon bootstrapped from `cwd`'s `cuesheet.toml`.
+ *
+ * Every test in this file has exactly one project, so "the project" is
+ * unambiguous here in a way it deliberately is not in the HTTP API — the
+ * daemon has no active-project concept, and a client says which one it means.
+ */
+function defaultRuntime(): NonNullable<DaemonHandle["defaultProject"]> {
+  const runtime = daemon.defaultProject;
+  if (!runtime) throw new Error("the daemon bootstrapped no project");
+  return runtime;
+}
+
+/** Where every project-scoped route hangs off. */
+function projectBase(): string {
+  return `${daemon.url}/projects/${defaultRuntime().project.id}`;
+}
+
+async function bootProject(executor?: RunExecutor): Promise<string> {
+  await boot(executor);
+  return projectBase();
+}
+
+/**
+ * The same project, under the `/api` prefix the Vite dev server proxies.
+ *
+ * The prefix goes *ahead* of the project segment — `/api/projects/:id/...` —
+ * because the whole route tree is registered twice, once bare and once scoped.
+ */
+function apiProjectBase(): string {
+  return `${daemon.url}/api/projects/${defaultRuntime().project.id}`;
+}
 
 beforeEach(async () => {
   const home = await mkdtemp(path.join(tmpdir(), "cuesheet-home-"));
   env = { platform: process.platform, homedir: home };
-  cwd = await mkdtemp(path.join(tmpdir(), "cuesheet-cwd-"));
+  // `realpath` because the project registry resolves a root before storing it
+  // — on macOS `/var` is a symlink to `/private/var`, so without this every
+  // `sourcePath` assertion below compares two spellings of the same file.
+  cwd = await realpath(await mkdtemp(path.join(tmpdir(), "cuesheet-cwd-")));
   root = await mkdtemp(path.join(tmpdir(), "cuesheet-runs-"));
   await writeFile(path.join(cwd, "cuesheet.toml"), CONFIG, "utf8");
 });
@@ -162,9 +198,10 @@ interface ApiError {
 
 describe("GET /health", () => {
   it("returns ok and a version", async () => {
-    // Step 8's done-when, against a real listening server.
-    const { url } = await boot();
-    const { status, body } = await get<Health>(url, "/health");
+    // Step 8's done-when, against a real listening server. Global on purpose:
+    // `/health` is about the process, not about any project.
+    await boot();
+    const { status, body } = await get<Health>(daemon.url, "/health");
     expect(status).toBe(200);
     expect(body).toEqual({ ok: true, version: expect.any(String) });
   });
@@ -176,10 +213,10 @@ describe("GET /health", () => {
   });
 
   it("is also served under /api, for the Vite dev proxy", async () => {
-    const { url } = await boot();
+    await boot();
     // Step 17's dev server proxies `/api` and `/ws`. Serving both prefixes
     // beats a rewrite rule and keeps `curl :7373/health` working.
-    expect((await get<Health>(url, "/api/health")).body).toEqual({
+    expect((await get<Health>(daemon.url, "/api/health")).body).toEqual({
       ok: true,
       version: expect.any(String),
     });
@@ -188,7 +225,7 @@ describe("GET /health", () => {
 
 describe("GET /stations", () => {
   it("returns configured stations with probe results", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { status, body } = await get<StationsResponse>(url, "/stations");
     expect(status).toBe(200);
 
@@ -207,7 +244,7 @@ describe("GET /stations", () => {
     // Step 6 collects these precisely so this route can report them; without
     // it a user never learns their `[limits]` table is parsed but not live.
     // This used to assert on `[gate]`, which is implemented now.
-    const { url } = await boot();
+    const url = await bootProject();
     const { body } = await get<StationsResponse>(url, "/stations");
     const warnings = body.warnings as Array<{
       table?: string;
@@ -220,13 +257,13 @@ describe("GET /stations", () => {
   });
 
   it("reports which file the config came from", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { body } = await get<StationsResponse>(url, "/stations");
     expect(body.sourcePath).toBe(path.join(cwd, "cuesheet.toml"));
   });
 
   it("lists every known harness, installed first", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { body } = await get<StationsResponse>(url, "/stations");
     const harnesses = body.harnesses as Array<{ harness: string }>;
     // Step 20's panel renders installed harnesses first and greys out the rest.
@@ -234,7 +271,11 @@ describe("GET /stations", () => {
     expect(harnesses.map((h) => h.harness)).toContain("ollama");
   });
 
-  it("still answers when there is no config file at all", async () => {
+  it("bootstraps no project at all when there is no config anywhere", async () => {
+    // Step 32's done-when: `GET /projects` answers before any project has been
+    // opened. It used to be `/stations` answering with an empty list — but a
+    // fresh install has no project to have Stations *of*, and inventing one
+    // would put a folder in the picker that nobody chose.
     const empty = await mkdtemp(path.join(tmpdir(), "cuesheet-empty-"));
     daemon = await startDaemon({
       port: 0,
@@ -242,15 +283,19 @@ describe("GET /stations", () => {
       cwd: empty,
       writeLockFile: false,
     });
-    const { body } = await get<StationsResponse>(daemon.url, "/stations");
-    expect(body.stations).toEqual([]);
-    expect(body.sourcePath).toBeNull();
+    expect(daemon.defaultProject).toBeNull();
+    const { status, body } = await get<{ projects: unknown[] }>(
+      daemon.url,
+      "/projects",
+    );
+    expect(status).toBe(200);
+    expect(body.projects).toEqual([]);
   });
 });
 
 describe("POST /runs", () => {
   it("enqueues a run and returns its id", async () => {
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     const { status, body } = await post<Enqueued>(url, "/runs", {
       prompt: "ship it",
     });
@@ -259,9 +304,9 @@ describe("POST /runs", () => {
   });
 
   it("resolves the workspace and station from config", async () => {
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "ship it" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const { body: stored } = await get<StoredRun>(url, `/runs/${body.runId}`);
     expect(stored.run.workspace).toBe("/tmp/ws");
@@ -269,12 +314,12 @@ describe("POST /runs", () => {
   });
 
   it("expands a named cuesheet into its stations, skipping gate refs", async () => {
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     const { body } = await post<Enqueued>(url, "/runs", {
       prompt: "ship it",
       cuesheet: "ship",
     });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const { body: stored } = await get<StoredRun>(url, `/runs/${body.runId}`);
     // `{ gate = "default" }` is a cue kind, not a Station: it does not appear
@@ -285,14 +330,14 @@ describe("POST /runs", () => {
   });
 
   it("rejects a missing or empty prompt", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     expect((await post(url, "/runs", {})).status).toBe(400);
     expect((await post(url, "/runs", { prompt: "   " })).status).toBe(400);
     expect((await post(url, "/runs", { prompt: 42 })).status).toBe(400);
   });
 
   it("404s for an unknown cuesheet", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { status } = await post(url, "/runs", {
       prompt: "hi",
       cuesheet: "nope",
@@ -303,10 +348,10 @@ describe("POST /runs", () => {
 
 describe("GET /runs", () => {
   it("lists runs newest first", async () => {
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     const first = await post<Enqueued>(url, "/runs", { prompt: "one" });
     const second = await post<Enqueued>(url, "/runs", { prompt: "two" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const { body } = await get<RunList>(url, "/runs");
     const runs = body.runs as Array<{ id: string; prompt: string }>;
@@ -318,15 +363,15 @@ describe("GET /runs", () => {
   });
 
   it("is an empty list before anything has run", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     expect((await get<RunList>(url, "/runs")).body.runs).toEqual([]);
   });
 
   it("honours ?limit=", async () => {
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     await post(url, "/runs", { prompt: "one" });
     await post(url, "/runs", { prompt: "two" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
     expect((await get<RunList>(url, "/runs?limit=1")).body.runs).toHaveLength(
       1,
     );
@@ -335,7 +380,7 @@ describe("GET /runs", () => {
 
 describe("GET /runs/:id", () => {
   it("returns the run plus its events", async () => {
-    const { url } = await boot(async (ctx) => {
+    const url = await bootProject(async (ctx) => {
       ctx.emit({
         t: "text",
         at: new Date().toISOString(),
@@ -347,7 +392,7 @@ describe("GET /runs/:id", () => {
     });
 
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "ship it" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const { status, body: stored } = await get<RunDetailResponse>(
       url,
@@ -361,7 +406,7 @@ describe("GET /runs/:id", () => {
   });
 
   it("404s for a well-formed id that does not exist", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     expect((await get(url, "/runs/20260910T142233104Z-9999")).status).toBe(404);
   });
 
@@ -369,7 +414,7 @@ describe("GET /runs/:id", () => {
     // A run id is a directory name, so an unvalidated param is a traversal.
     // Percent-encoded separators are the ones that matter: they survive the
     // client's URL normalization and arrive at the handler decoded.
-    const { url } = await boot();
+    const url = await bootProject();
     for (const hostile of [
       "%2e%2e%2f%2e%2e%2fetc%2fpasswd",
       "..%2f..%2fetc%2fpasswd",
@@ -386,7 +431,7 @@ describe("GET /runs/:id", () => {
 
 describe("POST /runs/:id/stop", () => {
   it("stops a running run", async () => {
-    const { url } = await boot(
+    const url = await bootProject(
       (ctx) =>
         new Promise((_resolve, reject) => {
           const abort = () =>
@@ -405,13 +450,13 @@ describe("POST /runs/:id/stop", () => {
     expect(stopped.status).toBe(200);
     expect(stopped.body.outcome).toBe("stopped-running");
 
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
     const { body: stored } = await get<StoredRun>(url, `/runs/${body.runId}`);
     expect(stored.run.status).toBe("stopped");
   });
 
   it("404s an unknown run and 400s a malformed id", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     expect(
       (await post(url, "/runs/20260910T142233104Z-9999/stop")).status,
     ).toBe(404);
@@ -422,7 +467,7 @@ describe("POST /runs/:id/stop", () => {
 describe("POST /standbys/:id", () => {
   it("answers a waiting standby and resumes the run", async () => {
     let answer: string | undefined;
-    const { url } = await boot(async (ctx) => {
+    const url = await bootProject(async (ctx) => {
       answer = await ctx.ask({ ask: "Write to infra/?", kind: "permission" });
       return done(ctx);
     });
@@ -437,29 +482,29 @@ describe("POST /standbys/:id", () => {
     expect(pending?.ask).toBe("Write to infra/?");
 
     const { status, body } = await post<Answered>(
-      url,
+      daemon.url,
       `/standbys/${pending!.id}`,
       { answer: "go" },
     );
     expect(status).toBe(200);
     expect(body.standby.answer).toBe("go");
 
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
     expect(answer).toBe("go");
   });
 
   it("rejects an answer that is not go or no", async () => {
-    const { url } = await boot();
+    await boot();
     expect(
-      (await post(url, "/standbys/sb_1", { answer: "maybe" })).status,
+      (await post(daemon.url, "/standbys/sb_1", { answer: "maybe" })).status,
     ).toBe(400);
-    expect((await post(url, "/standbys/sb_1", {})).status).toBe(400);
+    expect((await post(daemon.url, "/standbys/sb_1", {})).status).toBe(400);
   });
 
   it("404s when nothing is waiting on that id", async () => {
-    const { url } = await boot();
+    await boot();
     expect(
-      (await post(url, "/standbys/sb_nope", { answer: "go" })).status,
+      (await post(daemon.url, "/standbys/sb_nope", { answer: "go" })).status,
     ).toBe(404);
   });
 });
@@ -514,7 +559,7 @@ describe("GET /ws", () => {
 
   it("streams events as JSON lines", async () => {
     // Step 9's done-when, with a real client over a real upgrade.
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     const client = listen(url);
     await client.opened;
     try {
@@ -537,7 +582,7 @@ describe("GET /ws", () => {
     let release!: () => void;
     let emitted = false;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    const { url } = await boot(async (ctx) => {
+    const url = await bootProject(async (ctx) => {
       ctx.emit({
         t: "text",
         at: new Date().toISOString(),
@@ -578,23 +623,31 @@ describe("GET /ws", () => {
   });
 
   it("drops its subscription when the client disconnects", async () => {
-    const { url } = await boot();
+    await boot();
+    const url = projectBase();
+    const baseline = defaultRuntime().bus.subscriberCount();
     const client = listen(url);
     await client.opened;
-    expect(daemon.bus.subscriberCount()).toBeGreaterThan(0);
+    // Compared against a baseline rather than zero: every project's bus
+    // carries one permanent subscriber of its own — the mirror that forwards
+    // into the daemon-wide bus for the tray. Asserting `=== 0` would be
+    // asserting that the mirror had gone too.
+    expect(defaultRuntime().bus.subscriberCount()).toBeGreaterThan(baseline);
 
     client.socket.close();
     // A leaked subscriber per reconnect is how a long session dies.
     await waitFor(
       "the server to drop the subscription",
-      () => daemon.bus.subscriberCount() === 0,
+      () => defaultRuntime().bus.subscriberCount() === baseline,
     );
-    expect(daemon.bus.subscriberCount()).toBe(0);
+    expect(defaultRuntime().bus.subscriberCount()).toBe(baseline);
   });
 
   it("is also reachable under the /api prefix", async () => {
-    const { url } = await boot(done);
-    const socket = new WebSocket(`${url.replace("http", "ws")}/api/ws`);
+    await boot(done);
+    const socket = new WebSocket(
+      `${daemon.url.replace("http", "ws")}/api/projects/${defaultRuntime().project.id}/ws`,
+    );
     try {
       await new Promise<void>((resolve, reject) => {
         socket.once("open", () => resolve());
@@ -621,7 +674,7 @@ describe("close", () => {
     // is a hung CI job with no failing assertion. Step 21 puts this exact
     // `close()` in Electron's `before-quit`, so it has to hold.
     const handle = await boot();
-    const socket = new WebSocket(`${handle.url.replace("http", "ws")}/ws`);
+    const socket = new WebSocket(`${projectBase().replace("http", "ws")}/ws`);
     await new Promise<void>((resolve, reject) => {
       socket.once("open", () => resolve());
       socket.once("error", reject);
@@ -633,7 +686,7 @@ describe("close", () => {
   }, 10_000);
 
   it("marks a run interrupted when the daemon closes under it", async () => {
-    const { url } = await boot(
+    const url = await bootProject(
       (ctx) =>
         new Promise((_resolve, reject) => {
           const abort = () =>
@@ -652,7 +705,7 @@ describe("close", () => {
     // never sit `running` forever.
     await daemon.close();
 
-    const stored = await daemon.store.get(body.runId);
+    const stored = await defaultRuntime().store.get(body.runId);
     expect(stored?.run.status).toBe("interrupted");
     expect(stored?.run.finishedAt).toBeTypeOf("string");
     expect(stored?.events.length).toBeGreaterThan(0);
@@ -679,10 +732,10 @@ describe("GET /runs/:id/diff", () => {
 
   it("serves the patch as text", async () => {
     const patch = "--- a/src/x.ts\n+++ b/src/x.ts\n@@ -1 +1,2 @@\n+added\n";
-    const { url } = await boot(withDiff(patch));
+    const url = await bootProject(withDiff(patch));
 
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "edit" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const response = await fetch(`${url}/runs/${body.runId}/diff`);
     expect(response.status).toBe(200);
@@ -693,10 +746,10 @@ describe("GET /runs/:id/diff", () => {
   it("keeps the patch out of GET /runs/:id, flagging it instead", async () => {
     // A workspace with a large untracked tree yields a multi-megabyte patch,
     // and this is the route the Desk calls to open a run row.
-    const { url } = await boot(withDiff("--- a/x\n+++ b/x\n"));
+    const url = await bootProject(withDiff("--- a/x\n+++ b/x\n"));
 
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "edit" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const { body: stored } = await get<RunDetailResponse & { diff?: string }>(
       url,
@@ -707,9 +760,9 @@ describe("GET /runs/:id/diff", () => {
   });
 
   it("404s when the run wrote no patch", async () => {
-    const { url } = await boot(done);
+    const url = await bootProject(done);
     const { body } = await post<Enqueued>(url, "/runs", { prompt: "nothing" });
-    await daemon.queue.idle();
+    await defaultRuntime().queue.idle();
 
     const { status } = await get(url, `/runs/${body.runId}/diff`);
     expect(status).toBe(404);
@@ -722,7 +775,7 @@ describe("GET /runs/:id/diff", () => {
   });
 
   it("400s a malformed id rather than reading an arbitrary path", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { status } = await get(url, "/runs/..%2f..%2fetc/diff");
     expect(status).toBe(400);
   });
@@ -743,7 +796,7 @@ describe("POST /stations", () => {
 
   it("writes a [[station]] block to the loaded config and returns a new tile", async () => {
     // Step 20's done-when.
-    const { url } = await boot();
+    const url = await bootProject();
     const ws = await workspace();
 
     const { status, body } = await post<Added>(url, "/stations", {
@@ -767,7 +820,7 @@ describe("POST /stations", () => {
   });
 
   it("leaves the running daemon agreeing with the file it just wrote", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     await post(url, "/stations", {
       id: "qwen",
       harness: "ollama",
@@ -782,7 +835,7 @@ describe("POST /stations", () => {
   });
 
   it("seeds the leash with .git/** so an allow of ** cannot reach hooks", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { body } = await post<Added>(url, "/stations", {
       id: "qwen",
       harness: "ollama",
@@ -797,7 +850,7 @@ describe("POST /stations", () => {
     // The writer appends to the file's *text*, so nothing it did not write is
     // at risk — whether or not this build parses it. Both cases are checked:
     // `[gate.default]` is implemented now, `[limits]` is still deferred.
-    const { url } = await boot();
+    const url = await bootProject();
     await post(url, "/stations", {
       id: "qwen",
       harness: "ollama",
@@ -812,7 +865,7 @@ describe("POST /stations", () => {
   });
 
   it("409s a duplicate id instead of silently shadowing a tile", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { status } = await post<ApiError>(url, "/stations", {
       id: "opus",
       harness: "claude-code",
@@ -823,7 +876,7 @@ describe("POST /stations", () => {
   });
 
   it("400s a workspace that does not exist", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { status, body } = await post<ApiError>(url, "/stations", {
       id: "qwen",
       harness: "ollama",
@@ -835,7 +888,7 @@ describe("POST /stations", () => {
   });
 
   it("400s a workspace that is a file", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const file = path.join(cwd, "cuesheet.toml");
     const { status, body } = await post<ApiError>(url, "/stations", {
       id: "qwen",
@@ -848,7 +901,7 @@ describe("POST /stations", () => {
   });
 
   it("400s an invalid role and writes nothing", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const before = await readFile(path.join(cwd, "cuesheet.toml"), "utf8");
     const { status } = await post<ApiError>(url, "/stations", {
       id: "qwen",
@@ -863,7 +916,7 @@ describe("POST /stations", () => {
   });
 
   it("400s an id that would escape the runs directory", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { status } = await post<ApiError>(url, "/stations", {
       id: "../escape",
       harness: "ollama",
@@ -874,8 +927,8 @@ describe("POST /stations", () => {
   });
 
   it("is reachable under /api too, which is what the Desk calls", async () => {
-    const { url } = await boot();
-    const { status } = await post<Added>(url, "/api/stations", {
+    await boot();
+    const { status } = await post<Added>(apiProjectBase(), "/stations", {
       id: "qwen",
       harness: "ollama",
       role: "worker",

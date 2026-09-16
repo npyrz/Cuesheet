@@ -86,6 +86,19 @@ async function boot(runtime = quietRuntime()): Promise<DaemonHandle> {
   return daemon;
 }
 
+/** Where this file's single bootstrapped project's routes hang off. */
+function projectBase(): string {
+  if (!daemon) throw new Error("no daemon is running");
+  const runtime = daemon.defaultProject;
+  if (!runtime) throw new Error("the daemon bootstrapped no project");
+  return `${daemon.url}/projects/${runtime.project.id}`;
+}
+
+async function bootProject(runtime = quietRuntime()): Promise<string> {
+  await boot(runtime);
+  return projectBase();
+}
+
 async function post(url: string, body?: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",
@@ -122,7 +135,7 @@ async function waitForRun(url: string, runId: string): Promise<StoredRun> {
 
 describe("POST /runs against a real harness", () => {
   it("produces a full run record in under a second", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const started = Date.now();
 
     const response = await post(`${url}/runs`, { prompt: "add a greeting" });
@@ -148,7 +161,7 @@ describe("POST /runs against a real harness", () => {
   it("attributes every event to the run and the Station", async () => {
     // Stamped by the adapter rather than by each harness, so a harness cannot
     // misattribute an event — invisible until two runs are on screen at once.
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -162,7 +175,7 @@ describe("POST /runs against a real harness", () => {
   });
 
   it("records the file the harness wrote, and the one the leash refused", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -196,7 +209,7 @@ describe("POST /runs against a real harness", () => {
     await spawnRun("git", ["add", "-A"], { cwd: workspace });
     await spawnRun("git", ["commit", "-qm", "init"], { cwd: workspace });
 
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -212,7 +225,7 @@ describe("POST /runs against a real harness", () => {
   it("answers a standby over HTTP and completes the run", async () => {
     // The full loop the README describes: the run pauses, the operator taps
     // GO from anywhere that can reach the API, and the run carries on.
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({
         registry: createHarnessRegistry([
           { ...createMockHarness({ standby: true }), id: "mock" },
@@ -226,7 +239,7 @@ describe("POST /runs against a real harness", () => {
 
     const standbyId = await waitForStandby(url, runId);
     expect(
-      (await post(`${url}/standbys/${standbyId}`, { answer: "go" })).ok,
+      (await post(`${daemon!.url}/standbys/${standbyId}`, { answer: "go" })).ok,
     ).toBe(true);
 
     const stored = await waitForRun(url, runId);
@@ -250,7 +263,7 @@ workspace = ${JSON.stringify(workspace)}
 `,
       "utf8",
     );
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -262,7 +275,7 @@ workspace = ${JSON.stringify(workspace)}
 
   it("fails readably when there is no Station at all", async () => {
     await writeFile(path.join(cwd, "cuesheet.toml"), "[desk]\n", "utf8");
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -277,7 +290,7 @@ describe("GET /stations with a real prober", () => {
   it("reports the mock as installed", async () => {
     // The mock ships rather than being a test fixture: someone with no agent
     // CLI installed can still open the app and watch the Desk work.
-    const { url } = await boot();
+    const url = await bootProject();
     const body = (await (await fetch(`${url}/stations`)).json()) as {
       stations: Array<{ probe: { installed: boolean; harness: string } }>;
     };
@@ -321,7 +334,7 @@ describe("stopping a run mid-flight", () => {
       },
     };
 
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({ registry: createHarnessRegistry([writeThenHang]) }),
     );
 
@@ -349,7 +362,7 @@ describe("stopping a run mid-flight", () => {
   it("lands as stopped, not running", async () => {
     // Step 23's invariant, one phase early: a run must always reach a terminal
     // status. `stepMs` makes the mock slow enough to catch in the act.
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({
         registry: createHarnessRegistry([
           {

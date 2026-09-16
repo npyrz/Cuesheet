@@ -8,6 +8,8 @@
  */
 import type {
   HarnessProbe,
+  ListedProject,
+  Project,
   Role,
   Run,
   RunEvent,
@@ -110,18 +112,64 @@ export async function fetchHealth(): Promise<{ ok: boolean; version: string }> {
   return request("/health");
 }
 
-export async function fetchStations(): Promise<StationsResponse> {
-  return request("/stations");
+/**
+ * Every project the daemon knows about, most recently opened first.
+ *
+ * Answers on a fresh install with an empty list rather than an error, which is
+ * what lets the Desk render a first-run state instead of a failure.
+ */
+export async function fetchProjects(): Promise<ListedProject[]> {
+  const { projects } = await request<{ projects: ListedProject[] }>(
+    "/projects",
+  );
+  return projects;
 }
 
-export async function fetchRuns(limit?: number): Promise<Run[]> {
+export async function openProject(
+  root: string,
+  name?: string,
+): Promise<Project> {
+  const { project } = await request<{ project: Project }>("/projects", {
+    method: "POST",
+    body: JSON.stringify({ root, ...(name !== undefined && { name }) }),
+  });
+  return project;
+}
+
+/**
+ * Everything below is project-scoped.
+ *
+ * The id is a parameter rather than module state on purpose: which project a
+ * client is looking at is the client's business, and the daemon has no notion
+ * of an active one. That is what makes switching projects in Step 34 something
+ * the UI can do without disturbing a run in the project it switched away from.
+ */
+function scope(projectId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}`;
+}
+
+export async function fetchStations(
+  projectId: string,
+): Promise<StationsResponse> {
+  return request(`${scope(projectId)}/stations`);
+}
+
+export async function fetchRuns(
+  projectId: string,
+  limit?: number,
+): Promise<Run[]> {
   const query = limit === undefined ? "" : `?limit=${limit}`;
-  const { runs } = await request<{ runs: Run[] }>(`/runs${query}`);
+  const { runs } = await request<{ runs: Run[] }>(
+    `${scope(projectId)}/runs${query}`,
+  );
   return runs;
 }
 
-export async function fetchRun(runId: RunId): Promise<RunDetail> {
-  return request(`/runs/${encodeURIComponent(runId)}`);
+export async function fetchRun(
+  projectId: string,
+  runId: RunId,
+): Promise<RunDetail> {
+  return request(`${scope(projectId)}/runs/${encodeURIComponent(runId)}`);
 }
 
 /**
@@ -131,9 +179,12 @@ export async function fetchRun(runId: RunId): Promise<RunDetail> {
  * large untracked tree writes a `diff.patch` measured in megabytes, and most
  * viewings of a run row never expand it. Returns `null` when the run has none.
  */
-export async function fetchDiff(runId: RunId): Promise<string | null> {
+export async function fetchDiff(
+  projectId: string,
+  runId: RunId,
+): Promise<string | null> {
   const response = await fetch(
-    apiUrl(`/runs/${encodeURIComponent(runId)}/diff`),
+    apiUrl(`${scope(projectId)}/runs/${encodeURIComponent(runId)}/diff`),
   );
   if (response.status === 404) return null;
   if (!response.ok)
@@ -142,21 +193,27 @@ export async function fetchDiff(runId: RunId): Promise<string | null> {
 }
 
 export async function startRun(
+  projectId: string,
   prompt: string,
   cuesheet?: string,
 ): Promise<RunId> {
-  const { runId } = await request<{ runId: RunId }>("/runs", {
-    method: "POST",
-    body: JSON.stringify({
-      prompt,
-      ...(cuesheet !== undefined && { cuesheet }),
-    }),
-  });
+  const { runId } = await request<{ runId: RunId }>(
+    `${scope(projectId)}/runs`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        prompt,
+        ...(cuesheet !== undefined && { cuesheet }),
+      }),
+    },
+  );
   return runId;
 }
 
-export async function stopRun(runId: RunId): Promise<void> {
-  await request(`/runs/${encodeURIComponent(runId)}/stop`, { method: "POST" });
+export async function stopRun(projectId: string, runId: RunId): Promise<void> {
+  await request(`${scope(projectId)}/runs/${encodeURIComponent(runId)}/stop`, {
+    method: "POST",
+  });
 }
 
 export async function answerStandby(
@@ -170,9 +227,10 @@ export async function answerStandby(
 }
 
 export async function addStation(
+  projectId: string,
   draft: NewStation,
 ): Promise<AddStationResponse> {
-  return request("/stations", {
+  return request(`${scope(projectId)}/stations`, {
     method: "POST",
     body: JSON.stringify(draft),
   });

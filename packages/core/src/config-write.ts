@@ -58,12 +58,23 @@ export interface AddStationOptions {
    * The file the running config came from — `LoadedConfig.sourcePath`.
    *
    * `null` means no config exists yet and one is created at
-   * `~/.cuesheet/cuesheet.toml`. Deliberately not the working directory: under
-   * the desktop shell the daemon's cwd is somewhere inside the app bundle, and
+   * {@link AddStationOptions.fallbackPath}, or `~/.cuesheet/cuesheet.toml`
+   * when that is not given. Deliberately not the working directory: under the
+   * desktop shell the daemon's cwd is somewhere inside the app bundle, and
    * writing a config there puts the user's Stations somewhere they will never
    * find them and an upgrade will delete.
    */
   sourcePath: string | null;
+  /**
+   * Where to create a config when there is none yet.
+   *
+   * Step 32 needs this: a project with no `cuesheet.toml` anywhere must get
+   * one under `~/.cuesheet/projects/<id>/`, not in the single global file that
+   * every other project would then also be reading. Without it, adding the
+   * first Station to a second project silently edits the first project's
+   * config.
+   */
+  fallbackPath?: string;
 }
 
 export interface AddStationResult {
@@ -148,7 +159,7 @@ export async function addStation(
   const station = normalizeStation(input);
   const env = options.env ?? hostEnv();
   const p = pathFor(env);
-  const target = options.sourcePath ?? configFile(env);
+  const target = options.sourcePath ?? options.fallbackPath ?? configFile(env);
 
   return enqueueWrite(target, async () => {
     const existing = await readIfPresent(target);

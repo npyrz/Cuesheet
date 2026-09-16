@@ -20,6 +20,7 @@ import {
   hostEnv,
   pathFor,
   type HostEnv,
+  projectConfigFile,
 } from "./paths.js";
 import { ROLES } from "./types.js";
 
@@ -344,6 +345,27 @@ export function configSearchPaths(
 }
 
 /**
+ * Where a project's config may live, nearest-to-the-work first.
+ *
+ * The same ordering {@link configSearchPaths} applies, for the same reason and
+ * with a different second candidate: a `cuesheet.toml` at the project root
+ * commits with the code and is what a team sharing Stations wants, so it wins
+ * whenever it exists; `~/.cuesheet/projects/<id>/cuesheet.toml` is the private
+ * fallback that keeps using Cuesheet on someone else's repository from leaving
+ * a file in it.
+ *
+ * Step 31 settled that ordering and built the paths; this is where the loader
+ * finally uses them.
+ */
+export function projectConfigSearchPaths(
+  root: string,
+  id: string,
+  env: HostEnv = hostEnv(),
+): string[] {
+  return [pathFor(env).join(root, CONFIG_FILENAME), projectConfigFile(id, env)];
+}
+
+/**
  * Load the first config found, or the built-in defaults if there is none.
  *
  * Never throws for a missing file — a fresh install has no config and must
@@ -354,7 +376,22 @@ export async function loadConfig(
   cwd: string = process.cwd(),
   env: HostEnv = hostEnv(),
 ): Promise<LoadedConfig> {
-  for (const candidate of configSearchPaths(cwd, env)) {
+  return loadConfigFrom(configSearchPaths(cwd, env));
+}
+
+/**
+ * The loader, given its candidates explicitly.
+ *
+ * Extracted in Step 32 because a project's config is not found by walking from
+ * a working directory any more — the daemon serves several projects at once
+ * and has no single `cwd` that could mean the right thing. `loadConfig` is now
+ * this function plus one fixed candidate list, so both paths through it stay
+ * the same code rather than two implementations that agree until they do not.
+ */
+export async function loadConfigFrom(
+  candidates: readonly string[],
+): Promise<LoadedConfig> {
+  for (const candidate of candidates) {
     let text: string;
     try {
       text = await readFile(candidate, "utf8");

@@ -15,24 +15,30 @@ import { stat } from "node:fs/promises";
 import {
   addStation,
   ConfigError,
+  createProjectRegistry,
   DEFAULT_PORT,
   expandHome,
   hostEnv,
+  isProjectId,
   loadConfig,
+  pathFor,
+  ProjectRegistryError,
   resolveUserPath,
   stationIdTaken,
   type HostEnv,
   type LoadedConfig,
+  type Project,
+  type ProjectRegistry,
   type RunEvent,
 } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
+import { type RunDetailResponse, type RunStore } from "./store.js";
+import { type RunExecutor } from "./executor.js";
 import {
-  createFileRunStore,
-  type RunDetailResponse,
-  type RunStore,
-} from "./store.js";
-import { createRunQueue, type RunQueue } from "./queue.js";
-import { noopExecutor, type RunExecutor } from "./executor.js";
+  createProjectRuntimes,
+  type ProjectRuntime,
+  type ProjectRuntimes,
+} from "./projects.js";
 import { createStandbyRegistry, type StandbyRegistry } from "./standby.js";
 import { describeStations, unprobed, type HarnessProber } from "./stations.js";
 import { isRunId } from "./ids.js";
@@ -43,7 +49,6 @@ import {
   removeLock,
   writeLock,
 } from "./lockfile.js";
-import { reconcileInterruptedRuns } from "./reconcile.js";
 import { DAEMON_VERSION } from "./version.js";
 
 export interface StartDaemonOptions {
@@ -51,7 +56,13 @@ export interface StartDaemonOptions {
   port?: number;
   host?: string;
   env?: HostEnv;
-  /** Where to look for `cuesheet.toml`. */
+  /**
+   * Where to look for a legacy `cuesheet.toml` when the project registry is
+   * empty. See the bootstrap note in {@link startDaemon}.
+   *
+   * No longer "where the config is": the daemon serves several projects and
+   * has no single working directory that could mean the right thing.
+   */
   cwd?: string;
   executor?: RunExecutor;
   /**
@@ -67,7 +78,24 @@ export interface StartDaemonOptions {
    * Ignored when `executor` is given; tests pass the closure directly.
    */
   executorFactory?: (deps: ExecutorFactoryDeps) => RunExecutor;
+  /**
+   * Every project's run store. A test affordance — it only means anything
+   * when one project is in play, because two projects sharing a store is the
+   * exact thing this step exists to prevent. Use `storeFactory` otherwise.
+   */
   store?: RunStore;
+  /** Build a store per project. Defaults to files under the project's dir. */
+  storeFactory?: (project: Project) => RunStore;
+  /**
+   * The project registry. Defaults to `~/.cuesheet/projects.json`.
+   *
+   * Named for what it holds rather than just `registry`, because
+   * `harnessRuntime()` already spreads a `registry` of *harnesses* into these
+   * options. Two different registries reaching one options object under one
+   * name is a collision TypeScript happened to catch here and would not have
+   * caught through a spread.
+   */
+  projectRegistry?: ProjectRegistry;
   bus?: EventBus;
   prober?: HarnessProber;
   replayLimit?: number;
@@ -94,12 +122,30 @@ export interface DaemonHandle {
   host: string;
   url: string;
   app: FastifyInstance;
+  /**
+   * Every project's events, interleaved.
+   *
+   * **Not a per-project backlog.** Each project has its own bus and mirrors
+   * into this one, so `attach()`'s replay here contains other projects' events
+   * too. That is exactly what the desktop shell wants — one subscription,
+   * notify on any standby — and exactly what a client rendering one project
+   * must not read. Those attach to `GET /projects/:id/ws` instead.
+   */
   bus: EventBus;
-  store: RunStore;
-  queue: RunQueue;
   standbys: StandbyRegistry;
-  /** Reload `cuesheet.toml` from disk. */
-  reloadConfig(): Promise<LoadedConfig>;
+  registry: ProjectRegistry;
+  projects: ProjectRuntimes;
+  /**
+   * The project the daemon bootstrapped at boot, or `null` on a fresh install
+   * with no config anywhere.
+   *
+   * A convenience for programmatic callers and tests, not an "active project":
+   * it never changes for the life of the process, and the HTTP API — which is
+   * the contract every client actually uses — has no such concept. Which
+   * project a client is looking at is the client's business, which is what
+   * makes switching in Step 34 a client action that cannot disturb a run.
+   */
+  defaultProject: ProjectRuntime | null;
   close(): Promise<void>;
 }
 
@@ -126,35 +172,37 @@ export async function startDaemon(
     createEventBus({
       replayLimit: options.replayLimit ?? DEFAULT_REPLAY_LIMIT,
     });
-  const store = options.store ?? createFileRunStore({ env });
   const standbys = createStandbyRegistry();
   const prober = options.prober ?? unprobed;
+  const registry = options.projectRegistry ?? createProjectRegistry({ env });
 
-  // Config is loaded once and cached: `/stations` is polled by the UI and
-  // re-reading TOML on every poll is a syscall storm for no benefit.
-  //
-  // Loaded *before* the queue is built, because the executor needs to be able
-  // to look Stations up. `config` is a function rather than the value so a
-  // later `reloadConfig()` reaches the executor too.
-  let loaded = await loadConfig(cwd, env);
-  const config = (): LoadedConfig => loaded;
-  // One reload closure, shared by `POST /stations` and `handle.reloadConfig`.
-  // Two closures over the same `loaded` would work; two *implementations*
-  // would drift, and the route's whole job is to leave the running daemon
-  // agreeing with the file it just wrote.
-  const reload = async (): Promise<LoadedConfig> => {
-    loaded = await loadConfig(cwd, env);
-    return loaded;
-  };
-
-  const queue = createRunQueue({
-    store,
-    bus,
+  const runtimes = createProjectRuntimes({
+    registry,
+    env,
+    globalBus: bus,
     standbys,
-    executor:
-      options.executor ??
-      options.executorFactory?.({ config, env }) ??
-      noopExecutor,
+    reconcile,
+    ...(options.replayLimit !== undefined && {
+      replayLimit: options.replayLimit,
+    }),
+    ...(options.executor && { executor: options.executor }),
+    ...(options.executorFactory && {
+      executorFactory: options.executorFactory,
+    }),
+    // A single injected store means "use this for every project". Honest only
+    // with one project, which is what every caller passing it has.
+    ...(options.store
+      ? { storeFactory: () => options.store as RunStore }
+      : options.storeFactory
+        ? { storeFactory: options.storeFactory }
+        : {}),
+  });
+
+  const defaultProject = await bootstrapProject({
+    registry,
+    runtimes,
+    cwd,
+    env,
   });
 
   const app = Fastify({ logger: options.logger ?? false });
@@ -184,14 +232,11 @@ export async function startDaemon(
   await app.register(websocket);
 
   const routeDeps: RouteDeps = {
-    bus,
-    store,
-    queue,
     standbys,
     prober,
-    config,
-    reload,
     env,
+    registry,
+    runtimes,
   };
 
   registerRoutes(app, routeDeps);
@@ -225,20 +270,12 @@ export async function startDaemon(
     await writeLock(currentLock(boundPort), env);
   }
 
-  // Only now — the port is bound, so any run still marked `running` on disk
-  // belongs to a process that is gone. See `reconcile.ts` for why that is the
-  // whole safety argument. Awaited rather than fired off, so the Desk's first
-  // `GET /runs` shows the corrected records instead of a live-looking run
-  // with nothing behind it.
-  if (reconcile) {
-    const repaired = await reconcileInterruptedRuns({ store });
-    if (repaired.length > 0 && options.logger === true) {
-      app.log.info(
-        { runs: repaired },
-        `Marked ${repaired.length} run(s) interrupted: they were still open when Cuesheet last stopped.`,
-      );
-    }
-  }
+  // Reconciliation used to happen here, once, for the one store there was.
+  // It now happens inside `createProjectRuntimes` when a project is first
+  // touched — still before anything can observe an unreconciled run, and
+  // O(projects actually opened) rather than O(every project ever registered)
+  // on every boot. The safety argument in `reconcile.ts` is unchanged; only
+  // the moment it is discharged has moved.
 
   let closed = false;
   return {
@@ -247,99 +284,206 @@ export async function startDaemon(
     url: `http://${host}:${boundPort}`,
     app,
     bus,
-    store,
-    queue,
     standbys,
-    reloadConfig: reload,
+    registry,
+    projects: runtimes,
+    defaultProject,
     async close() {
       if (closed) return;
       closed = true;
-      await queue.shutdown();
+      await runtimes.closeAll();
       await app.close();
       if (writeLockFile) await removeLock(env);
     },
   };
 }
 
-interface RouteDeps {
-  bus: EventBus;
-  store: RunStore;
-  queue: RunQueue;
-  standbys: StandbyRegistry;
-  prober: HarnessProber;
-  config: () => LoadedConfig;
-  /**
-   * Re-read `cuesheet.toml`. The same closure that backs
-   * `DaemonHandle.reloadConfig`, not a second one — `POST /stations` writes
-   * the file and must leave the *running* daemon seeing what it just wrote,
-   * or the new tile appears and the next run cannot find its Station.
-   */
-  reload: () => Promise<LoadedConfig>;
+/**
+ * Give an existing install its project back.
+ *
+ * Bootstrapped from **the config that exists**, never from `cwd`. That
+ * distinction is the whole point: in the packaged app `process.cwd()` is
+ * whatever the OS handed the process — `/` on macOS from Finder — and opening
+ * it would mint a permanent registry entry rooted at the filesystem root, on
+ * exactly the platform being shipped. `loadConfig` already knows how to find
+ * the config that a pre-projects Cuesheet was using, so its `sourcePath` is
+ * the honest answer to "which folder was this person working in".
+ *
+ * Nothing is bootstrapped when there is no config anywhere: a fresh install
+ * has no projects, `GET /projects` answers `[]`, and the launch surface of
+ * Step 40 is what asks. Inventing a project for someone who has never had one
+ * would put a folder in their picker that they did not choose.
+ *
+ * **This is a seam for Step 33, not the migration.** A user whose config is
+ * the global `~/.cuesheet/cuesheet.toml` gets a project rooted at
+ * `~/.cuesheet`, which is not where their code is — and their existing run
+ * history under `~/.cuesheet/runs` is not moved here at all. Both are Step
+ * 33's job, which is the step that owns "the upgrade that loses nothing".
+ */
+async function bootstrapProject(deps: {
+  registry: ProjectRegistry;
+  runtimes: ProjectRuntimes;
+  cwd: string;
   env: HostEnv;
+}): Promise<ProjectRuntime | null> {
+  const { registry, runtimes, cwd, env } = deps;
+
+  const known = await registry.list();
+  const existing = known.find((project) => project.status === "ok");
+  if (existing) return runtimes.get(existing.id);
+  // Every known project's folder is gone. Opening a new one on top would be a
+  // surprise; the picker says `missing` and the operator decides.
+  if (known.length > 0) return null;
+
+  const legacy = await loadConfig(cwd, env);
+  if (legacy.sourcePath === null) return null;
+
+  const root = pathFor(env).dirname(legacy.sourcePath);
+  try {
+    const project = await registry.open(root);
+    return await runtimes.get(project.id);
+  } catch (error) {
+    // A config in a folder that cannot be opened is not a reason to refuse to
+    // boot: the daemon still serves `/projects`, and the operator can pick.
+    if (error instanceof ProjectRegistryError) return null;
+    throw error;
+  }
 }
 
+interface RouteDeps {
+  standbys: StandbyRegistry;
+  prober: HarnessProber;
+  env: HostEnv;
+  registry: ProjectRegistry;
+  runtimes: ProjectRuntimes;
+}
+
+/**
+ * The route surface, now project-scoped.
+ *
+ * `/runs` and `/stations` used to sit at the top level, which was only
+ * coherent while there was exactly one of everything. They are now under
+ * `/projects/:id/`, and the cutover is deliberate rather than aliased: a
+ * compatibility route would have to mean "the active project", and a
+ * daemon-side active project is precisely the concept Phase 8 decided against.
+ * Which project a client is looking at is the client's business — that is what
+ * lets Step 34 switch projects without disturbing a run.
+ *
+ * Two routes stay global on purpose. `/health` is about the process. And
+ * `/standbys/:id` is about one question waiting for one answer: standby ids
+ * are unique daemon-wide because the registry is shared by every runtime, and
+ * a phone answering a standby should not have to know which project raised it.
+ */
 function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { bus, store, queue, standbys, prober, config, reload, env } = deps;
+  const { standbys, prober, env, registry, runtimes } = deps;
 
   app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
 
-  app.get("/stations", async () => describeStations(config(), prober));
+  // ── Projects ──────────────────────────────────────────────────────────────
 
-  app.get("/runs", async (request) => {
-    const limit = parseLimit(
-      (request.query as Record<string, unknown>)["limit"],
-    );
-    const runs = await store.list(limit);
-    return { runs };
+  /**
+   * Answers on a fresh install, before any project has ever been opened, with
+   * an empty list rather than an error. The picker's first render depends on
+   * it.
+   */
+  app.get("/projects", async () => ({ projects: await registry.list() }));
+
+  app.post("/projects", async (request, reply) => {
+    const body = request.body;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+    const { root, name } = body as Record<string, unknown>;
+    if (typeof root !== "string" || root.trim() === "") {
+      return reply.code(400).send({ error: "`root` is required." });
+    }
+    if (name !== undefined && typeof name !== "string") {
+      return reply.code(400).send({ error: "`name` must be a string." });
+    }
+    try {
+      const project = await registry.open(
+        resolveUserPath(expandHome(root, env), process.cwd()),
+        { ...(name !== undefined && { name }) },
+      );
+      return reply.code(201).send({ project });
+    } catch (error) {
+      // A folder that is not there is the mistake a person actually makes, and
+      // the registry's message already says which path it was.
+      if (error instanceof ProjectRegistryError) {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
   });
 
-  app.get("/runs/:id", async (request, reply) => {
+  app.get("/projects/:id", async (request, reply) => {
     const id = (request.params as { id: string }).id;
-    // Validated before it can reach the filesystem: a run id is a directory
-    // name, so an unvalidated param is a path traversal.
-    if (!isRunId(id))
-      return reply.code(400).send({ error: "Malformed run id." });
-    const stored = await store.get(id);
-    if (!stored) return reply.code(404).send({ error: "No such run." });
+    if (!isProjectId(id))
+      return reply.code(400).send({ error: "Malformed project id." });
+    const project = await registry.get(id);
+    if (!project) return reply.code(404).send({ error: "No such project." });
+    return { project };
+  });
 
-    // The patch is deliberately *not* in this response. A run against a
-    // workspace with a large untracked tree produces a diff measured in
-    // megabytes, and this route is what the Desk calls to open a run row.
-    // `hasDiff` is enough to decide whether to offer the button; the bytes
-    // come from `/runs/:id/diff` when someone actually asks for them.
-    const { diff, ...rest } = stored;
-    const body: RunDetailResponse = { ...rest, hasDiff: diff !== undefined };
-    return body;
+  app.delete("/projects/:id", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    if (!isProjectId(id))
+      return reply.code(400).send({ error: "Malformed project id." });
+    // Forgets the entry; never touches the folder or its run records. A
+    // project removed from the picker and then reopened keeps its history.
+    const existed = await registry.forget(id);
+    if (!existed) return reply.code(404).send({ error: "No such project." });
+    return { forgotten: id };
   });
 
   /**
-   * The patch itself, as text.
+   * Resolve `:id` to a live runtime, or answer and return `null`.
    *
-   * `text/plain` rather than JSON: a unified diff is a document, and wrapping
-   * megabytes of it in a JSON string means escaping every newline on the way
-   * out and unescaping them on the way in, for nothing.
+   * The id is validated before anything uses it, because it becomes a
+   * directory name under `~/.cuesheet/projects` — `projectDir()` throws on a
+   * bad one, and a 400 here is a better answer than a 500 from deeper in.
    */
-  app.get("/runs/:id/diff", async (request, reply) => {
+  async function runtimeFor(
+    request: { params: unknown },
+    reply: {
+      code(status: number): { send(body: unknown): unknown };
+    },
+  ): Promise<ProjectRuntime | null> {
     const id = (request.params as { id: string }).id;
-    if (!isRunId(id))
-      return reply.code(400).send({ error: "Malformed run id." });
-    const diff = await store.getDiff(id);
-    if (diff === null) {
-      return reply.code(404).send({ error: "That run has no diff." });
+    if (!isProjectId(id)) {
+      reply.code(400).send({ error: "Malformed project id." });
+      return null;
     }
-    return reply.type("text/plain; charset=utf-8").send(diff);
+    const runtime = await runtimes.get(id);
+    if (!runtime) {
+      reply.code(404).send({ error: "No such project." });
+      return null;
+    }
+    return runtime;
+  }
+
+  // ── Stations, per project ────────────────────────────────────────────────
+
+  app.get("/projects/:id/stations", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    return describeStations(runtime.config(), prober);
   });
 
   /**
    * Add a Station — Step 20's panel, server side.
    *
-   * Writes to `cuesheet.toml` and then reloads, so the response already
-   * reflects the new tile and the next run can resolve the Station. Validation
-   * is deliberately server-side rather than only in the UI: this is the same
-   * API the phone will call in M3, and a typed workspace path that does not
-   * exist is the mistake a person actually makes.
+   * Writes to this project's `cuesheet.toml` and then reloads, so the response
+   * already reflects the new tile and the next run can resolve the Station.
+   * When the project has no config yet, one is created under
+   * `~/.cuesheet/projects/<id>/` rather than in the single global file — which
+   * before Step 32 is where a second project's first Station would silently
+   * have landed, editing the first project's config.
    */
-  app.post("/stations", async (request, reply) => {
+  app.post("/projects/:id/stations", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+
     const body = request.body;
     if (body === null || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Body must be a JSON object." });
@@ -347,7 +491,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const draft = body as Record<string, unknown>;
 
     const id = draft["id"];
-    if (typeof id === "string" && stationIdTaken(config(), id)) {
+    if (typeof id === "string" && stationIdTaken(runtime.config(), id)) {
       // 409 rather than the loader's "the last one wins" warning. That reading
       // is fine for a file a human hand-edited; it is not a defensible outcome
       // for a button, where the user would silently shadow an existing tile.
@@ -369,12 +513,13 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
     try {
       const result = await addStation(draft, {
-        sourcePath: config().sourcePath,
+        sourcePath: runtime.config().sourcePath,
+        fallbackPath: runtime.configFallbackPath,
         env,
       });
       // Reload before responding, so the caller never sees a Station it then
       // cannot run. `describeStations` is re-derived from the fresh config.
-      const reloaded = await reload();
+      const reloaded = await runtime.reload();
       const stations = await describeStations(reloaded, prober);
       return reply.code(201).send({
         station: result.station,
@@ -390,7 +535,63 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
   });
 
-  app.post("/runs", async (request, reply) => {
+  // ── Runs, per project ────────────────────────────────────────────────────
+
+  app.get("/projects/:id/runs", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const limit = parseLimit(
+      (request.query as Record<string, unknown>)["limit"],
+    );
+    const runs = await runtime.store.list(limit);
+    return { runs };
+  });
+
+  app.get("/projects/:id/runs/:runId", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const runId = (request.params as { runId: string }).runId;
+    // Validated before it can reach the filesystem: a run id is a directory
+    // name, so an unvalidated param is a path traversal.
+    if (!isRunId(runId))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const stored = await runtime.store.get(runId);
+    if (!stored) return reply.code(404).send({ error: "No such run." });
+
+    // The patch is deliberately *not* in this response. A run against a
+    // workspace with a large untracked tree produces a diff measured in
+    // megabytes, and this route is what the Desk calls to open a run row.
+    // `hasDiff` is enough to decide whether to offer the button; the bytes
+    // come from `/runs/:runId/diff` when someone actually asks for them.
+    const { diff, ...rest } = stored;
+    const detail: RunDetailResponse = { ...rest, hasDiff: diff !== undefined };
+    return detail;
+  });
+
+  /**
+   * The patch itself, as text.
+   *
+   * `text/plain` rather than JSON: a unified diff is a document, and wrapping
+   * megabytes of it in a JSON string means escaping every newline on the way
+   * out and unescaping them on the way in, for nothing.
+   */
+  app.get("/projects/:id/runs/:runId/diff", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const runId = (request.params as { runId: string }).runId;
+    if (!isRunId(runId))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const diff = await runtime.store.getDiff(runId);
+    if (diff === null) {
+      return reply.code(404).send({ error: "That run has no diff." });
+    }
+    return reply.type("text/plain; charset=utf-8").send(diff);
+  });
+
+  app.post("/projects/:id/runs", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+
     const body = request.body;
     if (body === null || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Body must be a JSON object." });
@@ -403,7 +604,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       return reply.code(400).send({ error: "`cuesheet` must be a string." });
     }
 
-    const loaded = config();
+    const loaded = runtime.config();
     const sheet =
       cuesheet === undefined ? undefined : loaded.config.cuesheet[cuesheet];
     if (cuesheet !== undefined && sheet === undefined) {
@@ -415,7 +616,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const stationIds = resolveStationIds(loaded, cuesheet);
     const workspace = resolveWorkspace(loaded, stationIds);
 
-    const run = await queue.enqueue({
+    const run = await runtime.queue.enqueue({
       prompt,
       workspace,
       ...(cuesheet !== undefined && { cuesheetId: cuesheet }),
@@ -424,15 +625,19 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return reply.code(202).send({ runId: run.id });
   });
 
-  app.post("/runs/:id/stop", async (request, reply) => {
-    const id = (request.params as { id: string }).id;
-    if (!isRunId(id))
+  app.post("/projects/:id/runs/:runId/stop", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const runId = (request.params as { runId: string }).runId;
+    if (!isRunId(runId))
       return reply.code(400).send({ error: "Malformed run id." });
-    const outcome = await queue.stop(id);
+    const outcome = await runtime.queue.stop(runId);
     if (outcome === "not-found")
       return reply.code(404).send({ error: "No such run." });
-    return { runId: id, outcome };
+    return { runId, outcome };
   });
+
+  // ── Global ───────────────────────────────────────────────────────────────
 
   app.post("/standbys/:id", async (request, reply) => {
     const id = (request.params as { id: string }).id;
@@ -453,26 +658,47 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return { standby: settled };
   });
 
-  app.get("/ws", { websocket: true }, (socket) => {
-    // Attach is one synchronous call returning the backlog, so there is no
-    // window between replaying buffered events and receiving live ones. See
-    // the note at the top of `bus.ts` — this is where that matters.
-    const { backlog, unsubscribe } = bus.attach((event) => send(event));
-
-    function send(event: RunEvent): void {
-      // A socket that closed between dispatch and write is normal, not an
-      // error worth propagating into the bus.
-      if (socket.readyState !== socket.OPEN) return;
-      try {
-        socket.send(JSON.stringify(event));
-      } catch {
-        unsubscribe();
-      }
+  /**
+   * One project's event stream.
+   *
+   * Scoped by attaching to that project's own bus rather than by filtering a
+   * shared one, which is what makes the backlog correct as well as the live
+   * feed: `attach()` returns the replay synchronously so there is no window
+   * between buffered and live events (see the note at the top of `bus.ts`),
+   * and a filtered global backlog would have to drop events it could not
+   * attribute.
+   */
+  app.get("/projects/:id/ws", { websocket: true }, (socket, request) => {
+    const id = (request.params as { id: string }).id;
+    if (!isProjectId(id)) {
+      socket.close(1008, "Malformed project id.");
+      return;
     }
+    void runtimes.get(id).then((runtime) => {
+      if (!runtime) {
+        socket.close(1008, "No such project.");
+        return;
+      }
+      if (socket.readyState !== socket.OPEN) return;
+      const { backlog, unsubscribe } = runtime.bus.attach((event) =>
+        send(event),
+      );
 
-    for (const event of backlog) send(event);
-    socket.on("close", unsubscribe);
-    socket.on("error", unsubscribe);
+      function send(event: RunEvent): void {
+        // A socket that closed between dispatch and write is normal, not an
+        // error worth propagating into the bus.
+        if (socket.readyState !== socket.OPEN) return;
+        try {
+          socket.send(JSON.stringify(event));
+        } catch {
+          unsubscribe();
+        }
+      }
+
+      for (const event of backlog) send(event);
+      socket.on("close", unsubscribe);
+      socket.on("error", unsubscribe);
+    });
   });
 }
 
