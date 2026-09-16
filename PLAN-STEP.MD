@@ -57,7 +57,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **5 · Electron shell** | 21–24 | 🟡 alpha | ✅ 21–24 done on both |
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
-| **8 · Projects** | 31–34 | 🔵 beta | 🚧 **In progress.** Steps 31–33 done — one daemon serves many projects, isolated, and an alpha profile upgrades into it losing nothing. 34 (switching) open |
+| **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ⬜ |
 | 10 · Limits | 37–39 | 🔵 beta | ⬜ |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
@@ -112,7 +112,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - **`held` is terminal.** The standby happens *before* the run ends, so by the time a record reads `held` a human has already answered. Releasing a Hold is a new run, not a resumption — resuming would mean persisting executor state across process restarts, which is a much larger feature than it looks.
 
 **Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
-- [ ] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Now Phase 8**, and everything below waits on it
+- [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. What is *not* ticked by this and is not being quietly folded in: the app still has no launch surface — no recents, no missing-folder state, no keyboard route to the switcher — which is Steps 40–41 and is why Phase 11 still says "the Desk rebuilt"
 - [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 12** — moved behind Projects because its own scoping question is unanswerable until a project is a thing, which is a dependency rather than a demotion
 - [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 10.**
 - [ ] `ollama` harness, so the local/worker story is real. **Now Phase 9** — and this line used to say it was blocked by nothing but a missing install, which was wrong. Ollama is a completion endpoint, not an agent loop; the `worker`-only reading the README already specifies is what makes it small
@@ -788,13 +788,33 @@ The beta bar already promises "no data loss, ever" and config migrations. This i
 >
 > **One thing the work tidied because it was a latent drift.** `projectRunsDir(id, env)` now lives in `paths.ts` and is used by both the daemon's store root and the migration target. They were two separate `join(projectDir(id), "runs")` expressions, and a migration that moves history to a directory the store does not read loses it exactly as completely as deleting it would.
 
-### Step 34 — Open, and switch
+### Step 34 — Open, and switch ✅
 
 The launch behaviour the app has never had: reopen the project you were last in, pick one from recents, or choose a folder. Switching is a client action over a daemon that already holds both.
 
 The queue is per-daemon and runs are long, so the constraint worth writing down before anyone builds it: **a switch is not a stop.**
 
 **Done when:** switching projects while a run is streaming neither cancels it nor orphans it — switch away, switch back, and the run is still streaming into its tile with no gap in the log.
+
+> **Done, and the step turned out to be mostly about what *not* to build.** `switchTo` and a `project` reset action; an epoch guard in `useDesk`'s resync; `switch.test.ts` (6 tests) and four reducer tests. 589 tests pass, up from 580.
+>
+> **A switch is not a stop, and the daemon needed no changes to make that true.** A project's queue, run store and event bus live on its runtime, not on anybody's socket — dropping a connection unsubscribes a listener and nothing else. Step 32's retrospective argued exactly this from the design and said plainly that an argument is not evidence. It is evidence now: a long run in A, A's socket dropped, a client attached to B, and A's run still `running` with its events still reaching its store while nobody watches; B's socket sees none of it; reattaching to A replays the backlog in order and the run streams on.
+>
+> **"No gap in the log" is two claims, and only one of them is the socket's.** The bus replay is a bounded ring, so a run noisier than `replayLimit` genuinely *does* gap on reattach — a test sets the limit to 3 and asserts the dropped head, rather than pretending otherwise. What closes the gap is the resync's `GET /runs/:id`, because the store is authoritative and the bus is a convenience. Both halves are asserted separately so neither is taken on trust from the other.
+>
+> **The one real bug switching introduced was in the client, and it was a race.** `resync` is several awaits long and nothing could cancel it. Switch from A to B while A's fetches are in flight and A's resync would settle *after* B's had started: `snapshot` replaces the run list wholesale, so the Desk would land on B showing **A's runs**, then clear `resyncing` and flush the buffer array it had captured — discarding B's live events into a buffer nobody would read. Every resync now takes an epoch token and checks it before each group of dispatches, and the socket effect bumps the epoch on teardown so the invalidation happens at the moment of the switch rather than whenever the next resync starts.
+>
+> **The reset belongs in the reducer, not the hook.** `snapshot` already rebuilds tiles and filters standbys — but only when the fetch lands, and until then every field still describes the project you left, under the new project's name. Clearing on the way in rather than correcting on the way out means the wrong thing is never rendered at all. `standbys` is the one that would do damage rather than merely mislead: a standby id is addressable daemon-wide, so answering a carried-over one from the new project's Desk would *succeed*, against a run in the old project. It is a pure action with four tests and no DOM, which is the discipline `App.tsx`'s own header comment asks for.
+>
+> **One hazard checked and found not to exist.** Run ids are minted by a single process-wide factory whose counter is shared by every store, so two projects cannot mint the same id and a stale `known` entry can never match across a switch. The caches are cleared on switch as hygiene, and the comment says which of those two things it is — a defence against a collision that cannot happen would have been worth deleting later.
+>
+> **Switching reuses `POST /projects` rather than adding a route**, because `registry.open` is idempotent by resolved root and recording recency is exactly what it does. That is what makes "reopen the project you were last in" survive a restart with no second source of truth: a test switches, restarts the daemon, and it comes back up on the project switched to. `defaultProject` is unchanged and still fixed at boot — it does not follow a switch, and a test says so, because the daemon having an opinion about the current project is what Phase 8 decided against.
+>
+> **What is deliberately not built here, and would have been thrown away.** The switcher is a `<select>` in the topbar, shown only when there is more than one project, with missing folders rendered and disabled rather than hidden. Step 40 owns recents, the missing-folder state and the real launch surface; Step 41 owns making the switch one keyboard-reachable action and putting the active project in the window title and tray.
+>
+> **The honest limit of the evidence.** The repo has no DOM or browser test infrastructure — by convention the logic lives in the reducer and is tested pure, and `.tsx` files are not collected at all. So the daemon behaviour and the reducer reset are proven by test; the `<select>` itself is covered by typecheck and build only. That is the same split every UI step in this plan has had, and Step 41 is where the switcher gets a surface worth exercising directly.
+>
+> **On Phase 8's remaining open question — "what a project *is*, exactly."** A switcher showing `project.root` while a Station's `workspace` points somewhere else makes the divergence visible for the first time, which is what the question anticipated. It does not settle it: the topbar shows one name and one root, and nothing yet tells you that a tile is working outside it. That is a thing for the project view to say, not for a `<select>`, so the question stays open and moves to Phase 11 rather than being closed here by a control that merely failed to raise it.
 
 ### Open questions to settle in the work, not now
 

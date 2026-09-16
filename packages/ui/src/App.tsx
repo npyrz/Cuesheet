@@ -130,9 +130,44 @@ export function App(): React.JSX.Element {
     <div className="desk">
       <header className="topbar">
         <span className="brand">CUESHEET</span>
-        <span className="project" title={desk.project.project.root}>
-          {desk.project.project.name}
-        </span>
+        {/*
+          The smallest thing that exercises switching, not the switcher.
+          Step 41 makes it one keyboard-reachable action and puts the active
+          project in the window title and the tray; Step 40 gives recents and
+          the missing-folder state a designed surface. A `select` is here
+          because Step 34 is about what a switch must not disturb, and that
+          needs a way to perform one — anything more would be thrown away.
+
+          Projects whose folder has gone are rendered and disabled rather than
+          hidden: a list that silently drops one is how someone concludes
+          their project was deleted.
+        */}
+        {desk.projects.length > 1 ? (
+          <select
+            className="project"
+            aria-label="project"
+            title={desk.project.project.root}
+            value={desk.project.project.id}
+            onChange={(changed) => {
+              void desk.switchTo(changed.target.value);
+            }}
+          >
+            {desk.projects.map((candidate) => (
+              <option
+                key={candidate.id}
+                value={candidate.id}
+                disabled={candidate.status !== "ok"}
+              >
+                {candidate.name}
+                {candidate.status === "ok" ? "" : " (missing)"}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="project" title={desk.project.project.root}>
+            {desk.project.project.name}
+          </span>
+        )}
         <span className="conn" data-status={state.connection}>
           <span className="dot" aria-hidden="true" />
           {state.connection === "open"

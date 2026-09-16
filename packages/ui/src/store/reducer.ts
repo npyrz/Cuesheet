@@ -89,6 +89,22 @@ export type DeskAction =
   | { type: "run-detail"; detail: RunDetail }
   | { type: "event"; event: RunEvent }
   | { type: "select"; runId: RunId | null }
+  /**
+   * The Desk is now looking at a different project. Everything goes.
+   *
+   * Step 34. A switch is not a reconnect: `snapshot` replaces the run list and
+   * rebuilds tiles from it, which is the right answer for a resync against the
+   * *same* project, but it only lands when the fetch does. Until then every
+   * field here still describes the project you just left — station tiles
+   * working, a standby offering its two answers, a selected run — under the
+   * new project's name. Clearing on the way in rather than correcting on the way
+   * out means the wrong thing is never rendered at all.
+   *
+   * `standbys` is the one that would do damage rather than merely mislead: a
+   * standby id is addressable daemon-wide, so answering a carried-over one from
+   * the new project's Desk would succeed, against a run in the old one.
+   */
+  | { type: "project" }
   | { type: "error"; message: string | null };
 
 const ZERO_COST: Cost = { tokensIn: 0, tokensOut: 0 };
@@ -168,6 +184,14 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
 
     case "select":
       return { ...state, selectedRunId: action.runId };
+
+    case "project":
+      // Deliberately the whole of `initialState`, including `connection` and
+      // `error`. The socket is torn down and rebuilt by the same effect that
+      // dispatches this, so "connecting" is the truth for the moment in
+      // between; and a failure that belonged to the project you left is not
+      // one to keep showing over the one you arrived at.
+      return initialState;
 
     case "error":
       return { ...state, error: action.message };

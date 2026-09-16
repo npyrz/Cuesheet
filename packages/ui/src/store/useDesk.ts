@@ -40,10 +40,9 @@ const RUN_LIMIT = 50;
  * before `GET /projects` answers, and rendering "no projects" for a frame and
  * then a full Desk is worse than rendering nothing for that frame.
  *
- * There is no picker here and no way to switch — that is Step 34, and Steps 40
- * and 41 give it a designed surface. This resolves one project so the Desk
- * keeps working across the cutover, and it is deliberately the smallest thing
- * that does.
+ * Step 34 adds switching; Steps 40 and 41 give it a designed surface. What
+ * lives here is the mechanism — resolve a project, attach to it, and move to
+ * another one without disturbing what the first one is doing.
  */
 export type ProjectState =
   | { status: "loading" }
@@ -53,8 +52,12 @@ export type ProjectState =
 export interface DeskApi {
   state: DeskState;
   project: ProjectState;
+  /** Every project the daemon knows, newest-opened first. */
+  projects: ListedProject[];
   /** Open a folder as a project and show it. Step 40 gives this a real surface. */
   openFolder(root: string): Promise<void>;
+  /** Show a project the daemon already knows. See {@link switchTo}. */
+  switchTo(id: string): Promise<void>;
   start(prompt: string, cuesheet?: string): Promise<void>;
   stop(runId: RunId): Promise<void>;
   select(runId: RunId): Promise<void>;
@@ -67,6 +70,8 @@ export interface DeskApi {
 export function useDesk(): DeskApi {
   const [state, dispatch] = useReducer(deskReducer, initialState);
   const [project, setProject] = useState<ProjectState>({ status: "loading" });
+  /** Everything the daemon knows, for the switcher. Refreshed on every switch. */
+  const [projects, setProjects] = useState<ListedProject[]>([]);
 
   /**
    * The project every call below is scoped to.
@@ -78,9 +83,10 @@ export function useDesk(): DeskApi {
   useEffect(() => {
     let cancelled = false;
     void fetchProjects()
-      .then((projects) => {
+      .then((listed) => {
         if (cancelled) return;
-        const usable = projects.find((p) => p.status === "ok");
+        setProjects(listed);
+        const usable = listed.find((p) => p.status === "ok");
         setProject(
           usable ? { status: "open", project: usable } : { status: "none" },
         );
@@ -106,6 +112,24 @@ export function useDesk(): DeskApi {
    */
   const buffer = useRef<RunEvent[]>([]);
   const resyncing = useRef(false);
+
+  /**
+   * Which project's resync is allowed to finish.
+   *
+   * Step 34, and the one real bug switching introduced. A resync is several
+   * awaits long and nothing could cancel it: switch from A to B while A's
+   * fetches are in flight and A's socket closes, B's opens and starts its own
+   * resync — then A's settles and dispatches `snapshot` with **A's runs**,
+   * clears `resyncing`, and flushes the buffer array it captured into B. The
+   * Desk lands on B showing A's runs, with B's live events discarded into a
+   * buffer nobody will read.
+   *
+   * Every resync takes a token on the way in and checks it before each group
+   * of dispatches. The socket effect bumps the epoch on teardown too, so a
+   * stale resync is invalidated at the moment of the switch rather than when
+   * the next one happens to start.
+   */
+  const epoch = useRef(0);
 
   /**
    * The current selection, readable from inside `resync` without making it
@@ -144,6 +168,10 @@ export function useDesk(): DeskApi {
 
   const resync = useCallback(
     async (id: string) => {
+      // 0. Claim this resync. Anything that bumps the epoch after this line —
+      //    a switch, a teardown — makes everything below a no-op.
+      const token = (epoch.current += 1);
+      const current = (): boolean => epoch.current === token;
       // 1. Start buffering. The socket is already attached by the time `onOpen`
       //    calls this, so from here nothing can be missed.
       resyncing.current = true;
@@ -155,7 +183,11 @@ export function useDesk(): DeskApi {
           fetchStations(id),
         ]);
         // 3. Replace. Anything the UI believed that the daemon does not is now
-        //    gone, which is the point of a resync.
+        //    gone, which is the point of a resync — but only if this is still
+        //    the project the Desk is on. `snapshot` replaces wholesale, so a
+        //    late one from the project you left is the most destructive thing
+        //    that could land here.
+        if (!current()) return;
         dispatch({ type: "snapshot", runs });
         dispatch({ type: "stations", stations });
         dispatch({ type: "error", message: null });
@@ -172,21 +204,31 @@ export function useDesk(): DeskApi {
             ? selected.current
             : (runs[0]?.id ?? null);
         if (target !== null) {
+          const detail = await fetchRun(id, target);
+          if (!current()) return;
           // Before the flush, deliberately: `run-detail` replaces one run's
           // events, so a buffered live event flushed afterwards lands on top
           // rather than being overwritten by a log fetched a moment earlier.
-          dispatch({ type: "run-detail", detail: await fetchRun(id, target) });
+          dispatch({ type: "run-detail", detail });
         }
       } catch (error) {
-        fail(error);
+        // A failure belonging to a project the Desk has already left is not
+        // one to show over the project it is on now.
+        if (current()) fail(error);
       } finally {
         // 4. Flush what arrived during the fetch, in arrival order, on top of
         //    the snapshot. Events carry no id, so order is the only defense
         //    against double-counting — never sort, never dedupe.
-        const pending = buffer.current;
-        buffer.current = [];
-        resyncing.current = false;
-        for (const event of pending) dispatch({ type: "event", event });
+        //
+        //    A superseded resync flushes nothing and clears nothing: `buffer`
+        //    and `resyncing` now belong to the resync that replaced it, and
+        //    taking them would strand the new project's live events.
+        if (current()) {
+          const pending = buffer.current;
+          buffer.current = [];
+          resyncing.current = false;
+          for (const event of pending) dispatch({ type: "event", event });
+        }
       }
     },
     [fail],
@@ -213,6 +255,20 @@ export function useDesk(): DeskApi {
     // No project, no socket. Connecting to a project-scoped path without one
     // would fail every reconnect on a schedule.
     if (projectId === null) return;
+    // Everything the Desk holds describes the project it was on. Cleared
+    // before the socket opens, so the switch never renders one project's
+    // tiles, standbys or run list under another's name. See the `project`
+    // action in `reducer.ts` for why the standby is the one that would do
+    // damage rather than merely mislead.
+    dispatch({ type: "project" });
+    // These two are caches of state, and the effects that keep them in step
+    // do not run until the next render — so after a reset they describe the
+    // project just left for one tick. Not a correctness bug on its own: run
+    // ids come from one process-wide factory, so two projects cannot mint the
+    // same one and a stale entry can never match. Cleared because a cache of
+    // something that no longer exists has no reason to survive.
+    known.current = new Set();
+    fetching.current = new Set();
     const socket = connectEvents(projectId, {
       onEvent(event) {
         if (resyncing.current) buffer.current.push(event);
@@ -229,7 +285,14 @@ export function useDesk(): DeskApi {
         dispatch({ type: "connection", status: "closed" });
       },
     });
-    return () => socket.close();
+    return () => {
+      // Bumping the epoch here rather than only in the next `resync` is what
+      // makes a teardown cancel in-flight work immediately. Switching away and
+      // arriving nowhere — unmount, or a project that fails to resolve — would
+      // otherwise leave the old resync free to land whenever it settled.
+      epoch.current += 1;
+      socket.close();
+    };
   }, [projectId, resync, adopt]);
 
   const start = useCallback(
@@ -322,11 +385,51 @@ export function useDesk(): DeskApi {
         // Listed rather than raw: the Desk renders `status`, and a folder the
         // daemon just resolved is by definition present.
         setProject({ status: "open", project: { ...opened, status: "ok" } });
+        setProjects(await fetchProjects());
       } catch (error) {
         fail(error);
       }
     },
     [fail],
+  );
+
+  /**
+   * Show a project the daemon already knows — Step 34's whole subject.
+   *
+   * **A switch is a client action and nothing else.** Everything that makes
+   * the project you are leaving keep working is already true of the daemon:
+   * its queue, run store and event bus belong to its runtime, not to your
+   * socket, and dropping a socket unsubscribes a listener rather than
+   * stopping anything. So this changes which project this client is attached
+   * to, and deliberately tells the daemon nothing about "the current project"
+   * — Phase 8 decided the daemon has no such notion, and two windows on two
+   * projects is what that decision is for.
+   *
+   * **It reuses `POST /projects` rather than adding a route**, because
+   * `registry.open` is idempotent by resolved root and updating recency is
+   * exactly what it does. That is also what makes "reopen the project you were
+   * last in" survive a restart: the daemon and the Desk both read the head of
+   * the same recency-ordered list, so there is no second source to keep in
+   * step. A project whose folder has gone is refused by the same call, with
+   * the registry's own message.
+   */
+  const switchTo = useCallback(
+    async (id: string) => {
+      if (id === projectId) return;
+      const target = projects.find((candidate) => candidate.id === id);
+      if (!target) return;
+      try {
+        // Before the state change, so a folder that has since disappeared
+        // fails here and leaves the Desk where it is, rather than switching to
+        // a project whose every request is about to 404.
+        const opened = await openProject(target.root);
+        setProject({ status: "open", project: { ...opened, status: "ok" } });
+        setProjects(await fetchProjects());
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [projectId, projects, fail],
   );
 
   const dismissError = useCallback(() => {
@@ -337,7 +440,9 @@ export function useDesk(): DeskApi {
     () => ({
       state,
       project,
+      projects,
       openFolder,
+      switchTo,
       start,
       stop,
       select,
@@ -349,7 +454,9 @@ export function useDesk(): DeskApi {
     [
       state,
       project,
+      projects,
       openFolder,
+      switchTo,
       start,
       stop,
       select,

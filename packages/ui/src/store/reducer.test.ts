@@ -627,3 +627,75 @@ describe("standby lifecycle", () => {
     expect(after.standbys).toEqual([]);
   });
 });
+
+/**
+ * Step 34. A switch is not a reconnect, and the difference is what `snapshot`
+ * cannot do: it corrects the state on the way *out*, when the new project's
+ * fetch lands, and until then every field still describes the project you left.
+ */
+describe("switching projects", () => {
+  /** A Desk mid-run: a working tile, an open standby, a selection, an error. */
+  const busy = (): DeskState =>
+    reduce([
+      { type: "snapshot", runs: [run({ status: "running" })] },
+      ev({
+        t: "status",
+        status: "running",
+        runId: "20260910T142233104Z-0001",
+        at: AT,
+      }),
+      // A `text` event rather than the `status` above, because activity is
+      // keyed by station and only the events that carry a `stationId` can
+      // light a tile.
+      ev({
+        t: "text",
+        chunk: "working on it",
+        runId: "20260910T142233104Z-0001",
+        stationId: "opus",
+        at: AT,
+      }),
+      ev({
+        t: "standby",
+        standbyId: "sb_1",
+        ask: "Write the file?",
+        runId: "20260910T142233104Z-0001",
+        at: AT,
+      }),
+      { type: "error", message: "something went wrong in the old project" },
+    ]);
+
+  it("clears everything the old project put on screen", () => {
+    const before = busy();
+    expect(before.runs).toHaveLength(1);
+    expect(before.standbys).toHaveLength(1);
+    expect(Object.keys(before.stationActivity)).toEqual(["opus"]);
+
+    const after = deskReducer(before, { type: "project" });
+
+    expect(after).toEqual(initialState);
+  });
+
+  /**
+   * The one that would do damage rather than mislead. Station ids are per
+   * config, so two projects both having an `opus` is ordinary — and a standby
+   * id is addressable daemon-wide, so answering a carried-over one from the
+   * new project's Desk would succeed, against a run in the old project.
+   */
+  it("drops a standby that belongs to the project being left", () => {
+    const after = deskReducer(busy(), { type: "project" });
+    expect(after.standbys).toEqual([]);
+    expect(after.stationActivity).toEqual({});
+    expect(after.selectedRunId).toBeNull();
+  });
+
+  it("reports connecting rather than whatever the old socket last said", () => {
+    const open = deskReducer(busy(), { type: "connection", status: "open" });
+    expect(deskReducer(open, { type: "project" }).connection).toBe(
+      "connecting",
+    );
+  });
+
+  it("does not carry an error across the switch", () => {
+    expect(deskReducer(busy(), { type: "project" }).error).toBeNull();
+  });
+});
