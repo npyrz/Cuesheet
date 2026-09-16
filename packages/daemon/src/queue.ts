@@ -364,10 +364,18 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
  * under-counting is the direction that lets someone blow past a cap.
  */
 function reconcileCost(reported: Cost, accumulated: Cost): Cost {
+  // The cache fields are in this predicate deliberately. Without them, a
+  // harness that reported *only* a cache read — every input token served from
+  // cache, no fresh tokens, no price — would read as "reported nothing" and be
+  // silently replaced by the summed stream. That is the double-billing
+  // direction the project rule about additive-versus-inclusive token fields
+  // exists to catch, arriving through a type change rather than a mapper.
   const reportedAnything =
     reported.tokensIn > 0 ||
     reported.tokensOut > 0 ||
-    reported.usd !== undefined;
+    reported.usd !== undefined ||
+    reported.cacheRead !== undefined ||
+    reported.cacheWrite !== undefined;
   return reportedAnything ? reported : accumulated;
 }
 

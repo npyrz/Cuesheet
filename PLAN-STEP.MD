@@ -59,11 +59,11 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
-| 10 · Limits | 37–39 | 🔵 beta | ◐ **Steps 37–38 done** — `GET /usage`, the strip, and a run refused before it starts. Step 39 open |
+| 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ⬜ |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ⬜ — Steps 57–58 pull forward into 🔵 beta on demand |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -971,11 +971,45 @@ A transposed `warn_at`/`block_at` pair is a **warning, not a parse error**. `lin
 
 **No bars.** With the shipped harnesses and a plan in good standing, every row is a sentence: `claude-code` says "not blocked yet", `codex` says it reports no plan windows, `mock` says it cannot run out. A test asserts exactly that — `every(w => w.bar === null)` — because it is the honest strip, not a broken one, and the next person to look at it should not "fix" it into a row of zeroes.
 
-### Step 39 — The ledger and fallback routing
+### Step 39 — The ledger and fallback routing ✅
 
 Tokens and dollars per Run, per Station, per vendor, per day. `when_capped` moves steps to another Station instead of stopping.
 
-**Done when:** the cost of the Phase 7 gate run is a row in a chart, and a capped Station routes to its fallback without the operator watching.
+**Done when:** the cost of the Phase 7 gate run is a row in a chart ✅, and a capped Station routes to its fallback without the operator watching ✅.
+
+#### What the work settled
+
+**Step 57 was pulled forward, as this plan said to pull it.** `Cost` gained `cacheRead` and `cacheWrite`, and the reason is the sentence already written under Phase 14: a ledger that reports `tokensIn` without saying how much of it was cache can tell you what a run cost and never why. Both harnesses were already *receiving* the numbers and throwing them away — `claude-code` summed the two cache fields into the total, `codex` discarded `cached_input_tokens` as the subset it is.
+
+**They are a breakdown, not addends, and three places had to learn that separately.** `createMeter` accumulated three fields and would have dropped the new ones on the floor while still returning a valid `Cost` — the failure where the type lands and the data never arrives. `addCost` sums them the way it sums input. And `reconcileCost` decides between a harness's reported total and the metered stream on a truthiness test: without the cache fields in that predicate, a harness reporting *only* a cache read — every input token served warm, no fresh tokens, no price — would read as "reported nothing" and be silently replaced by the stream. That is the double-billing direction the project's additive-versus-inclusive rule exists to catch, arriving through a type change rather than through a mapper.
+
+**Absent is not zero, everywhere.** A harness that does not break input down has not said its hit rate was zero. `codex` ships `cacheRead` and omits `cacheWrite`, because its stream reports one and not the other; claiming a zero would assert it never writes a cache, which no capture supports. The ledger carries that through: `cacheHitRate` returns `null`, and the table renders `—`.
+
+**Per-Station cost is recorded at run time, not derived from the event stream.** The executor already knew the station, the harness, the vendor and the meter's total at the moment each step ended; writing four fields there is free. Deriving it later would mean opening every run's `events.jsonl` to draw one table — the cost that keeping `list()` answering off `readdir` was designed to avoid, and the same complaint `reconcileInterruptedRuns` already carries about itself.
+
+**Runs recorded before that field are first-class, not an edge case.** They appear in the day and run totals with their spend reported as `unattributed`, rather than being dropped or silently blamed on their first Station. It matters more than it sounds: **the Phase 7 gate run the done-when names is exactly one of those.** It was recorded months before `stations` existed, so the honest way it becomes "a row" is the unattributed path — which is now tested, surfaced on the wire, and printed under the table whenever it is non-zero. `byStation` not adding up to the total is the one discrepancy a reader would spot unaided, and an unexplained one costs the page its credibility.
+
+#### The two steps that disagreed, and the order that fixed it
+
+**Step 38 refused every run Step 39 existed to rescue.** A capped harness is precisely the case `when_capped` routes around — and the pre-run check, asked about the cuesheet *as written*, saw the cap and returned 409 before the router ever ran. The first end-to-end fallback test failed on exactly this, which is the useful kind of failure.
+
+The fix is an ordering rule worth stating: **route first, then check.** The question the pre-run check asks is "can this run finish *as it will actually execute*", so substitutions are resolved before anybody's cap is counted. The executor resolves them again at run time, and that is not redundancy — a cuesheet can take twenty minutes, and a cap reached during it should route the step that has not started yet.
+
+A refused *routing* then feeds the refused *run*: the 409 carries the reason the fallback could not save it, alongside the window that stopped it. "You are capped" while `when_capped` sits configured and silent is the message somebody spends an afternoon on.
+
+#### `when_capped` refuses more than it accepts, on purpose
+
+A substitution changes **who did the work**, and both things Cuesheet enforces structurally are stated in terms of who did it. So `chooseFallback` refuses unless the stand-in holds the *same role* and its harness declares that role. Step 36 made "a worker in a reviewer seat" a warning the daemon prints at a human; a router performing that swap unprompted at runtime would be doing silently what the linter exists to warn about — and the README's argument is a safety one, not an ergonomic one.
+
+**A Gate's `distinct_vendors` needs no check here, and that is worth knowing before somebody adds one.** `evaluateGate` counts vendors over `participants`, which the executor builds from the harness that *actually ran*. Swap a second-vendor reviewer for a same-vendor one and the gate sees one vendor and holds the run — honestly, with its own message. A pre-emptive check in the router would duplicate that logic in a second place, and the two would drift.
+
+Every substitution is on the record: `StationCost.substitutedFor` names the Station whose step was taken. A ledger showing `spare` where the cuesheet says `primary`, with no explanation, is a ledger somebody files a bug about.
+
+#### "A row in a chart" was read as a row, rendered
+
+There is no charting anything in this Desk, Phase 11 rebuilds it, and adding a visualization library to draw three bars would be the expensive kind of scope. What the clause asks for is that the money be **visible and attributable**, and the Desk now has a ledger panel — by day, by vendor, by Station, with a cached column and the unattributed note. Its decisions live in `ui/src/ledger.ts` for the same reason the strip's do: vitest does not collect `.tsx`. Drawing it as a chart belongs to Phase 11, with the rest of the design system.
+
+**`GET /projects/:id/ledger` is per project, and it is the mirror of `/usage` being global.** A plan window belongs to a vendor — the same five-hour cap whichever repository you are standing in. Spend belongs to the work that caused it, and the run store is already per project. There is no `limit` parameter: a ledger over the most recent N runs is a ledger that quietly disagrees with itself as the window slides, so the date range is the honest way to ask for less and Step 52's SQLite store is the honest way to make asking for all of it cheap.
 
 ### What the earlier phases already learned about this one
 
@@ -1188,7 +1222,9 @@ Crash and error reporting with no telemetry — the constraint the README sets a
 >
 > **It sits after Phase 13 because it measures things that do not exist yet** — the ledger is Step 39, the projections are Step 47, and tuning a context budget before there is a context to budget is guesswork. It is not, however, load-bearing for the beta: **Steps 57 and 58 can be pulled forward into Phase 10 the moment they are wanted**, and Step 57 is a prerequisite for the ledger being honest rather than merely present.
 
-### Step 57 — Cache-aware cost
+### Step 57 — Cache-aware cost ✅ *(pulled forward into Step 39)*
+
+> **Done early, exactly as the phase header said it could be.** Step 39's ledger needed it — a ledger that reports `tokensIn` without saying how much was cache can say what a run cost and never why — so `Cost` and `CostDelta` were widened there, both harnesses now report their breakdowns, and `createMeter`, `addCost` and `reconcileCost` were each taught about the new fields separately. See Step 39's retrospective for what each of those three would have gotten wrong. The rest of Phase 14 is untouched.
 
 Widen `Cost` and `CostDelta` with optional `cacheRead` and `cacheWrite`, and stop collapsing the vendors' cache figures into one number.
 
@@ -1274,7 +1310,7 @@ Most of this table has now been claimed by Phases 8–13, which is what the seam
 | ~~Gates, reviewer role, verdicts~~ | 🔵 beta | Done. Cues were already an ordered list; a gate was a cue kind | Phase 7 ✅ |
 | ~~Commons, MCP recall~~ | 🔵 beta | `contextFiles` already on the interface | Phase 12 |
 | **Projects** | 🔵 beta | **No seam — this is the one nothing was cut for.** `cwd`, `loadConfig` and the store root each assume exactly one, which is why it is a phase and not a step | Phase 8 |
-| Cache-aware accounting | ⚪ post-1.0 | **No seam — `Cost` is three fields and none of them is a cache.** Additive to widen, but it is a `core` type change, not a harness one | Step 57 |
+| ~~Cache-aware accounting~~ | ⚪ post-1.0 | **No seam — `Cost` was three fields and none of them was a cache.** Additive to widen, but a `core` type change rather than a harness one, which is why it could not simply arrive with a new harness | Step 57, done inside Step 39 |
 | Hooks, rewind, plan mode | ⚪ post-1.0 | Cues, for the first two — a hook is a cue kind exactly as a gate was. **Not for the third:** `Harness` has no way to say what a runtime supports | Steps 60–61 |
 | Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) | still deferred |
 | Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change | still deferred |

@@ -144,6 +144,10 @@ export interface Meter {
 export interface CostDelta {
   tokensIn?: number;
   tokensOut?: number;
+  /** Part of `tokensIn`, not additional to it. See `Cost` in core. */
+  cacheRead?: number;
+  /** Part of `tokensIn`, not additional to it. See `Cost` in core. */
+  cacheWrite?: number;
   usd?: number;
 }
 

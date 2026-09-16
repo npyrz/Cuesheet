@@ -134,6 +134,63 @@ textarea {
   background: color-mix(in srgb, var(--warn) 14%, var(--panel));
 }
 
+/* ── Ledger ──────────────────────────────────────────────────────────────── */
+
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.ledger-table caption {
+  text-align: left;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  padding: 4px 0;
+}
+
+.ledger-table th,
+.ledger-table td {
+  text-align: right;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger-table th[scope="row"],
+.ledger-table thead th:first-child {
+  text-align: left;
+}
+
+.ledger-table thead th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.ledger-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-empty {
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+/*
+ * Never styled down to a whisper. This sentence is why `byStation` does not
+ * add up to the total, and a reader who spots that gap without an explanation
+ * is right to distrust every other figure on the page.
+ */
+.ledger-note {
+  color: var(--text);
+  background: color-mix(in srgb, var(--warn) 12%, var(--panel));
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
 /* ── Limits strip ────────────────────────────────────────────────────────── */
 
 .limits {

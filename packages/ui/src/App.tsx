@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddStationPanel } from "./components/AddStationPanel.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
+import { LedgerPanel } from "./components/LedgerPanel.js";
 import { LimitsStrip } from "./components/LimitsStrip.js";
 import { RunLog } from "./components/RunLog.js";
 import { StationTile } from "./components/StationTile.js";
@@ -24,6 +25,7 @@ export function App(): React.JSX.Element {
   const { state } = desk;
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [ledger, setLedger] = useState(false);
 
   const run = selectedRun(state);
   const events = selectedEvents(state);
@@ -54,6 +56,11 @@ export function App(): React.JSX.Element {
         id: "add-station",
         label: "Add a Station…",
         run: () => setAdding(true),
+      },
+      {
+        id: "ledger",
+        label: "Open the ledger — what this project has spent",
+        run: () => setLedger(true),
       },
       ...(run && run.status === "running"
         ? [
@@ -292,6 +299,13 @@ export function App(): React.JSX.Element {
         commands={commands}
         canStart={stations.length > 0}
       />
+
+      {ledger && (
+        <LedgerPanel
+          projectId={desk.project.project.id}
+          onClose={() => setLedger(false)}
+        />
+      )}
 
       {adding && (
         <AddStationPanel

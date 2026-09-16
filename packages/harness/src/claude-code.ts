@@ -37,6 +37,7 @@ import { jsonLineReader, run as spawnRun, which } from "./spawn.js";
 import type {
   Connector,
   ContextFile,
+  Cost,
   Harness,
   HarnessEvent,
   HarnessProbeResult,
@@ -262,7 +263,7 @@ export interface StreamState {
   errorMessage?: string;
   /** Cost events the mapper has produced but not yet handed to the caller. */
   drainCost(): HarnessEvent[];
-  total(): { tokensIn: number; tokensOut: number; usd?: number };
+  total(): Cost;
   /**
    * The plan windows this run has seen, latest wins.
    *
@@ -280,6 +281,8 @@ interface InternalState extends StreamState {
   seenMessages: Set<string>;
   tokensIn: number;
   tokensOut: number;
+  cacheRead: number;
+  cacheWrite: number;
   usd?: number;
   pending: HarnessEvent[];
   station: Station;
@@ -299,6 +302,8 @@ export function createStreamState(
     seenMessages: new Set<string>(),
     tokensIn: 0,
     tokensOut: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
     pending: [],
     station,
     emit,
@@ -307,10 +312,16 @@ export function createStreamState(
       state.pending = [];
       return drained;
     },
-    total() {
+    total(): Cost {
+      // The breakdown always ships for this harness, zeros included, and that
+      // is a claim rather than a default: the API reports both cache fields on
+      // every message, so a zero here means "nothing was cached", not "nobody
+      // said". A harness that cannot tell the difference omits them instead.
       return {
         tokensIn: state.tokensIn,
         tokensOut: state.tokensOut,
+        cacheRead: state.cacheRead,
+        cacheWrite: state.cacheWrite,
         ...(state.usd !== undefined && { usd: state.usd }),
       };
     },
@@ -433,6 +444,11 @@ function mapAssistant(
         // Streamed live for the tiles; the authoritative total arrives with
         // the `result` line and replaces this (see `mapResult`).
         state.pending.push({ t: "cost", tokensIn, tokensOut });
+        // Accumulated separately from `pending`, because the `cost` event on
+        // the wire is what the Desk draws and it has no room for a breakdown.
+        // The ledger reads the total, which `mapResult` overwrites outright.
+        state.cacheRead += numberAt(usage, "cache_read_input_tokens");
+        state.cacheWrite += numberAt(usage, "cache_creation_input_tokens");
       }
     }
   }
@@ -499,6 +515,8 @@ function mapResult(
     // spend, and adding both is how a limits ledger reports double.
     state.tokensIn = inputTokens(usage);
     state.tokensOut = numberAt(usage, "output_tokens");
+    state.cacheRead = numberAt(usage, "cache_read_input_tokens");
+    state.cacheWrite = numberAt(usage, "cache_creation_input_tokens");
   }
   const cost = ev["total_cost_usd"];
   if (typeof cost === "number" && Number.isFinite(cost)) state.usd = cost;

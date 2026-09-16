@@ -480,3 +480,162 @@ deny = [".git/**"]
     expect(await readdir(path.join(workspace, "src"))).toEqual([]);
   });
 });
+
+describe("the ledger's raw material", () => {
+  it("records what each Station spent, not just the run's total", async () => {
+    // Step 39's aggregation is only as honest as this: without a per-Station
+    // split the ledger can say what a run cost and never who spent it.
+    const url = await bootProject();
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "spend something" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    const stations = stored.run.result?.stations;
+    expect(stations).toHaveLength(1);
+    expect(stations?.[0]).toMatchObject({
+      stationId: "fake",
+      harness: "mock",
+      vendor: "cuesheet",
+    });
+    expect(stations?.[0]?.cost.tokensOut).toBeGreaterThan(0);
+    // It adds up to the run's own total, which is what keeps a ledger's
+    // columns reconciling.
+    expect(stations?.[0]?.cost.tokensIn).toBe(stored.run.cost.tokensIn);
+  });
+});
+
+describe("GET /ledger", () => {
+  it("turns a finished run into rows, split by Station and vendor", async () => {
+    // Step 39's done-when, as close as this suite can get to it: a real run
+    // through a real harness, aggregated into the rows a ledger draws.
+    const url = await bootProject();
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "spend something" })
+    ).json()) as { runId: string };
+    await waitForRun(url, runId);
+
+    const ledger = (await (await fetch(`${url}/ledger`)).json()) as {
+      totals: { tokensIn: number; runs: number };
+      byStation: { key: string; tokensOut: number }[];
+      byVendor: { key: string }[];
+      runs: { runId: string; attributed: boolean }[];
+      unattributed: { tokensIn: number; tokensOut: number };
+    };
+
+    expect(ledger.byStation[0]?.key).toBe("fake");
+    expect(ledger.byStation[0]?.tokensOut).toBeGreaterThan(0);
+    expect(ledger.byVendor[0]?.key).toBe("cuesheet");
+    expect(ledger.runs[0]).toMatchObject({ runId, attributed: true });
+    // The columns reconcile, which is the property that makes the page
+    // trustworthy rather than merely present.
+    expect(ledger.unattributed).toMatchObject({ tokensIn: 0, tokensOut: 0 });
+  });
+
+  it("is scoped to its project, the mirror image of `/usage` being global", async () => {
+    const url = await bootProject();
+    const { status } = await fetch(`${daemon?.url ?? ""}/ledger`).then((r) => ({
+      status: r.status,
+    }));
+    expect(status).toBe(404);
+    expect((await fetch(`${url}/ledger`)).status).toBe(200);
+  });
+});
+
+describe("when_capped", () => {
+  /** Two Stations in one seat, and a fallback from the first to the second. */
+  async function twoSeats(when: string): Promise<string> {
+    await writeFile(
+      path.join(cwd, "cuesheet.toml"),
+      `
+[[station]]
+id = "primary"
+harness = "mock"
+role = "engineer"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+
+[[station]]
+id = "spare"
+harness = "spare-mock"
+role = "engineer"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+
+[[station]]
+id = "helper"
+harness = "spare-mock"
+role = "worker"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+
+[limits]
+${when}
+`,
+      "utf8",
+    );
+    return bootProject(cappedRuntime());
+  }
+
+  /** `mock` is capped; `spare-mock` is a second vendor that is not. */
+  function cappedRuntime() {
+    const primary = { ...createMockHarness({ standby: false }), id: "mock" };
+    const spare = {
+      ...createMockHarness({ standby: false }),
+      id: "spare-mock",
+      vendor: "spare",
+    };
+    return {
+      ...harnessRuntime({ registry: createHarnessRegistry([primary, spare]) }),
+      usageSources: () => [
+        {
+          id: "mock",
+          vendor: "cuesheet",
+          usage: async () => [
+            { window: "plan", state: "measured" as const, used: 1 },
+          ],
+        },
+        { id: "spare-mock", vendor: "spare", usage: async () => [] },
+      ],
+    };
+  }
+
+  it("routes a capped Station to its fallback, unattended", async () => {
+    const url = await twoSeats('when_capped = { primary = "spare" }');
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "carry on" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("done");
+    const stations = stored.run.result?.stations;
+    // The spare did the work, and the record says whose step it took. A ledger
+    // showing "spare" where the cuesheet says "primary", with no explanation,
+    // is a ledger somebody files a bug about.
+    expect(stations?.[0]).toMatchObject({
+      stationId: "spare",
+      substitutedFor: "primary",
+    });
+  });
+
+  it("refuses the run rather than routing a worker into an engineer's seat", async () => {
+    // The safety clause, and the place two steps had to be reconciled.
+    // `helper` is a worker, so the router will not take the step — which means
+    // the cap still stands, which means Step 38's pre-run check refuses the
+    // run at the door. That is the right order of events: it is better to be
+    // told at second zero than to start a run against a capped plan.
+    const url = await twoSeats('when_capped = { primary = "helper" }');
+    const response = await post(`${url}/runs`, { prompt: "carry on" });
+    expect(response.status).toBe(409);
+
+    const body = (await response.json()) as {
+      error: string;
+      routing?: string[];
+    };
+    expect(body.error).toContain("would not finish");
+    // And it says *why the fallback did not save it*. A refusal reading "you
+    // are capped" while `when_capped` is configured and silent is a refusal
+    // somebody spends an afternoon on.
+    expect(body.routing?.[0]).toContain("cannot stand in for");
+  });
+});

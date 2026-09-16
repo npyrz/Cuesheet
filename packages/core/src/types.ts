@@ -81,11 +81,64 @@ export function isTerminalStatus(status: RunStatus): boolean {
   return (TERMINAL_RUN_STATUSES as readonly RunStatus[]).includes(status);
 }
 
-/** Token and money totals. `usd` is absent when the harness cannot price it. */
+/**
+ * What one run, or one Station within it, spent.
+ *
+ * `tokensIn` is the **total billed input**, cache included, and that has been
+ * true since the `claude-code` mapper was written — counting only fresh input
+ * reported 17 tokens for a run that consumed 50,270. What changed in Step 39
+ * is that the total is no longer the *only* thing said.
+ *
+ * **`cacheRead` and `cacheWrite` are a breakdown, not addends.** They are
+ * already inside `tokensIn`; adding them to it would double-count. They exist
+ * because cached input is billed at a fraction of fresh input, so two runs
+ * with identical `tokensIn` can differ severalfold in price — and a ledger
+ * that cannot say which one you just paid for can report what a run cost but
+ * never why.
+ *
+ * Both are optional, and absent means *the runtime did not report a
+ * breakdown*, which is a different statement from zero. `codex` reports only
+ * a cache read; a local model reports neither.
+ */
 export interface Cost {
+  /** Total billed input, cache included. */
   tokensIn: number;
   tokensOut: number;
+  /** Of `tokensIn`, how much was served from cache. Absent if unreported. */
+  cacheRead?: number;
+  /** Of `tokensIn`, how much was written *into* cache. Absent if unreported. */
+  cacheWrite?: number;
   usd?: number;
+}
+
+/**
+ * What one Station spent inside a run.
+ *
+ * On the run record rather than derived from the event stream, and the reason
+ * is the same one that keeps `list()` answering off `readdir`: deriving it
+ * would mean opening every run's `events.jsonl` to draw one chart, and
+ * `reconcileInterruptedRuns` already carries a comment about being O(all runs
+ * ever). The executor knows the station, the harness, the vendor and the
+ * meter's total at the moment the step ends; writing four fields then is free.
+ *
+ * **Absent on every run recorded before Step 39.** The ledger treats those as
+ * attributable to a run and a day but not to a Station — which is honest, and
+ * is not the same as attributing them to the first Station in the list.
+ */
+export interface StationCost {
+  stationId: string;
+  harness: HarnessId;
+  vendor: Vendor;
+  cost: Cost;
+  durationMs?: number;
+  /**
+   * The Station this one stood in for, when `when_capped` routed around a cap.
+   *
+   * On the record rather than only in the log, because a fallback changes who
+   * did the work — and a ledger that shows `qwen` where the cuesheet says
+   * `codex`, with no explanation, is a ledger somebody will file a bug about.
+   */
+  substitutedFor?: string;
 }
 
 export interface DiffStat {
@@ -117,6 +170,8 @@ export interface RunResultSummary {
   status: RunStatus;
   cost: Cost;
   durationMs: number;
+  /** Per-Station spend, in cue order. Absent on runs recorded before Step 39. */
+  stations?: StationCost[];
   /** Absent when the run touched nothing. */
   diff?: DiffStat;
   verdicts?: Verdict[];

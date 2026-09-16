@@ -258,7 +258,22 @@ describe("token accounting", () => {
     // The captured turn reports 88658/82560 in and 721/23 out; summing the
     // pairs would bill 171218 and 744.
     const { state } = mapAll(engineer);
-    expect(state.total()).toEqual({ tokensIn: 88658, tokensOut: 721 });
+    expect(state.total()).toEqual({
+      tokensIn: 88658,
+      tokensOut: 721,
+      // Reported as the *breakdown* it is, never added to the total. Step 39
+      // made the ledger able to say how much of an input was cache; this is
+      // the assertion that the saying does not change the billing.
+      cacheRead: 82560,
+    });
+  });
+
+  it("omits `cacheWrite` rather than claiming a zero", () => {
+    // The stream reports `cached_input_tokens` and says nothing about cache
+    // *creation*. Absent means "nobody told us"; a zero would claim this
+    // runtime never writes a cache, which no capture supports.
+    const { state } = mapAll(engineer);
+    expect(state.total()).not.toHaveProperty("cacheWrite");
   });
 
   it("reports no dollar figure, because the stream carries none", () => {

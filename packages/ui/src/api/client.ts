@@ -9,6 +9,7 @@
 import type {
   HarnessProbe,
   HarnessUsage,
+  Ledger,
   Limits,
   ListedProject,
   Project,
@@ -170,6 +171,21 @@ export interface UsageResponse {
  */
 export async function fetchUsage(): Promise<UsageResponse> {
   return request("/usage");
+}
+
+/**
+ * The ledger — **scoped to a project**, unlike `fetchUsage` directly above.
+ *
+ * The pair is worth reading together: a plan window belongs to a vendor and is
+ * the same wherever you are standing, while *spend* belongs to the work that
+ * caused it, and the run store it is computed from is already per project.
+ *
+ * Fetched on demand rather than polled. It reads every run record in the
+ * project, which is cheap today and is exactly the call Step 52's SQLite store
+ * exists to keep cheap.
+ */
+export async function fetchLedger(projectId: string): Promise<Ledger> {
+  return request(`${scope(projectId)}/ledger`);
 }
 
 export async function fetchRuns(

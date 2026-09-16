@@ -53,6 +53,7 @@ import { jsonLineReader, run as spawnRun, which } from "./spawn.js";
 import type {
   Connector,
   ContextFile,
+  Cost,
   Harness,
   HarnessEvent,
   HarnessProbeResult,
@@ -329,12 +330,13 @@ export interface CodexState {
   errorMessage?: string;
   /** Cost events the mapper has produced but not yet handed to the caller. */
   drainCost(): HarnessEvent[];
-  total(): { tokensIn: number; tokensOut: number; usd?: number };
+  total(): Cost;
 }
 
 interface InternalState extends CodexState {
   tokensIn: number;
   tokensOut: number;
+  cacheRead: number;
   pending: HarnessEvent[];
   station: Station;
   /** `item.started` already reported these; `item.completed` must not repeat. */
@@ -346,6 +348,7 @@ export function createCodexState(station: Station): CodexState {
     errored: false,
     tokensIn: 0,
     tokensOut: 0,
+    cacheRead: 0,
     pending: [],
     station,
     announced: new Set<string>(),
@@ -354,9 +357,19 @@ export function createCodexState(station: Station): CodexState {
       state.pending = [];
       return drained;
     },
-    total() {
+    total(): Cost {
       // No `usd`. Codex reports tokens and never a price — see `mapTurn`.
-      return { tokensIn: state.tokensIn, tokensOut: state.tokensOut };
+      //
+      // `cacheRead` ships and `cacheWrite` does not, and the asymmetry is the
+      // stream's rather than ours: `cached_input_tokens` is reported,
+      // cache *creation* is not. Omitting the field says "nobody told us",
+      // which is the honest answer; sending a zero would claim this runtime
+      // never writes a cache, and nothing in three captures supports that.
+      return {
+        tokensIn: state.tokensIn,
+        tokensOut: state.tokensOut,
+        cacheRead: state.cacheRead,
+      };
     },
   };
   return state;
@@ -545,6 +558,10 @@ function mapTurn(
   if (!usage) return [];
   state.tokensIn = numberAt(usage, "input_tokens");
   state.tokensOut = numberAt(usage, "output_tokens");
+  // Already *inside* `input_tokens` — the inclusive-versus-additive asymmetry
+  // this function's header comment is about. Recorded as the breakdown it is,
+  // never added to the total.
+  state.cacheRead = numberAt(usage, "cached_input_tokens");
   if (state.tokensIn > 0 || state.tokensOut > 0) {
     state.pending.push({
       t: "cost",

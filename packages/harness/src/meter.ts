@@ -17,6 +17,12 @@ export interface MeterOptions {
 export function createMeter(options: MeterOptions = {}): Meter {
   let tokensIn = 0;
   let tokensOut = 0;
+  // `undefined` rather than `0`, and kept that way until a harness reports
+  // one: absent means "this runtime does not break input down", which is a
+  // different claim from "none of it was cached". `codex` reports a read and
+  // no write; a local model reports neither.
+  let cacheRead: number | undefined;
+  let cacheWrite: number | undefined;
   let usd: number | undefined;
 
   return {
@@ -25,6 +31,10 @@ export function createMeter(options: MeterOptions = {}): Meter {
       const outDelta = delta.tokensOut ?? 0;
       tokensIn += inDelta;
       tokensOut += outDelta;
+      if (delta.cacheRead !== undefined)
+        cacheRead = (cacheRead ?? 0) + delta.cacheRead;
+      if (delta.cacheWrite !== undefined)
+        cacheWrite = (cacheWrite ?? 0) + delta.cacheWrite;
       if (delta.usd !== undefined) usd = (usd ?? 0) + delta.usd;
 
       // A zero-token settlement that only carries a price is still worth
@@ -42,7 +52,13 @@ export function createMeter(options: MeterOptions = {}): Meter {
     total(): Cost {
       // `exactOptionalPropertyTypes`: absent means the harness could not price
       // it, which is not the same claim as "it cost nothing".
-      return { tokensIn, tokensOut, ...(usd !== undefined && { usd }) };
+      return {
+        tokensIn,
+        tokensOut,
+        ...(cacheRead !== undefined && { cacheRead }),
+        ...(cacheWrite !== undefined && { cacheWrite }),
+        ...(usd !== undefined && { usd }),
+      };
     },
   };
 }

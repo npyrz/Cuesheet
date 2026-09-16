@@ -14,7 +14,10 @@ import websocket from "@fastify/websocket";
 import { stat } from "node:fs/promises";
 import {
   addStation,
+  buildLedger,
+  cappedHarnesses,
   checkLimits,
+  chooseFallback,
   ConfigError,
   configFile,
   createProjectRegistry,
@@ -141,6 +144,20 @@ export interface ExecutorFactoryDeps {
   /** Reads the currently loaded config. Call per run, never cache the result. */
   config: () => LoadedConfig;
   env: HostEnv;
+  /**
+   * Which harnesses are at or past `block_at` right now.
+   *
+   * Supplied by the daemon rather than assembled in `harnessRuntime()`, because
+   * the usage cache is built here and the thresholds come from the *project's*
+   * config — two things a harness registry has no business knowing about.
+   *
+   * Optional so that `projects.ts`, which is what actually calls the factory,
+   * does not have to carry a usage cache through a file about project
+   * lifetimes. `startDaemon` wraps the caller's factory to supply it; absent
+   * means nothing is capped, which is the right answer for a library caller
+   * who wired no usage sources.
+   */
+  capped?: () => Promise<readonly string[]>;
 }
 
 export interface DaemonHandle {
@@ -228,8 +245,20 @@ export async function startDaemon(
       replayLimit: options.replayLimit,
     }),
     ...(options.executor && { executor: options.executor }),
+    // Wrapped rather than passed through: the factory's caller wants a
+    // `capped` it has no way to build, and `projects.ts` has no business
+    // holding a usage cache. `deps.config()` is read at run time, so a project
+    // whose thresholds were edited mid-session routes on the new ones.
     ...(options.executorFactory && {
-      executorFactory: options.executorFactory,
+      executorFactory: (deps: ExecutorFactoryDeps) =>
+        (options.executorFactory as (d: ExecutorFactoryDeps) => RunExecutor)({
+          ...deps,
+          capped: async () =>
+            cappedHarnesses(
+              (await usage.get()).harnesses,
+              deps.config().config.limits,
+            ),
+        }),
     }),
     // A single injected store means "use this for every project". Honest only
     // with one project, which is what every caller passing it has.
@@ -709,6 +738,30 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return { runs };
   });
 
+  /**
+   * The ledger — **per project**, which is the mirror image of `/usage` being
+   * global and worth one line because they sit next to each other.
+   *
+   * A plan window belongs to a vendor: the same five-hour cap whichever
+   * repository you are in. *Spend* belongs to the work that caused it, and the
+   * run store is already per project. Answering this globally would mean
+   * telling somebody what they spent this week without being able to say on
+   * what, which is the number nobody needs.
+   */
+  app.get("/projects/:id/ledger", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const query = request.query as Record<string, unknown>;
+    // No `limit`: a ledger over the most recent N runs is a ledger that
+    // quietly disagrees with itself as the window slides. The date range is
+    // the honest way to ask for less, and Step 52's SQLite store is the
+    // honest way to make asking for all of it cheap.
+    return buildLedger(await runtime.store.list(), {
+      ...(typeof query["since"] === "string" && { since: query["since"] }),
+      ...(typeof query["until"] === "string" && { until: query["until"] }),
+    });
+  });
+
   app.get("/projects/:id/runs/:runId", async (request, reply) => {
     const runtime = await runtimeFor(request, reply);
     if (!runtime) return reply;
@@ -791,10 +844,24 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // and `unmetered` all start the run, because refusing on one of those
     // would be inventing a measurement — the same failure the strip avoids,
     // aimed at the operator's ability to work instead of at their bill.
+    // **Routed first, then checked.** These two steps were built one after the
+    // other and they disagree if run in the other order: a Station whose plan
+    // is capped is exactly the Station `when_capped` exists to route around,
+    // so checking the cuesheet as *written* would refuse every run that the
+    // fallback was configured to rescue. The question this check asks is "can
+    // this run finish as it will actually execute", which means resolving the
+    // substitutions before counting anybody's cap.
+    //
+    // The executor resolves them again at run time rather than trusting this.
+    // Not redundancy: a cuesheet can take twenty minutes, and a cap reached
+    // during it should route the step that has not started yet.
+    const windows = (await usage.get()).harnesses;
+    const capped = cappedHarnesses(windows, loaded.config.limits);
+    const routing = routeStations(loaded, stationIds, capped, harnessRoles);
     const check = checkLimits({
       limits: loaded.config.limits,
-      usage: (await usage.get()).harnesses,
-      harnesses: harnessesFor(loaded, stationIds),
+      usage: windows,
+      harnesses: routing.harnesses,
     });
     if (check.decision === "block") {
       return reply.code(409).send({
@@ -802,6 +869,10 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         // The windows, not just a sentence: the Desk has to be able to say
         // *which* vendor stopped it and how long until it resets.
         limits: check.findings,
+        // And why the fallback did not rescue it. A refusal that says "you are
+        // capped" while `when_capped` is configured and did nothing is a
+        // refusal somebody spends an afternoon on.
+        ...(routing.refusals.length > 0 && { routing: routing.refusals }),
       });
     }
 
@@ -921,21 +992,45 @@ function resolveStationIds(loaded: LoadedConfig, cuesheet?: string): string[] {
 }
 
 /**
- * The distinct harnesses a run will touch, for the pre-run check.
+ * The distinct harnesses a run will touch **after** `when_capped` routing.
  *
  * A Station naming a harness that is not configured is left in rather than
  * filtered out: the run will fail on it either way, and dropping it here would
  * mean a capped harness silently stopped counting toward the check.
  */
-function harnessesFor(loaded: LoadedConfig, stationIds: string[]): string[] {
+function routeStations(
+  loaded: LoadedConfig,
+  stationIds: string[],
+  capped: readonly string[],
+  rolesOf: HarnessRoles,
+): { harnesses: string[]; refusals: string[] } {
   const harnesses = new Set<string>();
+  const refusals: string[] = [];
+
   for (const id of stationIds) {
     const station = loaded.config.station.find(
       (candidate) => candidate.id === id,
     );
-    if (station) harnesses.add(station.harness);
+    // A Station naming a harness that is not configured is left in rather than
+    // filtered out: the run will fail on it either way, and dropping it would
+    // mean a capped harness silently stopped counting toward the check.
+    if (!station) continue;
+    const routed = chooseFallback({
+      station,
+      limits: loaded.config.limits,
+      stations: loaded.config.station,
+      capped,
+      rolesOf,
+    });
+    if (routed.kind === "refused") refusals.push(routed.reason);
+    // A *refused* fallback keeps the original harness, which is what makes the
+    // run refusable: the router could not rescue it, so the cap still applies.
+    harnesses.add(
+      routed.kind === "substitute" ? routed.station.harness : station.harness,
+    );
   }
-  return [...harnesses];
+
+  return { harnesses: [...harnesses], refusals };
 }
 
 function resolveWorkspace(loaded: LoadedConfig, stationIds: string[]): string {

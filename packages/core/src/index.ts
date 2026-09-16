@@ -3,6 +3,8 @@ export * from "./types.js";
 export * from "./config.js";
 export * from "./leash.js";
 export * from "./limits.js";
+export * from "./ledger.js";
+export * from "./fallback.js";
 export * from "./gate.js";
 export * from "./verdict.js";
 export * from "./config-write.js";

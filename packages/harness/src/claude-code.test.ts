@@ -166,8 +166,25 @@ describe("mapping a captured stream", () => {
     expect(state.total()).toEqual({
       tokensIn: 17 + 25303 + 24950,
       tokensOut: 317,
+      // The same three numbers, now also reported split. `tokensIn` is still
+      // the sum — the breakdown is *of* it, not additional to it, which is the
+      // one thing a ledger reading both must not get wrong.
+      cacheWrite: 25303,
+      cacheRead: 24950,
       usd: 0.055307,
     });
+  });
+
+  it("keeps the breakdown inside the total, never beside it", () => {
+    // Stated as arithmetic rather than as a comment, because the opposite
+    // convention is one file away: `codex`'s cache figure is a subset of its
+    // input too, but its *stream* says so, whereas this API reports the three
+    // side by side and the summing happens here.
+    const { state } = mapAll();
+    const cost = state.total();
+    expect((cost.cacheRead ?? 0) + (cost.cacheWrite ?? 0)).toBeLessThan(
+      cost.tokensIn,
+    );
   });
 
   it("counts cache tokens as input, because they are billed", () => {

@@ -114,6 +114,29 @@ export function checkLimits(input: LimitCheckInput): LimitCheck {
 }
 
 /**
+ * Which harnesses are at or past `block_at`.
+ *
+ * The routing counterpart to {@link checkLimits}: that one answers "may this
+ * run start", this one answers "who cannot take a step". Both refuse to act on
+ * anything but a measurement, for the same reason — routing a step away from a
+ * vendor that merely declined to report a number would move work off a plan
+ * that was fine, quietly, and bill somebody else's.
+ */
+export function cappedHarnesses(
+  usage: readonly HarnessUsage[],
+  limits: Limits,
+): string[] {
+  return usage
+    .filter((entry) =>
+      entry.windows.some((window) => {
+        const used = measuredFraction(window);
+        return used !== null && used >= limits.block_at;
+      }),
+    )
+    .map((entry) => entry.harness);
+}
+
+/**
  * The fraction a window measured, or `null` when it measured nothing.
  *
  * The single place the union's guarantee is cashed in: three of the four

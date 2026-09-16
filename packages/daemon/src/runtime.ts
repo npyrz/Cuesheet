@@ -47,8 +47,13 @@ export function harnessRuntime(
   const registry = options.registry ?? defaultHarnessRegistry();
   return {
     registry,
-    executorFactory: ({ config, env }) =>
-      createHarnessExecutor({ registry, config, env }),
+    executorFactory: ({ config, env, capped }) =>
+      createHarnessExecutor({
+        registry,
+        config,
+        env,
+        ...(capped !== undefined && { capped }),
+      }),
     prober: (harness) => registry.probe(harness),
     // `undefined` for a harness nobody registered, which is the answer that
     // warns about nothing — and the one `ollama` gets, since
