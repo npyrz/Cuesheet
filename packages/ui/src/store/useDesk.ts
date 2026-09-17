@@ -32,6 +32,7 @@ import {
 import { bridge } from "../api/base.js";
 import { connectEvents } from "../api/socket.js";
 import { activeProject } from "../switcher.js";
+import { LOADING, READY } from "../surface.js";
 import { deskReducer, initialState, type DeskState } from "./reducer.js";
 
 /** How many runs the list pane holds. Plenty for a session; not unbounded. */
@@ -62,6 +63,18 @@ const USAGE_POLL_MS = 30_000;
 export type ProjectState =
   | { status: "loading" }
   | { status: "none" }
+  /**
+   * The daemon could not be asked — Step 44.
+   *
+   * This used to be folded back into `loading`, on the argument that a daemon
+   * which is not up yet is not a first-run install and the socket's reconnect
+   * is what recovers. Half of that is right: it is certainly not "no
+   * projects". The other half is not true at this point in the app's life —
+   * the socket only attaches once a project is open, so with none open there
+   * is nothing reconnecting, and "Looking for your projects…" is a sentence
+   * the screen will go on saying until it is reloaded.
+   */
+  | { status: "failed"; error: string }
   | { status: "open"; project: ListedProject };
 
 export interface DeskApi {
@@ -90,6 +103,17 @@ export interface DeskApi {
   create(draft: NewStation): Promise<void>;
   diff(runId: RunId): Promise<string | null>;
   dismissError(): void;
+  /** Ask the daemon for the project list again. See {@link ProjectState}. */
+  retry(): void;
+  /**
+   * Read the open project again — the run list, the Stations, the log.
+   *
+   * What the **try again** button on a failed surface does. The socket is not
+   * touched: a resync that failed because one fetch threw does not imply a
+   * dead connection, and tearing down a live socket to recover from an HTTP
+   * error would drop the events arriving over it.
+   */
+  reload(): void;
 }
 
 export function useDesk(): DeskApi {
@@ -97,6 +121,8 @@ export function useDesk(): DeskApi {
   const [project, setProject] = useState<ProjectState>({ status: "loading" });
   /** Everything the daemon knows, for the switcher. Refreshed on every switch. */
   const [projects, setProjects] = useState<ListedProject[]>([]);
+  /** Bumped by {@link DeskApi.retry}, which is the whole of its mechanism. */
+  const [attempt, setAttempt] = useState(0);
 
   /**
    * The project every call below is scoped to.
@@ -116,15 +142,25 @@ export function useDesk(): DeskApi {
           usable ? { status: "open", project: usable } : { status: "none" },
         );
       })
-      .catch(() => {
-        // A daemon that is not up yet is not "no projects" — the socket's
-        // reconnect is what recovers, and claiming a first-run state here
-        // would tell the user to pick a folder they have already picked.
-        if (!cancelled) setProject({ status: "loading" });
+      .catch((cause: unknown) => {
+        // Not "no projects": claiming a first-run state here would tell
+        // somebody to pick a folder they have already picked. But not
+        // "loading" either — nothing is loading, and the launch surface now
+        // has a state that says so and a button that tries again.
+        if (!cancelled)
+          setProject({
+            status: "failed",
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
       });
     return () => {
       cancelled = true;
     };
+  }, [attempt]);
+
+  const retry = useCallback(() => {
+    setProject({ status: "loading" });
+    setAttempt((n) => n + 1);
   }, []);
 
   const projectId = project.status === "open" ? project.project.id : null;
@@ -227,6 +263,12 @@ export function useDesk(): DeskApi {
         dispatch({ type: "snapshot", runs });
         dispatch({ type: "stations", stations });
         dispatch({ type: "error", message: null });
+        // Both fetches landed, so an empty list is now a fact about the
+        // project rather than a gap in what this client knows. Step 44: that
+        // is the difference between "No runs yet." and "Reading this
+        // project's runs…", and until this dispatch existed the surfaces
+        // could not tell them apart.
+        dispatch({ type: "load", load: READY });
 
         // 3b. Fetch the log for whichever run is now selected.
         //
@@ -250,7 +292,19 @@ export function useDesk(): DeskApi {
       } catch (error) {
         // A failure belonging to a project the Desk has already left is not
         // one to show over the project it is on now.
-        if (current()) fail(error);
+        if (current()) {
+          fail(error);
+          // And the surfaces are told as well as the banner. The banner says
+          // something went wrong; this says the panes below it are empty
+          // because of it, rather than because the project is.
+          dispatch({
+            type: "load",
+            load: {
+              status: "failed",
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
       } finally {
         // 4. Flush what arrived during the fetch, in arrival order, on top of
         //    the snapshot. Events carry no id, so order is the only defense
@@ -555,6 +609,12 @@ export function useDesk(): DeskApi {
     dispatch({ type: "error", message: null });
   }, []);
 
+  const reload = useCallback(() => {
+    if (projectId === null) return;
+    dispatch({ type: "load", load: LOADING });
+    void resync(projectId);
+  }, [projectId, resync]);
+
   return useMemo(
     () => ({
       state,
@@ -571,6 +631,8 @@ export function useDesk(): DeskApi {
       create,
       diff,
       dismissError,
+      retry,
+      reload,
     }),
     [
       state,
@@ -587,6 +649,8 @@ export function useDesk(): DeskApi {
       create,
       diff,
       dismissError,
+      retry,
+      reload,
     ],
   );
 }

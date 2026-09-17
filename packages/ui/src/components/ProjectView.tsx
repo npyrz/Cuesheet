@@ -18,9 +18,15 @@
 import { useEffect, useState } from "react";
 import type { Ledger } from "@cuesheet/core";
 import { fetchLedger, type StationsResponse } from "../api/client.js";
-import { describePosture, type PermissionLine } from "../posture.js";
+import {
+  describePosture,
+  spendLabel,
+  type PermissionLine,
+} from "../posture.js";
 import { shortPath } from "../format.js";
 import { toCell } from "../ledger.js";
+import { COPY, describeSurface, LOADING, type Load } from "../surface.js";
+import { Notice } from "./Notice.js";
 
 export interface ProjectViewProps {
   projectId: string;
@@ -28,8 +34,11 @@ export interface ProjectViewProps {
   projectRoot: string;
   stations: StationsResponse | null;
   usage: Parameters<typeof describePosture>[1]["usage"];
+  /** How the read that produced `stations` went. See `../surface.ts`. */
+  load: Load;
   onAddStation: () => void;
   onOpenLedger: () => void;
+  onRetry: () => void;
 }
 
 export function ProjectView({
@@ -38,27 +47,33 @@ export function ProjectView({
   projectRoot,
   stations,
   usage,
+  load,
   onAddStation,
   onOpenLedger,
+  onRetry,
 }: ProjectViewProps): React.JSX.Element {
-  const ledger = useProjectLedger(projectId);
+  const [ledger, ledgerLoad] = useProjectLedger(projectId);
 
-  if (stations === null) {
-    return (
-      <main className="project-view">
-        <p className="hint">Reading this project’s configuration…</p>
-      </main>
-    );
-  }
+  const rows =
+    stations === null
+      ? []
+      : describePosture(stations.stations, {
+          limits: stations.limits,
+          usage,
+          ledger,
+        });
 
-  const rows = describePosture(stations.stations, {
-    limits: stations.limits,
-    usage,
-    ledger,
-  });
+  /*
+    All three of this surface's non-happy states, decided in one place rather
+    than by a null check. `stations === null` used to mean both "in flight"
+    and "the fetch threw", and this screen resolved that ambiguity by always
+    guessing the first — so a daemon that went down left it reading "Reading
+    this project's configuration…" for as long as anybody cared to wait.
+  */
+  const state = describeSurface(load, rows.length, COPY.stations);
 
   return (
-    <main className="project-view">
+    <main className="project-view" id="work" tabIndex={-1}>
       <header className="project-head">
         <div>
           <h1 className="project-title">{projectName}</h1>
@@ -73,24 +88,21 @@ export function ProjectView({
             redrawn here. Two surfaces for one number is how they drift.
           */}
           <button type="button" className="ghost" onClick={onOpenLedger}>
-            {ledgerLabel(ledger)}
+            {ledgerLabel(ledger, ledgerLoad)}
           </button>
         </div>
       </header>
 
-      <p className="project-source">
-        {stations.sourcePath === null
-          ? "No cuesheet.toml — these are the defaults."
-          : `Configured by ${shortPath(stations.sourcePath)}`}
-      </p>
+      {stations !== null && (
+        <p className="project-source">
+          {stations.sourcePath === null
+            ? "No cuesheet.toml — these are the defaults."
+            : `Configured by ${shortPath(stations.sourcePath)}`}
+        </p>
+      )}
 
-      {rows.length === 0 ? (
-        <div className="posture-empty">
-          <p>No Stations yet — nobody is on this project.</p>
-          <button type="button" className="primary" onClick={onAddStation}>
-            Add a Station
-          </button>
-        </div>
+      {state !== null ? (
+        <Notice state={state} onAction={onAddStation} onRetry={onRetry} />
       ) : (
         <ul className="posture">
           {rows.map((row) => (
@@ -123,10 +135,14 @@ export function ProjectView({
                     {row.cap.window} {row.cap.value}
                   </span>
                 )}
+                {/*
+                  Three reasons a row carries no money, and only one of them
+                  is "never run" — see `spendLabel`. The ledger is allowed to
+                  fail here without taking the permissions down with it, and
+                  this column is where that failure is admitted.
+                */}
                 <span className="posture-spend">
-                  {row.spend === null
-                    ? "never run"
-                    : `${row.spend.usd} · ${row.spend.tokens} · ${row.spend.runs}`}
+                  {spendLabel(row.spend, ledgerLoad)}
                 </span>
               </div>
 
@@ -170,8 +186,11 @@ export function ProjectView({
  * nothing to report". They are different sentences and only one of them is
  * true here.
  */
-function ledgerLabel(ledger: Ledger | null): string {
-  if (ledger === null) return "Open the ledger";
+function ledgerLabel(ledger: Ledger | null, load: Load): string {
+  if (ledger === null)
+    return load.status === "failed"
+      ? "The ledger could not be read — try again"
+      : "Open the ledger";
   if (ledger.totals.runs === 0) return "Nothing spent yet — open the ledger";
   const { usd } = toCell("total", ledger.totals);
   const runs = ledger.totals.runs;
@@ -221,19 +240,32 @@ function keptBy(line: PermissionLine): string {
  * screen, and a ledger that cannot be read must not take the permissions
  * with it, which are the part somebody came here for.
  */
-function useProjectLedger(projectId: string): Ledger | null {
+function useProjectLedger(projectId: string): [Ledger | null, Load] {
   const [ledger, setLedger] = useState<Ledger | null>(null);
+  const [load, setLoad] = useState<Load>(LOADING);
   useEffect(() => {
     let live = true;
     setLedger(null);
+    setLoad(LOADING);
     fetchLedger(projectId)
       .then((next) => {
-        if (live) setLedger(next);
+        if (!live) return;
+        setLedger(next);
+        setLoad({ status: "ready" });
       })
-      .catch(() => undefined);
+      .catch((cause: unknown) => {
+        // Still swallowed as far as the *screen* goes — but no longer as far
+        // as the spend column goes, which was rendering "never run" for every
+        // Station on the project and had no way to know better.
+        if (!live) return;
+        setLoad({
+          status: "failed",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      });
     return () => {
       live = false;
     };
   }, [projectId]);
-  return ledger;
+  return [ledger, load];
 }

@@ -17,13 +17,27 @@ import { useEffect, useRef, useState } from "react";
 import type { Run, RunEvent } from "@cuesheet/core";
 import { describeRun, runRowMark, type TimelineEntry } from "../runview.js";
 import { money, statusDot } from "../format.js";
+import { rove } from "../keys.js";
+import {
+  COPY,
+  describeSurface,
+  LOADING,
+  READY,
+  type Load,
+} from "../surface.js";
+import { Notice } from "./Notice.js";
 
 export interface RunSurfaceProps {
   runs: Run[];
   selected: Run | null;
   events: RunEvent[];
+  /** Whether this session has read the selected run's log. See the reducer. */
+  eventsLoaded: boolean;
+  /** How the read that produced `runs` went. See `../surface.ts`. */
+  load: Load;
   onSelect: (runId: string) => void;
   onStop: (runId: string) => void;
+  onRetry: () => void;
   loadDiff: (runId: string) => Promise<string | null>;
 }
 
@@ -31,14 +45,58 @@ export function RunSurface({
   runs,
   selected,
   events,
+  eventsLoaded,
+  load,
   onSelect,
   onStop,
+  onRetry,
   loadDiff,
 }: RunSurfaceProps): React.JSX.Element {
+  const list = useRef<HTMLUListElement>(null);
+  const state = describeSurface(load, runs.length, COPY.runs);
+
+  /**
+   * The arrows walk the list; the selection follows the focus.
+   *
+   * Fifty rows beside a pane means fifty Tab presses to get past something
+   * nobody was reading, which is what "operable from the keyboard" fails to
+   * mean if a list is only tabbable. Where an arrow key goes is decided in
+   * `../keys.ts`, where a test can reach it; what is here is the focus call.
+   */
+  const onListKey = (event: React.KeyboardEvent<HTMLUListElement>): void => {
+    const rows = [
+      ...(list.current?.querySelectorAll<HTMLButtonElement>(".run-row") ?? []),
+    ];
+    const next = rove(event.key, {
+      count: rows.length,
+      current: rows.indexOf(document.activeElement as HTMLButtonElement),
+    });
+    if (next === null) return;
+    // Only now, so Tab still leaves the list and the page still scrolls with
+    // the arrows when focus is anywhere else.
+    event.preventDefault();
+    const row = rows[next];
+    row?.focus();
+    const runId = row?.dataset["runId"];
+    // Selecting on focus rather than on Enter: the pane is what the list is
+    // for, and a highlight that shows nothing until you press again is two
+    // keystrokes pretending to be one.
+    if (runId !== undefined) onSelect(runId);
+  };
+
   return (
     <section className="runs">
-      <ul className="run-list" aria-label="Runs">
-        {runs.length === 0 && <li className="empty">No runs yet.</li>}
+      <ul
+        className="run-list"
+        aria-label="Runs"
+        ref={list}
+        onKeyDown={onListKey}
+      >
+        {state !== null && (
+          <li>
+            <Notice state={state} onRetry={onRetry} />
+          </li>
+        )}
         {runs.map((run) => {
           const mark = runRowMark(run);
           return (
@@ -46,7 +104,13 @@ export function RunSurface({
               <button
                 type="button"
                 className="run-row"
+                data-run-id={run.id}
                 aria-current={run.id === selected?.id}
+                // One stop for the whole list, then arrows inside it. A
+                // roving tabindex rather than fifty tab stops.
+                tabIndex={
+                  run.id === (selected?.id ?? runs[0]?.id) ? undefined : -1
+                }
                 onClick={() => onSelect(run.id)}
               >
                 <span className="prompt">
@@ -75,11 +139,22 @@ export function RunSurface({
 
       <div className="run-pane">
         {selected === null ? (
-          <p className="empty">Select a run.</p>
+          /*
+            Not one of the three: there are runs, the read succeeded, and this
+            pane is waiting on a *choice*. Calling it empty would blame the
+            project for something the cursor is responsible for. It borrows the
+            three states' presentation and none of their claims.
+          */
+          <div className="notice" data-kind="idle" role="status">
+            <p className="notice-title">
+              {runs.length === 0 ? "No run to show." : "Select a run."}
+            </p>
+          </div>
         ) : (
           <RunDetail
             run={selected}
             events={events}
+            eventsLoaded={eventsLoaded}
             onStop={onStop}
             loadDiff={loadDiff}
           />
@@ -92,11 +167,13 @@ export function RunSurface({
 function RunDetail({
   run,
   events,
+  eventsLoaded,
   onStop,
   loadDiff,
 }: {
   run: Run;
   events: RunEvent[];
+  eventsLoaded: boolean;
   onStop: (runId: string) => void;
   loadDiff: (runId: string) => Promise<string | null>;
 }): React.JSX.Element {
@@ -175,7 +252,11 @@ function RunDetail({
         </ul>
       )}
 
-      <Timeline entries={view.timeline} follow={view.running} />
+      <Timeline
+        entries={view.timeline}
+        follow={view.running}
+        load={eventsLoaded ? READY : LOADING}
+      />
       <Diff runId={run.id} load={loadDiff} />
     </>
   );
@@ -184,9 +265,11 @@ function RunDetail({
 function Timeline({
   entries,
   follow,
+  load,
 }: {
   entries: TimelineEntry[];
   follow: boolean;
+  load: Load;
 }): React.JSX.Element {
   const list = useRef<HTMLUListElement>(null);
 
@@ -197,8 +280,12 @@ function Timeline({
     list.current.scrollTop = list.current.scrollHeight;
   }, [entries.length, follow]);
 
-  if (entries.length === 0) {
-    return <p className="empty">No events.</p>;
+  const state = describeSurface(load, entries.length, COPY.events);
+  if (state !== null) {
+    // "No events." was said for both a log that has not been fetched and a
+    // run that has genuinely not spoken yet. They are different facts, and
+    // only one of them is about the run.
+    return <Notice state={state} />;
   }
 
   return (

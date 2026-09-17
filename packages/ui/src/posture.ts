@@ -38,6 +38,7 @@ import type {
 } from "@cuesheet/core";
 import type { StationView } from "./api/client.js";
 import { describeWindow, type UsageTone, type WindowRow } from "./limits.js";
+import type { Load } from "./surface.js";
 import { money, shortPath, tokens } from "./format.js";
 
 /**
@@ -73,6 +74,24 @@ export interface StationPosture {
   spend: SpendSummary | null;
   /** Its harness's nearest cap, or `null` when that harness reported nothing. */
   cap: WindowRow | null;
+}
+
+/**
+ * What a Station's spend column says when there is no figure in it.
+ *
+ * Three different reasons a row has no money on it, and the screen was
+ * spelling all three `never run` — Step 44. Two of those are false and one of
+ * them is expensively false: a ledger fetch that failed left every Station on
+ * the project reading "never run", on a screen whose whole purpose is being
+ * believed. The ledger is deliberately allowed to fail without taking the
+ * permissions down with it (see `ProjectView`), and the price of that is
+ * saying so in the column it emptied.
+ */
+export function spendLabel(spend: SpendSummary | null, ledger: Load): string {
+  if (spend !== null) return `${spend.usd} · ${spend.tokens} · ${spend.runs}`;
+  if (ledger.status === "failed") return "spend unknown";
+  if (ledger.status === "loading") return "…";
+  return "never run";
 }
 
 export interface SpendSummary {

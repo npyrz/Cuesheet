@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HarnessUsage, Ledger, Limits, Station } from "@cuesheet/core";
 import type { StationEnforcement, StationView } from "./api/client.js";
-import { describePosture } from "./posture.js";
+import { describePosture, spendLabel } from "./posture.js";
 
 const LIMITS: Limits = { warn_at: 0.8, block_at: 0.95, when_capped: {} };
 const NOW = Date.parse("2026-09-16T12:00:00Z");
@@ -33,6 +33,32 @@ const posture = (
     ledger?: Ledger;
   } = {},
 ) => describePosture(views, { limits: LIMITS, now, ...extra });
+
+describe("spendLabel", () => {
+  const spent = { usd: "$1.24", tokens: "12.3k", runs: "3 runs" };
+
+  it("renders a figure when there is one", () => {
+    expect(spendLabel(spent, { status: "ready" })).toBe(
+      "$1.24 · 12.3k · 3 runs",
+    );
+  });
+
+  it("says a Station has never run only once it knows that", () => {
+    expect(spendLabel(null, { status: "ready" })).toBe("never run");
+  });
+
+  it("does not blame the Station for a ledger that could not be read", () => {
+    // A ledger fetch that failed used to leave every Station on the project
+    // reading "never run" — on the screen whose entire job is being believed.
+    expect(spendLabel(null, { status: "failed", error: "boom" })).toBe(
+      "spend unknown",
+    );
+  });
+
+  it("says nothing at all while the ledger is still arriving", () => {
+    expect(spendLabel(null, { status: "loading" })).toBe("…");
+  });
+});
 
 describe("what a Station may do", () => {
   it("says a worker's writes are refused, and by whom", () => {

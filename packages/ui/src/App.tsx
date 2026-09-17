@@ -15,9 +15,16 @@ import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProjectView } from "./components/ProjectView.js";
 import { RunSurface } from "./components/RunSurface.js";
 import { StationTile } from "./components/StationTile.js";
+import { Notice } from "./components/Notice.js";
 import { bridge } from "./api/base.js";
-import { isPaletteChord, modifierKey } from "./format.js";
-import { isShowing, selectedEvents, selectedRun } from "./store/reducer.js";
+import { isPaletteChord, shortcutHint } from "./format.js";
+import { COPY, describeSurface, LOADING, READY } from "./surface.js";
+import {
+  isShowing,
+  selectedEvents,
+  selectedEventsLoaded,
+  selectedRun,
+} from "./store/reducer.js";
 import { describeSwitcher, switchCommands } from "./switcher.js";
 import { useDesk } from "./store/useDesk.js";
 
@@ -44,6 +51,7 @@ export function App(): React.JSX.Element {
 
   const run = selectedRun(state);
   const events = selectedEvents(state);
+  const eventsLoaded = selectedEventsLoaded(state);
   const stations = state.stations?.stations ?? [];
   const warnings = state.stations?.warnings ?? [];
   const activeId =
@@ -57,6 +65,8 @@ export function App(): React.JSX.Element {
    * new one's name in that paint, and this is where the question gets asked.
    */
   const showing = isShowing(state, activeId);
+  /** The tile grid's own three states — Step 44. See `surface.ts`. */
+  const tiles = describeSurface(state.load, stations.length, COPY.stations);
   const rows = useMemo(
     () => describeSwitcher(desk.projects, activeId),
     [desk.projects, activeId],
@@ -152,10 +162,18 @@ export function App(): React.JSX.Element {
   if (desk.project.status !== "open") {
     return (
       <LaunchSurface
-        projects={desk.project.status === "loading" ? null : desk.projects}
+        projects={desk.projects}
+        load={
+          desk.project.status === "loading"
+            ? LOADING
+            : desk.project.status === "failed"
+              ? { status: "failed", error: desk.project.error }
+              : READY
+        }
         chooseDirectory={chooseDirectory}
         onOpen={(root) => void desk.openFolder(root)}
         onForget={(id) => void desk.forget(id)}
+        onRetry={desk.retry}
         error={state.error}
       />
     );
@@ -163,6 +181,16 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="desk">
+      {/*
+        The first tab stop, and the reason the rest of the tab order is
+        bearable. The bar above holds a switcher, two view tabs and two
+        buttons; without this, reaching the run list by keyboard means going
+        through all of them on every page load. Visible only when focused,
+        which is the one case where hiding a control is the correct answer.
+      */}
+      <a className="skip" href="#work">
+        Skip to the work
+      </a>
       <header className="topbar">
         <span className="brand">CUESHEET</span>
         {/*
@@ -216,12 +244,19 @@ export function App(): React.JSX.Element {
         <button type="button" onClick={() => setAdding(true)}>
           add a station
         </button>
+        {/*
+          The hint is the label, so it needs a name of its own — a button whose
+          entire content is "⌘K" announces itself as "⌘K" and says nothing
+          about what it opens.
+        */}
         <button
           type="button"
           className="ghost"
+          aria-label="Open the command palette"
+          aria-keyshortcuts="Meta+K Control+K"
           onClick={() => setPalette(true)}
         >
-          <span className="hint">{modifierKey()}K</span>
+          <span className="hint">{shortcutHint("K")}</span>
         </button>
       </header>
 
@@ -250,8 +285,10 @@ export function App(): React.JSX.Element {
             projectRoot={desk.project.project.root}
             stations={state.stations}
             usage={state.usage}
+            load={state.load}
             onAddStation={() => setAdding(true)}
             onOpenLedger={() => setLedger(true)}
+            onRetry={desk.reload}
           />
         ) : (
           <>
@@ -274,7 +311,7 @@ export function App(): React.JSX.Element {
               <LimitsStrip usage={state.usage} limits={state.stations.limits} />
             )}
 
-            <main>
+            <main id="work" tabIndex={-1}>
               {state.standbys.length > 0 && (
                 <section>
                   <h2 className="section-title">Standby</h2>
@@ -302,31 +339,39 @@ export function App(): React.JSX.Element {
 
               <section>
                 <h2 className="section-title">Stations</h2>
-                <div className="tiles">
-                  {stations.map(({ station, probe }) => (
-                    <StationTile
-                      key={station.id}
-                      station={station}
-                      probe={probe}
-                      {...(state.stationActivity[station.id] && {
-                        activity: state.stationActivity[station.id],
-                      })}
-                      onOpenRun={select}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    className="tile add"
-                    onClick={() => setAdding(true)}
-                  >
-                    + add a station
-                  </button>
-                </div>
-                {state.stations && stations.length === 0 && (
-                  <p className="hint">
-                    No Stations yet. Add one — nothing here requires you to open
-                    the TOML.
-                  </p>
+                {/*
+                  The grid draws only once there is something in it. A lone
+                  "+ add a station" tile beside a sentence saying the
+                  configuration could not be read is an invitation to do the
+                  one thing that will not work.
+                */}
+                {tiles !== null ? (
+                  <Notice
+                    state={tiles}
+                    onAction={() => setAdding(true)}
+                    onRetry={desk.reload}
+                  />
+                ) : (
+                  <div className="tiles">
+                    {stations.map(({ station, probe }) => (
+                      <StationTile
+                        key={station.id}
+                        station={station}
+                        probe={probe}
+                        {...(state.stationActivity[station.id] && {
+                          activity: state.stationActivity[station.id],
+                        })}
+                        onOpenRun={select}
+                      />
+                    ))}
+                    <button
+                      type="button"
+                      className="tile add"
+                      onClick={() => setAdding(true)}
+                    >
+                      + add a station
+                    </button>
+                  </div>
                 )}
               </section>
 
@@ -336,8 +381,11 @@ export function App(): React.JSX.Element {
                   runs={state.runs}
                   selected={run}
                   events={events}
+                  eventsLoaded={eventsLoaded}
+                  load={state.load}
                   onSelect={select}
                   onStop={(runId) => void desk.stop(runId)}
+                  onRetry={desk.reload}
                   loadDiff={desk.diff}
                 />
               </section>
@@ -345,13 +393,18 @@ export function App(): React.JSX.Element {
           </>
         )
       ) : (
-        <main>
+        <main id="work" tabIndex={-1}>
           {/*
             Not a spinner and not an empty Desk: naming the project says which
             of the two things that could be happening is happening. The
             switcher above is still live, so a mistaken switch costs one click.
           */}
-          <p className="hint switching">Opening {desk.project.project.name}…</p>
+          <div className="notice" data-kind="loading" role="status">
+            <p className="notice-title">
+              <span className="notice-spin" aria-hidden="true" />
+              Opening {desk.project.project.name}…
+            </p>
+          </div>
         </main>
       )}
 

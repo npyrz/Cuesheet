@@ -21,6 +21,9 @@ import type { HarnessProbe, Role } from "@cuesheet/core";
 import { ROLES } from "@cuesheet/core/types";
 import { bridge } from "../api/base.js";
 import type { NewStation, StationsResponse } from "../api/client.js";
+import { useModal } from "../hooks/useModal.js";
+import { COPY, describeSurface, LOADING, READY } from "../surface.js";
+import { Notice } from "./Notice.js";
 
 export interface AddStationPanelProps {
   stations: StationsResponse | null;
@@ -47,6 +50,13 @@ export function AddStationPanel({
   const [deny, setDeny] = useState(".git/**");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modal = useModal(onCancel);
+  /** The harness list's own three states — Step 44. */
+  const probe = describeSurface(
+    stations === null ? LOADING : READY,
+    harnesses.length,
+    COPY.harnesses,
+  );
 
   const taken = useMemo(
     () =>
@@ -97,13 +107,11 @@ export function AddStationPanel({
       }}
     >
       <div
+        {...modal}
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-label="Add a Station"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onCancel();
-        }}
       >
         <header>Add a Station</header>
         <div className="body">
@@ -114,9 +122,13 @@ export function AddStationPanel({
               role="group"
               aria-labelledby="harness-label"
             >
-              {harnesses.length === 0 && (
-                <p className="note">Probing harnesses…</p>
-              )}
+              {/*
+                The probe has its own three states here rather than one note.
+                "Probing harnesses…" was shown for a list that had failed to
+                load as well as for one still loading — on the panel whose
+                entire job is choosing from that list.
+              */}
+              {probe !== null && <Notice state={probe} />}
               {harnesses.map((probe) => (
                 <button
                   key={probe.harness}

@@ -31,6 +31,7 @@ import type {
 } from "@cuesheet/core";
 import { isTerminalStatus } from "@cuesheet/core/types";
 import type { RunDetail, StationsResponse } from "../api/client.js";
+import { LOADING, type Load } from "../surface.js";
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
@@ -91,6 +92,21 @@ export interface DeskState {
   standbys: Standby[];
   /** Last thing that went wrong, shown in the header. */
   error: string | null;
+  /**
+   * How the last read of this project went — Step 44.
+   *
+   * Separate from `error`, which is the banner and holds the last thing that
+   * went wrong *anywhere*, a failed `stop` included. This is narrower and is
+   * about one question: does what the surfaces are drawing rest on an answer
+   * from the daemon, or on the absence of one.
+   *
+   * Without it, `runs: []` and `stations: null` each mean two things at once
+   * — in flight, or fetched and failed — and the surfaces were resolving that
+   * ambiguity by guessing. They guessed "in flight" for stations, which never
+   * resolves, and "empty" for runs, which is a claim about the project made
+   * before the project was asked. See `surface.ts`.
+   */
+  load: Load;
 }
 
 export const initialState: DeskState = {
@@ -104,6 +120,7 @@ export const initialState: DeskState = {
   stationActivity: {},
   standbys: [],
   error: null,
+  load: LOADING,
 };
 
 export type DeskAction =
@@ -137,6 +154,14 @@ export type DeskAction =
    * is here to close.
    */
   | { type: "project"; projectId: string | null }
+  /**
+   * The resync's own outcome, which is not the same fact as `error`.
+   *
+   * Dispatched only by the resync, never by a command: a `stop` that fails
+   * belongs in the banner and says nothing at all about whether the run list
+   * on screen is trustworthy.
+   */
+  | { type: "load"; load: Load }
   | { type: "error"; message: string | null };
 
 const ZERO_COST: Cost = { tokensIn: 0, tokensOut: 0 };
@@ -145,6 +170,9 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
   switch (action.type) {
     case "connection":
       return { ...state, connection: action.status };
+
+    case "load":
+      return { ...state, load: action.load };
 
     case "stations":
       return { ...state, stations: action.stations };
@@ -605,6 +633,20 @@ export function selectedRun(state: DeskState): Run | null {
 export function selectedEvents(state: DeskState): RunEvent[] {
   if (state.selectedRunId === null) return [];
   return state.events[state.selectedRunId] ?? [];
+}
+
+/**
+ * Whether this session has actually read the selected run's log.
+ *
+ * `[]` and "never asked" are different facts and {@link selectedEvents}
+ * flattens them, on purpose — a caller mapping over events does not care. A
+ * caller *explaining an empty pane* cares a great deal: "Nothing on the wire
+ * yet" is true of a run that has just started and false of one whose log has
+ * not been fetched, and the pane was saying it either way. Step 44.
+ */
+export function selectedEventsLoaded(state: DeskState): boolean {
+  if (state.selectedRunId === null) return false;
+  return state.events[state.selectedRunId] !== undefined;
 }
 
 /** The run the tiles are animating, if any. */

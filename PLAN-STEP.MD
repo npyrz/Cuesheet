@@ -60,7 +60,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
-| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–43 done** — launch surface, switcher, a project view that says what each seat may do, and a run surface that leads with the blocking finding rather than logging it |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–44 done** — launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, and one design system under all of it: two token layers, three real states per surface, and no screen that reports a fact it does not have |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
@@ -1299,15 +1299,80 @@ An isolated daemon on a scratch `homedir`, two mock vendors with different `vend
 
 **Filter chips over `RUN_EVENT_TYPES`.** The constant's own comment offers them, and with `cost` now filtered out of the stream a chip list would be the natural next thing. It is not in the done-when, nothing in the app enumerates event kinds for display yet, and Step 44 owns the surfaces' states and controls. Named here so the next person finds a decision rather than an oversight.
 
-### Step 44 — A design system, once
+### Step 44 — A design system, once ✅
 
 Tokens for colour, type and spacing. Dark mode. A real empty state, error state and loading state for each surface. Keyboard navigation and focus order throughout, and the `⌘`/`Ctrl` hint correctness the gotcha checklist already tracks.
 
-`styles.css` is 697 lines of hand-written CSS that grew a screen at a time. Consolidating it is what stops the rebuild from becoming the next thing that needs rebuilding.
+`styles.css` was 697 lines of hand-written CSS that grew a screen at a time — 1,440 by the time this step opened it. Consolidating it is what stops the rebuild from becoming the next thing that needs rebuilding.
 
-**Done when:** every surface has all three non-happy states, the whole app is operable from the keyboard, and dark mode is not a second set of hard-coded hexes.
+**Done when:** every surface has all three non-happy states ✅, the whole app is operable from the keyboard — **not ticked as written**; built and unit-tested, and nothing has been *pressed*, see below — and dark mode is not a second set of hard-coded hexes ✅.
 
 **This step expires a tick.** The gotcha checklist records `⌘` vs `Ctrl` as exercised — *photographed* reading `Ctrl1K` — and that photograph is of the Desk this phase replaces. A rebuilt UI has been exercised on nothing. The row is re-opened below rather than being quietly inherited, because a tick that was true when written and expires without the document noticing is the exact failure Phase 7 spent a retrospective on.
+
+> **Done, with the keyboard clause left open.** `surface.ts`, `keys.ts`, `hooks/useModal.ts`, `components/Notice.tsx`, a rebuilt token layer in `styles.css`, and `shortcutHint` replacing `modifierKey`. 894 tests pass, up from 801 — including the first tests in this repo that *render* a component.
+>
+> The open clause is the keyboard one and it is open for an environmental reason rather than an unfinished one: the shell will not launch here, so nothing has been pressed. Stated below rather than rounded up, which is the pattern Steps 30 and 43 both set.
+
+#### The two layers, which is the whole of the third clause
+
+The old sheet declared every semantic token twice — `--muted: #8b95a3` under dark, `--muted: #5d6875` under light — with nothing relating the two sides. That is the "second set of hard-coded hexes" the done-when names, and it had already cost something: light `--dim` was *lighter* than light `--muted`, while dark `--dim` was *darker* than dark `--muted`. Both correct, and correct by accident.
+
+There are two layers now. **Ramps** hold the only literal colours in the file, ordered light to dark and meaning nothing on their own. **Roles** — `--bg`, `--text`, `--bad` — say what a colour is *for*, and every one of them is a `var()` onto a ramp step, in both themes. A theme is then a mapping and reads as one: dark is `--muted: var(--n-6); --dim: var(--n-7)` and light is those same two steps the other way round, which is the accident written down. The light block in the built CSS now contains **no hex at all**, which is the clause made checkable rather than asserted:
+
+```
+prefers-color-scheme:light){:root{--bg:var(--n-1);--panel:var(--n-0);--panel-2:var(--n-2);
+--line:var(--n-4);--text:var(--n-11);--muted:var(--n-7);--dim:var(--n-6);…}
+```
+
+Type, space, radius, shadow and depth got the same treatment — 105 declarations swept onto the scales. Two of those earned themselves immediately: the sheet had 10px, 12px and 14px paddings nobody had chosen, and the `z-index` values — a menu over its own scrim over a sticky topbar — were three numbers 1,200 lines apart that only mean anything relative to each other.
+
+#### Two facts the state was carrying as one, and two surfaces that guessed
+
+This is the part that was a bug rather than a tidy-up, and it is the same bug twice, in opposite directions.
+
+`stations === null` meant both "the fetch is in flight" and "the fetch threw". The project view resolved that by always assuming the first, so a daemon that went down left it reading *"Reading this project's configuration…"* — a progress sentence that never resolves, promising all the while that it will. And `runs: []` is the initial state, so the run list announced *"No runs yet."* before the first request had been answered: a claim about a project, made before the project was asked.
+
+A loading state that is really an error and an empty state that is really a loading state are the same defect — **a surface reporting a fact it does not have** — so the fix is one function, `describeSurface`, and the reducer now carries a `load` saying how the last read went. Three rules, each a test:
+
+- **Loading beats empty.** A zero you have not finished counting is not a zero.
+- **An error beats loading**, because the error is the one that never resolves on its own.
+- **Neither beats content.** A refresh that fails over a list already on screen leaves the list there. What is drawn is still true — it is merely a minute old — and blanking it to announce the failure trades something true for something loud. That is the banner's job, and the shell already has one.
+
+The launch surface got the same treatment and needed it most. A daemon that could not be reached was folded into "loading", on the argument that the socket's reconnect recovers. Half right: the socket does not attach until a project is open, so on the *first* screen of the app there was nothing coming to fix it.
+
+#### A third surface was lying about money, and the ledger is why
+
+`ProjectView` deliberately swallows a failed ledger fetch — spend is one column, and a ledger that cannot be read must not take the permissions down with it, which are what somebody came to that screen for. That decision is right, and its price had never been paid: with the ledger gone, every Station on the project read **never run**. On the screen whose entire job is being believed.
+
+`spendLabel` now separates the three reasons a row carries no figure — never run, not known yet, not readable — because only one of them is about the Station.
+
+#### What "operable from the keyboard" turned out to mean
+
+Four things were missing, and only the first is the one people think of.
+
+- **The modals were open at the back.** All three listened for Escape on the dialog element; only the palette ever focused anything inside one, so in the other two the key had nowhere to land. None trapped Tab — `aria-modal` tells a screen reader the rest of the page is inert and does nothing whatever to the tab order — so the third press out of Add-a-Station reached the **stop** button of a live run behind the scrim: reachable, invisible, and one Enter away. `useModal` focuses in, traps, and hands focus back.
+- **The lists were tabbable and not navigable.** A run list of fifty rows beside the pane it fills is fifty presses to get past something nobody was reading. Arrows now walk the run list, the switcher menu and the palette, with a roving tabindex so a list is one tab stop rather than fifty. In the run list the *selection follows the focus*, because the pane is what the list is for and a highlight that shows nothing until you press again is two keystrokes pretending to be one.
+- **There was no way past the top bar.** A skip link, which is the first tab stop and the reason the rest of the order is bearable.
+- **The states had to announce themselves.** An error is `role="alert"`; the other two are a polite `role="status"`. These replace each other while somebody is looking elsewhere, and getting that pair the wrong way round is how a UI becomes unusable with assistive tech on while looking perfectly fine.
+
+#### Why the keyboard clause is not ticked
+
+**Nothing has been pressed.** The Electron shell will not launch in the environment this step was written in — the GUI process exits immediately, every time, before `whenReady` — so the app has not been driven by a keyboard on this platform or any other. What exists is the index arithmetic in `keys.ts` under test at both ends and both wrap-arounds, the DOM mechanics wired through `useModal`, and every surface rendered and read.
+
+That is more than *handled in code* and less than *exercised*. It is the distinction the gotcha checklist below has enforced since Phase 5, and it applies to a done-when clause exactly as it applies to a checklist row. What closes it is somebody Tab-ing out of Add-a-Station and finding the scrim rather than the **stop** button.
+
+#### The surfaces were rendered, which is a narrow and deliberate exception
+
+`components/states.test.ts` is the first test in this repo that renders a component, and it exists because the done-when is a claim about *surfaces* rather than about a function. A test of `describeSurface` proves the sentences exist; it cannot prove anybody wired them up, and the failure being guarded against is exactly the screen that keeps its old null check and never asks. So each surface is rendered in all three states and read: the loading state never carries the empty state's words, the error state keeps the daemon's own message and offers to try again, and the project's name and root stay on screen while its configuration is unreadable — because the name is how somebody knows which daemon to go and look at.
+
+It is `renderToStaticMarkup` in node, so no effects run. That is the right tool for this question and a poor one for most others, which is why it stays narrow: what it asserts is the *first paint*, and the first paint is the paint in question.
+
+#### Two things this step deliberately did not build
+
+- **A theme toggle.** Dark mode is a mapping now rather than a palette, so a `data-theme` override would be four lines. It is not in the done-when, the OS is the right authority for a control surface, and a switch nobody asked for is a preference to store, to migrate, and to disagree with the system about.
+- **The filter chips over `RUN_EVENT_TYPES`** that Step 43 handed forward. Named again rather than silently dropped: this step owns the surfaces' states and controls, and chips are a control. They lost to the three states and the keyboard, which are what the done-when names. The next person finds a decision rather than an oversight — twice now.
+
+**And the limits strip still renders nothing when it has nothing**, which stays deliberate and leaves it the one surface without all three states. Its own header says why: three of `UsageWindow`'s four variants carry no measurement, and a frame sitting at zero for a vendor that reported a *status* is the authoritative-looking screen Phase 10 exists to prevent. An empty state there would be furniture telling an operator less than the space it occupies.
 
 ### Step 45 — First run
 
@@ -1580,7 +1645,7 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 - [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
 - [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists). The glyph **has** now been looked at, by decoding the file and rendering it at 8× (see Step 24): it is sound from 24px up and muddy at 16, where the fader tracks collapse into grey. What is left is a design decision about 16px proportions, not an observation — kept unticked because the decision is unmade
 - [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide
-- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, and **re-opened by Step 44**: that photograph is of the Desk Phase 11 replaces, and ticked here means exercised on a Windows machine, not handled in code. Nothing is known to be broken; it is simply no longer known to be right. Step 41 rebuilt the topbar this hint sits in — it now wraps at phone width and carries a switcher — without touching where the hint comes from: still `modifierKey()`, still the shell's `process.platform`. That keeps the row un-ticked rather than making it worse, and it is now a rebuilt bar that has never been seen on Windows rather than a rebuilt page
+- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, re-opened by Step 44, and **the photograph turns out to have been of the bug**. Ticked here means exercised on a Windows machine rather than handled in code, so the row stays open — but Step 44 found the defect by reading the hint rather than by seeing it, which is the argument for re-opening a row made concrete. `modifierKey()` returned `⌘` or `Ctrl` correctly, and every call site built `{modifierKey()}K` out of it: `⌘K` on a Mac, which is right because macOS sets its shortcuts solid, and `CtrlK` everywhere else, which is not a shortcut anybody writes. `shortcutHint("K")` now returns the whole shortcut, `Ctrl+K`, off this machine's own `process.platform` — which the preload has exposed since Step 21 and which nothing had ever read, the hint having been inferred from a deprecated `navigator.platform` all along. What is left is the photograph: the shell will not launch in the environment Step 44 was written in, so the corrected hint has been tested on a Windows machine and not yet *seen* on one
 - [x] Paths with spaces in packaged builds — installed to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` and launched
 
 ---

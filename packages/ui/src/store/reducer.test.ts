@@ -6,6 +6,7 @@ import {
   initialState,
   isShowing,
   selectedEvents,
+  selectedEventsLoaded,
   selectedRun,
   type DeskAction,
   type DeskState,
@@ -746,5 +747,65 @@ describe("switching projects", () => {
     });
     expect(isShowing(switching, "beta")).toBe(true);
     expect(switching.runs).toEqual([]);
+  });
+});
+
+/**
+ * Step 44. Two facts the state was carrying as one, and two surfaces that
+ * were guessing which they had.
+ */
+describe("what the surfaces are allowed to claim", () => {
+  it("starts out reading rather than empty", () => {
+    // `runs: []` is the initial state, so a list keyed on length announces
+    // "No runs yet." before the first request has been answered.
+    expect(initialState.load).toEqual({ status: "loading" });
+  });
+
+  it("is reading again the moment a different project is chosen", () => {
+    const ready = deskReducer(initialState, {
+      type: "load",
+      load: { status: "ready" },
+    });
+    const switched = deskReducer(ready, {
+      type: "project",
+      projectId: "beta",
+    });
+    // Otherwise the new project inherits the old one's "ready" and its empty
+    // run list reads as a fact about a project nobody has asked about yet.
+    expect(switched.load).toEqual({ status: "loading" });
+  });
+
+  it("carries the daemon's own words on a failure", () => {
+    const failed = deskReducer(initialState, {
+      type: "load",
+      load: { status: "failed", error: "connect ECONNREFUSED" },
+    });
+    expect(failed.load).toEqual({
+      status: "failed",
+      error: "connect ECONNREFUSED",
+    });
+  });
+
+  it("separates a log it has read from one it has not", () => {
+    const withRun = deskReducer(initialState, {
+      type: "snapshot",
+      runs: [run()],
+    });
+    // Selected, and its events never fetched: `selectedEvents` flattens that
+    // to `[]`, which is the same shape as a run that has genuinely said
+    // nothing. Only one of those is a fact about the run.
+    expect(selectedEvents(withRun)).toEqual([]);
+    expect(selectedEventsLoaded(withRun)).toBe(false);
+
+    const fetched = deskReducer(withRun, {
+      type: "run-detail",
+      detail: { run: run(), events: [], hasDiff: false },
+    });
+    expect(selectedEvents(fetched)).toEqual([]);
+    expect(selectedEventsLoaded(fetched)).toBe(true);
+  });
+
+  it("claims nothing about a log when no run is selected", () => {
+    expect(selectedEventsLoaded(initialState)).toBe(false);
   });
 });

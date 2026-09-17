@@ -18,6 +18,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { SwitcherRow } from "../switcher.js";
+import { isDismiss, rove } from "../keys.js";
 
 export interface ProjectSwitcherProps {
   rows: SwitcherRow[];
@@ -65,6 +66,34 @@ export function ProjectSwitcher({
     trigger.current?.focus();
   };
 
+  /**
+   * The arrows walk the menu — the behaviour `role="menu"` promises.
+   *
+   * It was Tab-only, which is the gap that makes a menu technically operable
+   * and practically not: the rows a menu is made of are the rows a keyboard
+   * user wants to step through, and Tab steps through the whole document.
+   * Disabled rows — the project you are on, a folder that has moved — are not
+   * in the list, because focus cannot land on them.
+   */
+  const onMenuKey = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (isDismiss(event.key)) {
+      dismiss();
+      return;
+    }
+    const items = [
+      ...(menu.current?.querySelectorAll<HTMLButtonElement>(
+        "button:not(:disabled)",
+      ) ?? []),
+    ];
+    const next = rove(event.key, {
+      count: items.length,
+      current: items.indexOf(document.activeElement as HTMLButtonElement),
+    });
+    if (next === null) return;
+    event.preventDefault();
+    items[next]?.focus();
+  };
+
   return (
     <div className="switcher">
       <button
@@ -75,6 +104,13 @@ export function ProjectSwitcher({
         aria-expanded={open}
         title={activeRoot}
         onClick={() => setOpen((was) => !was)}
+        onKeyDown={(event) => {
+          // Down opens it, which is what a menu button does everywhere else.
+          if (event.key === "ArrowDown" && !open) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
       >
         <span className="switcher-name">{activeName}</span>
         <span className="switcher-caret" aria-hidden="true">
@@ -99,9 +135,7 @@ export function ProjectSwitcher({
             className="switcher-menu"
             role="menu"
             aria-label="Projects"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") dismiss();
-            }}
+            onKeyDown={onMenuKey}
           >
             {rows.map((row) => (
               <button

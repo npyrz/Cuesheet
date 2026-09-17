@@ -10,10 +10,19 @@
  * Thin, like `LimitsStrip`: every decision about what a number reads as lives
  * in `../ledger.ts`, which tests can reach.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Ledger } from "@cuesheet/core";
 import { fetchLedger } from "../api/client.js";
+import { useModal } from "../hooks/useModal.js";
 import { toCell, unattributedNote, type LedgerCell } from "../ledger.js";
+import {
+  COPY,
+  describeSurface,
+  LOADING,
+  READY,
+  type Load,
+} from "../surface.js";
+import { Notice } from "./Notice.js";
 
 export interface LedgerPanelProps {
   projectId: string;
@@ -25,26 +34,41 @@ export function LedgerPanel({
   onClose,
 }: LedgerPanelProps): React.JSX.Element {
   const [ledger, setLedger] = useState<Ledger | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [load, setLoad] = useState<Load>(LOADING);
+  const [attempt, setAttempt] = useState(0);
+  const modal = useModal(onClose);
 
   // Fetched when opened rather than polled: it reads every run record in the
   // project, and nobody needs that on a timer behind a closed panel.
   useEffect(() => {
     let live = true;
+    setLoad(LOADING);
     fetchLedger(projectId)
       .then((next) => {
-        if (live) setLedger(next);
+        if (!live) return;
+        setLedger(next);
+        setLoad(READY);
       })
       .catch((cause: unknown) => {
-        if (live)
-          setError(cause instanceof Error ? cause.message : String(cause));
+        if (!live) return;
+        setLoad({
+          status: "failed",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
       });
     return () => {
       live = false;
     };
-  }, [projectId]);
+  }, [projectId, attempt]);
 
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const note = ledger === null ? null : unattributedNote(ledger);
+  /*
+    Counted on runs rather than on rows, because `byDay` is empty for exactly
+    the same reason the whole ledger is: nothing has run. A ledger with three
+    empty tables in it is a worse way of saying so than a sentence.
+  */
+  const state = describeSurface(load, ledger?.totals.runs ?? 0, COPY.ledger);
 
   // Scrim, escape and click-outside, matching `AddStationPanel` exactly. Two
   // panels in one app that dismiss differently is the kind of inconsistency
@@ -57,22 +81,24 @@ export function LedgerPanel({
       }}
     >
       <div
+        {...modal}
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-label="Ledger"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
-        }}
       >
         <header>Ledger</header>
         <div className="body">
-          {error !== null && <p className="ledger-empty">{error}</p>}
-          {ledger === null && error === null && (
-            <p className="ledger-empty">Reading run records…</p>
-          )}
+          {/*
+            Escape used to be listened for on this element and nothing ever
+            focused it, so the key had nowhere to land. `useModal` focuses the
+            panel on open, which is what makes the listener reachable — and
+            traps Tab, which is what stops the third press reaching the stop
+            button of a live run behind the scrim.
+          */}
+          {state !== null && <Notice state={state} onRetry={retry} />}
 
-          {ledger !== null && (
+          {state === null && ledger !== null && (
             <>
               <Table
                 caption="By day"
