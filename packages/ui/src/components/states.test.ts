@@ -20,7 +20,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Limits } from "@cuesheet/core";
+import type { HarnessProbe, Limits } from "@cuesheet/core";
 import { LaunchSurface } from "./LaunchSurface.js";
 import { ProjectView } from "./ProjectView.js";
 import { RunSurface } from "./RunSurface.js";
@@ -48,7 +48,7 @@ function launch(load: Load): string {
   );
 }
 
-function project(load: Load): string {
+function project(load: Load, harnesses: HarnessProbe[] = []): string {
   return html(
     createElement(ProjectView, {
       projectId: "p1",
@@ -58,7 +58,7 @@ function project(load: Load): string {
         load.status === "ready"
           ? {
               stations: [],
-              harnesses: [],
+              harnesses,
               cuesheets: [],
               limits: LIMITS,
               warnings: [],
@@ -67,7 +67,10 @@ function project(load: Load): string {
           : null,
       usage: null,
       load,
+      runCount: 0,
       onAddStation: () => undefined,
+      onAddStarter: () => Promise.resolve(),
+      onStart: () => undefined,
       onOpenLedger: () => undefined,
       onRetry: () => undefined,
     }),
@@ -90,25 +93,38 @@ function runs(load: Load): string {
   );
 }
 
-const SURFACES: Record<string, (load: Load) => string> = {
-  launch,
-  project,
-  runs,
+/**
+ * Each surface, and the mark that proves its empty state is the thing on
+ * screen.
+ *
+ * The project view's is not `data-kind="empty"` and that is Step 45 rather
+ * than an exception: an empty project now draws the first-run guide instead
+ * of a notice reading "No Stations yet", because that sentence is an accurate
+ * description of a project and not an instruction to anybody. The loading and
+ * error states are untouched — neither is advice.
+ */
+const SURFACES: Record<
+  string,
+  { render: (load: Load) => string; empty: string }
+> = {
+  launch: { render: launch, empty: 'data-kind="empty"' },
+  project: { render: project, empty: 'class="firstrun"' },
+  runs: { render: runs, empty: 'data-kind="empty"' },
 };
 
 describe("every surface, in all three states", () => {
-  for (const [name, render] of Object.entries(SURFACES)) {
+  for (const [name, { render, empty }] of Object.entries(SURFACES)) {
     describe(name, () => {
       it("says what it is reading", () => {
         const markup = render(LOADING);
         expect(markup).toContain('data-kind="loading"');
         // Never the empty state's words while a fetch is in flight.
-        expect(markup).not.toContain('data-kind="empty"');
+        expect(markup).not.toContain(empty);
       });
 
       it("says there is nothing, once it knows that", () => {
         const markup = render(READY);
-        expect(markup).toContain('data-kind="empty"');
+        expect(markup).toContain(empty);
         expect(markup).not.toContain('data-kind="loading"');
       });
 
@@ -136,10 +152,32 @@ describe("every surface, in all three states", () => {
     expect(markup).toContain("/code/api");
   });
 
-  it("does not offer to add a Station to a project it cannot read", () => {
-    // The empty state's action, on a surface that failed, is an invitation to
-    // do the one thing that is not going to work.
-    expect(project(FAILED)).not.toContain("Add a Station");
-    expect(project(READY)).toContain("Add a Station");
+  it("does not guide a project it cannot read", () => {
+    // Advice given on top of a failed fetch is advice about a project nobody
+    // has managed to look at. The notice stays, and it is the one that says
+    // what went wrong.
+    expect(project(FAILED)).not.toContain('class="firstrun"');
+    expect(project(FAILED)).toContain('data-kind="error"');
+  });
+
+  it("tells a fresh machine what to install, with somewhere to get it", () => {
+    // Step 45: "say what is missing **and how to get it**". Before this, an
+    // empty project said "No Stations yet" and the Add-a-Station panel said
+    // "not installed" — a description and a diagnosis, and no remedy between
+    // them.
+    const markup = project(READY);
+    expect(markup).toContain("Claude Code");
+    expect(markup).toContain("https://claude.com/claude-code");
+    // Opened by the platform browser rather than in place. A same-window
+    // navigation would replace the Desk with a web page.
+    expect(markup).toContain('target="_blank"');
+  });
+
+  it("offers the Station itself once a CLI is ready", () => {
+    const markup = project(READY, [
+      { harness: "claude-code", installed: true, authed: true },
+    ]);
+    // Named, both of them: what is being seated and where it will work.
+    expect(markup).toContain("Add Claude Code to api");
   });
 });

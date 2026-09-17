@@ -158,11 +158,34 @@ export const unknownRoles: HarnessRoles = () => undefined;
  */
 export const unknownConfinement: HarnessConfinement = () => undefined;
 
+/**
+ * Which harnesses this build actually has, whether or not a Station uses one.
+ *
+ * Another bare function beside {@link HarnessProber}, and for the same reason
+ * it is one: `stations.ts` must not learn what a registry is. `harnessRuntime()`
+ * supplies `registry.ids()`; everything else gets the constant below.
+ *
+ * **Step 45 added this, and the bug it fixes is older than the step.** The
+ * list was `BUILTIN_HARNESS_IDS` ∪ whatever the config named — and `mock` is
+ * in neither on a fresh install. So `GET /stations` could not mention it, the
+ * Add-a-Station panel could not list it, and the entire argument for shipping
+ * `mock` in `defaultHarnesses()` — "how someone with no agent CLI installed
+ * can still open the app, add a Station, and watch the Desk work" — described
+ * something no UI had ever been able to reach. A hardcoded list of what a
+ * build *probably* registers is a list that is wrong the moment a build
+ * registers something else, which is also the case a third-party harness is.
+ */
+export type KnownHarnesses = () => readonly HarnessId[];
+
+/** The inert default: the ids this repo plans for, registry or no registry. */
+export const builtinHarnesses: KnownHarnesses = () => BUILTIN_HARNESS_IDS;
+
 export async function describeStations(
   loaded: LoadedConfig,
   probe: HarnessProber = unprobed,
   rolesOf: HarnessRoles = unknownRoles,
   confinementOf: HarnessConfinement = unknownConfinement,
+  known: KnownHarnesses = builtinHarnesses,
 ): Promise<StationsResponse> {
   const configured = loaded.config.station;
 
@@ -171,6 +194,11 @@ export async function describeStations(
   // not mean three `--version` calls.
   const ids = new Set<HarnessId>([
     ...configured.map((station) => station.harness),
+    // What this build registered, plus what this repo plans for. The union,
+    // because a planned-but-unregistered harness should still be listed as
+    // something to install, and a registered-but-unplanned one — `mock`, or
+    // anybody's third-party harness — must be listed as something you have.
+    ...known(),
     ...BUILTIN_HARNESS_IDS,
   ]);
 

@@ -26,6 +26,10 @@
     "./roles": {
       "types": "./dist/roles.d.ts",
       "default": "./dist/roles.js"
+    },
+    "./setup": {
+      "types": "./dist/setup.d.ts",
+      "default": "./dist/setup.js"
     }
   },
   "files": [

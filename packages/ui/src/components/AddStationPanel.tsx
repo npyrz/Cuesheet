@@ -15,24 +15,35 @@
  * Workspace is a typed path with server-side validation — the browser cannot
  * open a native directory picker, and `chooseDirectory` on the Electron
  * bridge is wired opportunistically so Step 21 only has to implement it.
+ *
+ * **It starts at the project's own folder — Step 45.** The README's promise
+ * about this panel is that "nothing here requires you to type a path", and
+ * until now the one field with no default was the one field with no plausible
+ * guess available to the person filling it in. There is a plausible guess:
+ * they are standing in a project, and its root is where work happens unless
+ * they say otherwise. Still editable, still checked on the daemon.
  */
 import { useMemo, useState } from "react";
 import type { HarnessProbe, Role } from "@cuesheet/core";
 import { ROLES } from "@cuesheet/core/types";
 import { bridge } from "../api/base.js";
 import type { NewStation, StationsResponse } from "../api/client.js";
+import { harnessSetup, setupAdvice } from "@cuesheet/core/setup";
 import { useModal } from "../hooks/useModal.js";
 import { COPY, describeSurface, LOADING, READY } from "../surface.js";
 import { Notice } from "./Notice.js";
 
 export interface AddStationPanelProps {
   stations: StationsResponse | null;
+  /** The open project's folder — the workspace default. See the header. */
+  projectRoot: string;
   onCancel: () => void;
   onAdd: (draft: NewStation) => Promise<void>;
 }
 
 export function AddStationPanel({
   stations,
+  projectRoot,
   onCancel,
   onAdd,
 }: AddStationPanelProps): React.JSX.Element {
@@ -45,7 +56,7 @@ export function AddStationPanel({
   const [id, setId] = useState("");
   const [model, setModel] = useState("");
   const [role, setRole] = useState<Role>("engineer");
-  const [workspace, setWorkspace] = useState("");
+  const [workspace, setWorkspace] = useState(projectRoot);
   const [paths, setPaths] = useState("**");
   const [deny, setDeny] = useState(".git/**");
   const [busy, setBusy] = useState(false);
@@ -129,20 +140,47 @@ export function AddStationPanel({
                 entire job is choosing from that list.
               */}
               {probe !== null && <Notice state={probe} />}
-              {harnesses.map((probe) => (
-                <button
-                  key={probe.harness}
-                  type="button"
-                  className="harness"
-                  data-installed={probe.installed}
-                  aria-pressed={harness === probe.harness}
-                  onClick={() => setHarness(probe.harness)}
-                >
-                  <span className="mark">{probe.installed ? "●" : "○"}</span>
-                  <span>{probe.harness}</span>
-                  <span className="detail">{probeSummary(probe)}</span>
-                </button>
-              ))}
+              {harnesses.map((probe) => {
+                // The remedy, beside the diagnosis. The README's own sketch of
+                // this panel draws an `install ↓` on every uninstalled row,
+                // and until Step 45 the row said "not installed" and stopped
+                // there — which is a dead end on the one screen where somebody
+                // has just discovered they are missing something.
+                const setup = harnessSetup(probe.harness);
+                return (
+                  <div className="harness-entry" key={probe.harness}>
+                    <button
+                      type="button"
+                      className="harness"
+                      data-installed={probe.installed}
+                      aria-pressed={harness === probe.harness}
+                      onClick={() => setHarness(probe.harness)}
+                    >
+                      <span className="mark">
+                        {probe.installed ? "●" : "○"}
+                      </span>
+                      <span>{probe.harness}</span>
+                      <span className="detail">{probeSummary(probe)}</span>
+                    </button>
+                    {setup !== null && setupAdvice(probe) !== null && (
+                      <span className="harness-advice">
+                        {probe.installed ? (
+                          <code>
+                            {setupAdvice(probe)?.replace(/^Run `|`$/g, "")}
+                          </code>
+                        ) : (
+                          // `_blank`, so the shell hands it to the platform
+                          // browser instead of replacing the Desk with a web
+                          // page. See `FirstRun.tsx`.
+                          <a href={setup.url} target="_blank" rel="noreferrer">
+                            install ↓
+                          </a>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

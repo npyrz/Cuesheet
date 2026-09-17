@@ -15,8 +15,8 @@
  * are deliberately separate screens because they are read at different moments
  * — one before you start work, one while it runs.
  */
-import { useEffect, useState } from "react";
-import type { Ledger } from "@cuesheet/core";
+import { useCallback, useEffect, useState } from "react";
+import type { HarnessId, Ledger } from "@cuesheet/core";
 import { fetchLedger, type StationsResponse } from "../api/client.js";
 import {
   describePosture,
@@ -26,6 +26,8 @@ import {
 import { shortPath } from "../format.js";
 import { toCell } from "../ledger.js";
 import { COPY, describeSurface, LOADING, type Load } from "../surface.js";
+import { firstStep, starterStation } from "../firstrun.js";
+import { FirstRun } from "./FirstRun.js";
 import { Notice } from "./Notice.js";
 
 export interface ProjectViewProps {
@@ -36,7 +38,11 @@ export interface ProjectViewProps {
   usage: Parameters<typeof describePosture>[1]["usage"];
   /** How the read that produced `stations` went. See `../surface.ts`. */
   load: Load;
+  /** How many runs this project has ever had — Step 45's last move. */
+  runCount: number;
   onAddStation: () => void;
+  onAddStarter: (draft: ReturnType<typeof starterStation>) => Promise<void>;
+  onStart: (prompt: string) => void;
   onOpenLedger: () => void;
   onRetry: () => void;
 }
@@ -48,7 +54,10 @@ export function ProjectView({
   stations,
   usage,
   load,
+  runCount,
   onAddStation,
+  onAddStarter,
+  onStart,
   onOpenLedger,
   onRetry,
 }: ProjectViewProps): React.JSX.Element {
@@ -71,6 +80,46 @@ export function ProjectView({
     this project's configuration…" for as long as anybody cared to wait.
   */
   const state = describeSurface(load, rows.length, COPY.stations);
+
+  /*
+    Step 45. The one move worth making next, or `null` when there is nothing
+    to say. It replaces the empty state rather than sitting beside it: "No
+    Stations yet" is an accurate description of a project and not an
+    instruction to anybody, which is the whole difference this step is about.
+  */
+  const step =
+    load.status === "ready" && stations !== null
+      ? firstStep({
+          harnesses: stations.harnesses,
+          stations: rows.length,
+          runs: runCount,
+          projectName,
+        })
+      : null;
+
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const addStarter = useCallback(
+    (harness: HarnessId) => {
+      setAdding(true);
+      setAddError(null);
+      onAddStarter(
+        starterStation(
+          harness,
+          projectRoot,
+          (stations?.stations ?? []).map((view) => view.station.id),
+        ),
+      )
+        .catch((cause: unknown) => {
+          // The daemon's own words, next to the button that caused them —
+          // the same argument `AddStationPanel` makes for not replacing them
+          // with a generic failure.
+          setAddError(cause instanceof Error ? cause.message : String(cause));
+        })
+        .finally(() => setAdding(false));
+    },
+    [onAddStarter, projectRoot, stations],
+  );
 
   return (
     <main className="project-view" id="work" tabIndex={-1}>
@@ -101,8 +150,25 @@ export function ProjectView({
         </p>
       )}
 
+      {step !== null && (
+        <FirstRun
+          step={step}
+          onAdd={addStarter}
+          onRun={onStart}
+          busy={adding}
+          error={addError}
+        />
+      )}
+
       {state !== null ? (
-        <Notice state={state} onAction={onAddStation} onRetry={onRetry} />
+        /*
+          The guide above already said what to do about an empty project, so
+          saying it again underneath would be the app telling somebody twice.
+          Loading and error still get their notice: neither is advice.
+        */
+        step !== null && state.kind === "empty" ? null : (
+          <Notice state={state} onAction={onAddStation} onRetry={onRetry} />
+        )
       ) : (
         <ul className="posture">
           {rows.map((row) => (

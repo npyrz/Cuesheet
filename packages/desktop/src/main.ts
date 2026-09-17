@@ -38,6 +38,7 @@ import {
   bridgeArguments,
   CHOOSE_DIRECTORY_CHANNEL,
   devServerUrl,
+  staysInApp,
 } from "./launch.js";
 import {
   parseActiveProject,
@@ -201,6 +202,32 @@ async function createWindow(port: number): Promise<void> {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:$/.test(new URL(url).protocol)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  /*
+    And the same for a link that does not ask for a new window.
+
+    `setWindowOpenHandler` only ever sees `target="_blank"` and
+    `window.open`; a plain `<a href="https://…">` is a *navigation*, and a
+    navigation replaces this window's contents — the Desk becomes a web page,
+    inside a frameless-ish window with no address bar and no back button, and
+    the daemon goes on running behind something the user cannot get out of.
+
+    Step 45 is the first step to put real external links on screen — the
+    install links the README has always drawn on the Add-a-Station panel — and
+    every one of them carries `target="_blank"`. That is the mechanism; this
+    is the guard. Relying on every future author remembering an attribute is
+    not a guard, and the failure it prevents is unrecoverable rather than
+    merely wrong.
+
+    `file://` and the dev server's own origin are the app loading itself, so
+    they pass. Everything else leaves.
+  */
+  window.webContents.on("will-navigate", (event, url) => {
+    if (staysInApp(url, source.kind === "dev-server" ? source.url : null))
+      return;
+    event.preventDefault();
+    if (/^https?:$/.test(new URL(url).protocol)) void shell.openExternal(url);
   });
 
   if (source.kind === "dev-server") {

@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunEvent, RunStatus, Standby } from "@cuesheet/core";
 import { createEventBus } from "./bus.js";
 import { createFileRunStore, type RunStore } from "./store.js";
@@ -436,6 +436,14 @@ describe("standbys", () => {
     const pending = await waitForStandby(h);
     expect(pending.ask).toBe("Write to infra/?");
     expect(h.statusesFor(run.id)).toContain("standby");
+    // Written down, not only announced — Step 45. The event alone kept live
+    // clients right and left the *record* saying "running", which is what a
+    // reconnect reads: `snapshot` keeps an open standby only while the store
+    // says the run is waiting, so a reload dropped the question and left the
+    // run waiting for an answer nobody could give any more.
+    await vi.waitFor(async () =>
+      expect((await h.store.get(run.id))?.run.status).toBe("standby"),
+    );
 
     h.standbys.resolve(pending.id, "go");
     await h.queue.idle();

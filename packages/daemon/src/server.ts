@@ -56,6 +56,8 @@ import {
   type HarnessProber,
   type HarnessConfinement,
   type HarnessRoles,
+  builtinHarnesses,
+  type KnownHarnesses,
 } from "./stations.js";
 import {
   createUsageCache,
@@ -127,6 +129,15 @@ export interface StartDaemonOptions {
   harnessRoles?: HarnessRoles;
   /** What each harness's own sandbox does with a seat. See `stations.ts`. */
   harnessConfinement?: HarnessConfinement;
+  /**
+   * Which harnesses this build registered. Supplied by `harnessRuntime()`.
+   *
+   * Defaults to `BUILTIN_HARNESS_IDS`, which is what `startDaemon`'s own
+   * tests want: a fixed list that does not change with what somebody has
+   * installed. See {@link KnownHarnesses} for why the default is not enough
+   * for the app.
+   */
+  knownHarnesses?: KnownHarnesses;
   /**
    * The harnesses `GET /usage` reads. Supplied by `harnessRuntime()`; empty
    * here, so `startDaemon`'s own tests never wait on somebody's CLI.
@@ -224,6 +235,7 @@ export async function startDaemon(
   const prober = options.prober ?? unprobed;
   const harnessRoles = options.harnessRoles ?? unknownRoles;
   const harnessConfinement = options.harnessConfinement ?? unknownConfinement;
+  const knownHarnesses = options.knownHarnesses ?? builtinHarnesses;
   const usage = createUsageCache({
     sources: options.usageSources ?? (() => []),
   });
@@ -319,6 +331,7 @@ export async function startDaemon(
     prober,
     harnessRoles,
     harnessConfinement,
+    knownHarnesses,
     usage,
     env,
     registry,
@@ -536,6 +549,7 @@ interface RouteDeps {
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
   harnessConfinement: HarnessConfinement;
+  knownHarnesses: KnownHarnesses;
   usage: UsageCache;
   env: HostEnv;
   registry: ProjectRegistry;
@@ -564,6 +578,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     prober,
     harnessRoles,
     harnessConfinement,
+    knownHarnesses,
     usage,
     env,
     registry,
@@ -678,6 +693,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       prober,
       harnessRoles,
       harnessConfinement,
+      knownHarnesses,
     );
   });
 
@@ -736,6 +752,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         prober,
         harnessRoles,
         harnessConfinement,
+        knownHarnesses,
       );
       return reply.code(201).send({
         station: result.station,

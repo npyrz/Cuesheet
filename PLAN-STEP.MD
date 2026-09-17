@@ -60,7 +60,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
-| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–44 done** — launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, and one design system under all of it: two token layers, three real states per surface, and no screen that reports a fact it does not have |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
@@ -1374,15 +1374,98 @@ It is `renderToStaticMarkup` in node, so no effects run. That is the right tool 
 
 **And the limits strip still renders nothing when it has nothing**, which stays deliberate and leaves it the one surface without all three states. Its own header says why: three of `UsageWindow`'s four variants carry no measurement, and a frame sitting at zero for a vendor that reported a *status* is the authoritative-looking screen Phase 10 exists to prevent. An empty state there would be furniture telling an operator less than the space it occupies.
 
-### Step 45 — First run
+### Step 45 — First run ✅
 
 The path from install to first successful run, for someone who has never edited a TOML and did not read the README. Detect what is installed, say what is missing and how to get it, pick a project, add a Station, run something.
 
-**Done when:** someone with Claude Code installed and no other preparation completes a run without being told anything by a human — the alpha bar, but measured on a stranger rather than asserted.
+**Done when:** someone with Claude Code installed and no other preparation completes a run without being told anything by a human — **not ticked as written**; the path is built and walked end to end, and no stranger has walked it. That clause is a measurement, and it is the one thing here that cannot be done by writing code. See below.
 
-### Open question
+> **Done, with the measurement left open.** `core/setup.ts`, `ui/firstrun.ts`, `components/FirstRun.tsx`, the workspace default and install links on the Add-a-Station panel, a `will-navigate` guard in the shell, and two daemon fixes the walk found. 932 tests pass, up from 894.
 
-**How much of this the phone inherits.** M3 · Pocket serves the same UI over a tailnet, so a Desk rebuilt purely for a desktop window is a phone rewrite later. Whether that means responsive-from-the-start or a deliberately separate small surface is worth deciding here, while the shell is being drawn, rather than discovering it at M3.
+#### What the app actually said before this, in order
+
+Open it on a fresh machine and the four screens read: *"No projects yet."* → *"No Stations yet — nobody is on this project."* → a panel with five fields, one of which is an empty path box → and then nothing at all, because the only way to start a run was a chord nobody had mentioned.
+
+Every one of those sentences is accurate. Not one of them is an instruction. And the Add-a-Station panel, which is where somebody finally meets the thing they are missing, said **not installed** beside a harness and stopped there — a diagnosis with no remedy, on the one screen where the remedy is the whole point.
+
+So the step is three things: know the remedy, say the current one, and remove the typing.
+
+#### The remedy lives beside the diagnosis, not inside it
+
+`core/setup.ts` is a table: what each harness is, where to get it, and what to run once you have it. Every string in it is already in the README under **Requirements** — copied rather than recalled, because that is the closest thing this repo has to a source of truth about other people's products.
+
+**It is a table and not a field on `HarnessProbe`,** which is the decision worth stating. A probe describes this machine right now: it shells out, it can hang, it is stale the moment somebody runs an installer. Where Claude Code is downloaded from is none of those — it is the same sentence on a machine that has it and a machine that never will. On the probe, a UI could not say how to install a harness until it had finished failing to find it.
+
+`setupAdvice` reads the probe rather than taking a boolean, because the two failures are one step apart and collapsing them is how a setup screen loses somebody's trust in a line: **telling them to download a thing they already have.** Ollama's second step is a model pull rather than a login, and is not called one — a sentence about credentials on the one harness that has no account sends somebody looking for a login page that does not exist.
+
+#### One instruction at a time
+
+`firstrun.ts` decides which of four moves is the current one — install, sign in, seat, ask — and the surface draws that one and nothing else. A card listing all four is a card where somebody starts on the wrong one, and three of the four are not possible when the first one is.
+
+Three of the ordering rules were decisions rather than arithmetic:
+
+- **`mock` is never "ready".** It is always installed and always authed — it is code in this process — so a fresh machine keyed on "is anything ready" would be told it was finished. It is offered *by name* as a demo instead, which is a different sentence. That is the first time the argument in `defaultHarnesses()` — that a first run showing nothing because nothing is installed is a worse introduction than a fake one that moves — has been reachable from any screen. See the daemon fix below for why it had not been.
+- **Recommendation order, not probe order.** `ollama` probes `authed` whenever its server answers, because it has no account to be signed out of, so on a machine running Ollama and nothing else it is the first harness that *looks* ready. It is also the one that may only play `worker`, and a worker never writes: a first run seated there would stream text, cost nothing, change no files, and leave somebody concluding the app does not work. Nothing on the wire says that before a Station exists — `canPlaySeat` is computed per configured Station — so the order carries the fact, and the comment says it must not be re-sorted.
+- **The guide is about what is missing, not about how new you are.** A project with no Stations is guided whether or not it has forty runs behind it. Keyed on run count, a project whose last Station was deleted would get a blank screen and no way forward, having decided the person was too experienced to be told anything.
+
+And once a run exists, it goes. A surface still offering the first step after the first step is done reads as an app that has not noticed.
+
+#### The typing is gone, because the README already promised it would be
+
+The README's sketch of the Add-a-Station panel says *"Cuesheet has already made four of [the five choices] by the time you open the panel"* and *"Nothing here requires you to type a path."* Two of those were not true. The workspace field started empty — the one field with no default was the one field with no plausible guess available to the person filling it in, when there is a plausible guess: they are standing in a project. And the sketch draws an `install ↓` beside every uninstalled row, which did not exist.
+
+Both are now kept. `starterStation` goes further for the one case where every answer is obvious — this project's folder, the seat that writes, the leash the panel already seeds — so the guide's button writes a working Station with nothing typed at all.
+
+The prompt box is the fourth move made visible. The palette is the fast path and stays the fast path; it is also a chord, and a chord is not discoverable by somebody who has not been told about it. Starting a run from the box switches to the run surface, because the thing somebody just asked for is about to happen on a screen they are not looking at — which turns out to matter more than it sounds, for the reason in the next section.
+
+#### Walking it found two daemon bugs, and the second one is the serious one
+
+The path was walked against a real isolated daemon, twice: once with the probes faked down to nothing but the demo, which is the machine the done-when's stranger has, and once as this machine actually is — Claude Code installed and signed in, which is the half that cannot be faked.
+
+**The demo harness has shipped since Phase 3 and no UI could ever see it.** `describeStations` built its probe list from `BUILTIN_HARNESS_IDS` ∪ the harnesses the config named, and `mock` is in neither on a fresh install. So `GET /stations` could not mention it, the Add-a-Station panel could not list it, and `defaultHarnesses()`'s whole argument for shipping it described something unreachable. The list now takes what the build actually *registered* — `harnessRuntime()` passes `registry.ids()` — unioned with what this repo plans for, because a planned-but-unregistered harness is still something to install and a registered-but-unplanned one (`mock`, or anybody's third-party harness) is something you have. A hardcoded list of what a build probably registers is wrong the moment a build registers something else.
+
+**And a run waiting on a question was recorded as `running`.** `ask()` published a `status: standby` event and never wrote it down. Live clients were fine — the Desk's reducer follows the event — and that is exactly what made it invisible. The cost is paid on a resync, which is every reconnect and every restart: `snapshot` keeps an open standby only while the *store* says the run is waiting, deliberately, because a question with **go** and **no** under it for a run that ended while the app was closed is the loudest lie this Desk can tell. With the status never persisted, that filter dropped every genuinely open question instead. **Reload the window and the question is gone, while the run waits for an answer that can no longer be given.**
+
+A first run meets this every single time, which is why a step about first runs is where it surfaced: the demo harness raises a standby on purpose, so the first run anybody does is the one that hangs if they reload.
+
+#### What the walk showed
+
+On a machine faked down to nothing installed:
+
+```
+guide says: install | Cuesheet drives an AI coding CLI. You will need one.
+    Claude Code  Get it at https://claude.com/claude-code
+    Codex CLI    Get it at https://developers.openai.com/codex
+    Ollama       Get it at https://ollama.com
+    demo offered: mock
+pressing: the demo
+written to: …\.cuesheet\projects\proj-d226f9\cuesheet.toml | created: true
+guide now says: run | Ask for something.
+it asked: "Write cuesheet-mock.md in the workspace?"
+pressed: go
+run landed: done | events: 23 | diff: true
+guide after the first run: stands down
+```
+
+And on this machine as it is: *"Claude Code is ready. Put it to work on proj."*, the Station written with the project root as its workspace, and the prompt box offered. **It stops there on purpose.** The next press starts a real Claude Code run, and re-running one to watch a prompt box work is about a dollar of somebody else's plan for a screenshot — the same call Step 43 made about the gate.
+
+#### Why the done-when is not ticked
+
+**The clause says "measured on a stranger rather than asserted", and no stranger has seen it.** Everything that can be built has been built and the path has been walked end to end by somebody who wrote it, which is the one perspective the clause explicitly excludes. That is not a gap to close by writing more code; it closes when somebody who has not read this document opens the app.
+
+What a walk can say, it says: every move the guide offers exists, does what it claims, and leads to the next one, on a machine with a real CLI and on a machine with none.
+
+#### One external link, and the guard behind it
+
+This is the first step to put real external links on screen, and a plain `<a href>` is a *navigation* rather than a window-open — `setWindowOpenHandler` never sees it, so the Desk would become claude.com in a window with no address bar and no back button, with the daemon running behind it. Every link carries `target="_blank"`; `staysInApp` in the shell is the guard behind that, because relying on every future author remembering an attribute is not a guard and this particular failure is unrecoverable rather than merely wrong.
+
+#### One thing this step deliberately did not build
+
+**A tour, a checklist, or anything that persists "you have seen this".** The guide is derived entirely from what is true right now — no Stations, nothing installed, no runs — so there is no onboarding state to store, to migrate, or to get wrong. A first-run experience that remembers whether you finished it is a first-run experience that shows the wrong thing to the second person who opens the app on the same machine, and there is no state here that could.
+
+### Open question — answered
+
+**How much of this the phone inherits.** Settled in the work rather than left to M3, and settled at the first surface Step 40 drew: **this UI is responsive from the start, not a desktop screen with a phone rewrite behind it.** The cost is a `max-width` and a couple of `min()` calls per surface; the alternative is discovering at M3 that every screen assumes a window. Nothing here is phone-*specific* — that is a different question and a later one — but nothing here breaks at 380px, and Steps 41 through 45 each paid that cost as they went rather than deferring it. The comment recording the decision sits in `styles.css` above the launch surface, which is where somebody about to add a sixth surface will find it.
 
 ---
 

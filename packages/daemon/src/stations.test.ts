@@ -12,6 +12,7 @@ import {
   unprobed,
   type HarnessConfinement,
   type HarnessRoles,
+  builtinHarnesses,
 } from "./stations.js";
 
 const TOML = `
@@ -330,5 +331,41 @@ workspace = "/ws"
       unknownRoles,
     );
     expect(enforcement && "canPlaySeat" in enforcement).toBe(false);
+  });
+});
+
+/**
+ * Step 45. The probe list was `BUILTIN_HARNESS_IDS` ∪ the harnesses the
+ * config named — and `mock` is in neither on a fresh install, so the demo
+ * harness that ships precisely so a machine with no CLI can watch the app
+ * work was invisible to every UI that has ever asked.
+ */
+describe("which harnesses the Desk is told about", () => {
+  const seen = async (known?: () => readonly string[]) => {
+    const response = await describeStations(
+      loaded(),
+      async (harness) => ({ harness, installed: true, authed: true }),
+      undefined,
+      undefined,
+      known,
+    );
+    return response.harnesses.map((probe) => probe.harness).sort();
+  };
+
+  it("names what this build registered, not what the repo planned for", async () => {
+    expect(await seen(() => ["mock", "claude-code"])).toContain("mock");
+  });
+
+  it("keeps naming a planned harness nobody registered", async () => {
+    // It is still something to install, and a list that drops it is a list
+    // that stops telling anybody the CLI exists.
+    expect(await seen(() => ["mock"])).toEqual(
+      ["claude-code", "codex", "mock", "ollama"].sort(),
+    );
+  });
+
+  it("falls back to the planned list when nothing says otherwise", async () => {
+    expect(await seen()).toEqual(["claude-code", "codex", "ollama"].sort());
+    expect(builtinHarnesses()).toEqual(["claude-code", "codex", "ollama"]);
   });
 });

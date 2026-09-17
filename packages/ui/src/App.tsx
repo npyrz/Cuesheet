@@ -286,7 +286,19 @@ export function App(): React.JSX.Element {
             stations={state.stations}
             usage={state.usage}
             load={state.load}
+            runCount={state.runs.length}
             onAddStation={() => setAdding(true)}
+            // Step 45: the whole panel, answered. Nothing to type, because
+            // every answer is the obvious one — this project's folder, the
+            // seat that writes, the leash the panel already seeds.
+            onAddStarter={(draft) => desk.create(draft)}
+            onStart={(prompt) => {
+              // The first run switches to the run surface, because the thing
+              // somebody just asked for is about to happen on a screen they
+              // are not looking at.
+              setView("runs");
+              void desk.start(prompt);
+            }}
             onOpenLedger={() => setLedger(true)}
             onRetry={desk.reload}
           />
@@ -429,6 +441,7 @@ export function App(): React.JSX.Element {
       {adding && (
         <AddStationPanel
           stations={state.stations}
+          projectRoot={desk.project.project.root}
           onCancel={() => setAdding(false)}
           onAdd={async (draft) => {
             await desk.create(draft);

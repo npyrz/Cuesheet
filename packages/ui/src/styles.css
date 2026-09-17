@@ -954,6 +954,178 @@ button.link {
   padding: var(--space-7) var(--space-6);
 }
 
+/* ── Getting started ───────────────────────────────────────────────────
+   Step 45. One instruction, drawn as the most important thing on the screen
+   it is on — because on that screen it is. It replaces the empty state
+   rather than sitting under it: "No Stations yet" describes a project, and
+   this is the sentence that tells somebody what to do about it. */
+.firstrun {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-6);
+  margin: var(--space-7) 0 var(--space-9);
+  padding: var(--space-8);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+  max-width: 78ch;
+}
+
+.firstrun-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.firstrun-detail {
+  margin: 0;
+  color: var(--muted);
+  line-height: var(--leading);
+}
+
+.setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* Name, what it is, and what to do about it — in that order, because that is
+   the order somebody who has not heard of any of them needs them in. */
+.setup-row {
+  display: grid;
+  grid-template-columns: var(--space-7) auto 1fr auto;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-sm);
+}
+
+.setup-row:last-child {
+  border-bottom: none;
+}
+
+.setup-mark {
+  color: var(--dim);
+  text-align: center;
+}
+
+.setup-row[data-installed="true"] .setup-mark {
+  color: var(--warn);
+}
+
+.setup-row[data-ready="true"] .setup-mark {
+  color: var(--ok);
+}
+
+.setup-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.setup-what {
+  color: var(--muted);
+}
+
+.setup-advice {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.setup-advice code {
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+}
+
+a {
+  color: var(--accent);
+}
+
+.firstrun-demo {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.firstrun-go {
+  font-size: var(--text-lg);
+  padding: var(--space-5) var(--space-7);
+}
+
+/* The prompt box. The palette is the fast path and stays the fast path — it
+   is also a chord, and a chord is not discoverable by somebody who has not
+   been told about it. */
+.firstrun-prompt {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.firstrun-label {
+  grid-column: 1 / -1;
+  color: var(--dim);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.firstrun-prompt input {
+  width: 100%;
+  padding: var(--space-5) var(--space-6);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.firstrun-error {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--text-sm);
+}
+
+/* The panel's own install link, beside the row it belongs to. */
+.harness-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.harness-entry .harness {
+  flex: 1;
+  min-width: 0;
+}
+
+.harness-advice {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  /* Three columns of prose in 380px is three columns of hyphens. The name
+     keeps its row and the description takes the next one. */
+  .setup-row {
+    grid-template-columns: var(--space-7) 1fr auto;
+  }
+
+  .setup-what {
+    grid-column: 2 / -1;
+  }
+
+  .firstrun-prompt {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── The first tab stop ────────────────────────────────────────────────
    Off-screen until focused, which is the one case where hiding a control is
    the right answer: it is furniture for people who are not using it and the

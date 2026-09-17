@@ -90,3 +90,35 @@ export function devServerUrl(
     ? configured
     : DEFAULT_DEV_SERVER;
 }
+
+/**
+ * Whether a URL the window is navigating to is the app loading itself.
+ *
+ * Step 45 put the first real external links on screen — the install links the
+ * README has always drawn on the Add-a-Station panel — and every one of them
+ * carries `target="_blank"`, which `setWindowOpenHandler` catches. This is
+ * the guard behind that mechanism, because a plain `<a href>` is a
+ * *navigation* rather than a window-open: it replaces this window's contents,
+ * so the Desk becomes a web page with no address bar and no way back, while
+ * the daemon goes on running behind it.
+ *
+ * `file:` is the packaged Desk. `devServer` is Vite's origin in development,
+ * and `null` in a packaged build — compared by origin rather than by prefix,
+ * so `http://localhost:5173.evil.test` is not mistaken for `localhost:5173`.
+ */
+export function staysInApp(url: string, devServer: string | null): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Not a URL at all is not a place this window is allowed to go.
+    return false;
+  }
+  if (parsed.protocol === "file:") return true;
+  if (devServer === null) return false;
+  try {
+    return parsed.origin === new URL(devServer).origin;
+  } catch {
+    return false;
+  }
+}

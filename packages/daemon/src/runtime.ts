@@ -19,6 +19,7 @@ import type {
   HarnessConfinement,
   HarnessProber,
   HarnessRoles,
+  KnownHarnesses,
 } from "./stations.js";
 import type { UsageSource } from "./usage.js";
 
@@ -33,6 +34,7 @@ export interface HarnessRuntime {
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
   harnessConfinement: HarnessConfinement;
+  knownHarnesses: KnownHarnesses;
   usageSources: () => readonly UsageSource[];
 }
 
@@ -71,6 +73,10 @@ export function harnessRuntime(
     // claim that the leash is the whole boundary.
     harnessConfinement: (harness, role) =>
       registry.get(harness)?.confinement?.(role),
+    // What this build actually registered — `mock` included, which is the
+    // whole of Step 45's finding: the demo harness has shipped since Phase 3
+    // and `GET /stations` had no way to mention it, so no UI could offer it.
+    knownHarnesses: () => registry.ids(),
     // Every registered harness, read at call time rather than captured, so a
     // registry that gains one later is picked up without a restart. A `Harness`
     // satisfies `UsageSource` structurally — the cache deliberately asks for

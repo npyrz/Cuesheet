@@ -3,6 +3,7 @@ export * from "./types.js";
 export * from "./config.js";
 export * from "./leash.js";
 export * from "./roles.js";
+export * from "./setup.js";
 export * from "./limits.js";
 export * from "./ledger.js";
 export * from "./fallback.js";
