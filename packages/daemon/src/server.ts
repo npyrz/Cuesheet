@@ -50,9 +50,11 @@ import {
 import { createStandbyRegistry, type StandbyRegistry } from "./standby.js";
 import {
   describeStations,
+  unknownConfinement,
   unknownRoles,
   unprobed,
   type HarnessProber,
+  type HarnessConfinement,
   type HarnessRoles,
 } from "./stations.js";
 import {
@@ -123,6 +125,8 @@ export interface StartDaemonOptions {
    * carry a registry to avoid warnings about seats they never configured.
    */
   harnessRoles?: HarnessRoles;
+  /** What each harness's own sandbox does with a seat. See `stations.ts`. */
+  harnessConfinement?: HarnessConfinement;
   /**
    * The harnesses `GET /usage` reads. Supplied by `harnessRuntime()`; empty
    * here, so `startDaemon`'s own tests never wait on somebody's CLI.
@@ -219,6 +223,7 @@ export async function startDaemon(
   const standbys = createStandbyRegistry();
   const prober = options.prober ?? unprobed;
   const harnessRoles = options.harnessRoles ?? unknownRoles;
+  const harnessConfinement = options.harnessConfinement ?? unknownConfinement;
   const usage = createUsageCache({
     sources: options.usageSources ?? (() => []),
   });
@@ -313,6 +318,7 @@ export async function startDaemon(
     standbys,
     prober,
     harnessRoles,
+    harnessConfinement,
     usage,
     env,
     registry,
@@ -529,6 +535,7 @@ interface RouteDeps {
   standbys: StandbyRegistry;
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
+  harnessConfinement: HarnessConfinement;
   usage: UsageCache;
   env: HostEnv;
   registry: ProjectRegistry;
@@ -552,8 +559,16 @@ interface RouteDeps {
  * a phone answering a standby should not have to know which project raised it.
  */
 function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { standbys, prober, harnessRoles, usage, env, registry, runtimes } =
-    deps;
+  const {
+    standbys,
+    prober,
+    harnessRoles,
+    harnessConfinement,
+    usage,
+    env,
+    registry,
+    runtimes,
+  } = deps;
 
   app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
 
@@ -658,7 +673,12 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/projects/:id/stations", async (request, reply) => {
     const runtime = await runtimeFor(request, reply);
     if (!runtime) return reply;
-    return describeStations(runtime.config(), prober, harnessRoles);
+    return describeStations(
+      runtime.config(),
+      prober,
+      harnessRoles,
+      harnessConfinement,
+    );
   });
 
   /**
@@ -711,7 +731,12 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       // Reload before responding, so the caller never sees a Station it then
       // cannot run. `describeStations` is re-derived from the fresh config.
       const reloaded = await runtime.reload();
-      const stations = await describeStations(reloaded, prober, harnessRoles);
+      const stations = await describeStations(
+        reloaded,
+        prober,
+        harnessRoles,
+        harnessConfinement,
+      );
       return reply.code(201).send({
         station: result.station,
         sourcePath: result.sourcePath,

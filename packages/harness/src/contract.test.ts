@@ -182,6 +182,43 @@ describe("the registry", () => {
     ]);
   });
 
+  /**
+   * Step 42. The Desk prints these to an operator deciding what a seat may do,
+   * so they are asserted against the harnesses rather than taken on trust from
+   * a table in the UI.
+   */
+  it("has every shipped harness say what it does with a seat", () => {
+    for (const harness of defaultHarnessRegistry().list()) {
+      expect(
+        harness.confinement,
+        `${harness.id} declares no confinement`,
+      ).toBeTypeOf("function");
+    }
+  });
+
+  it("has codex confine every read-only seat and only those", () => {
+    // The mapping the subprocess is actually launched with — `sandboxFor` is
+    // what builds the `--sandbox` flag, and `confinement()` is declared from
+    // it rather than restated, so this is really asserting the two cannot
+    // drift apart.
+    const codex = defaultHarnessRegistry().get("codex");
+    expect(codex?.confinement?.("reviewer")).toBe("read-only");
+    expect(codex?.confinement?.("caller")).toBe("read-only");
+    expect(codex?.confinement?.("worker")).toBe("read-only");
+    expect(codex?.confinement?.("engineer")).toBe("workspace-write");
+  });
+
+  it("has claude-code say plainly that it confines no seat", () => {
+    // Not an oversight and not an absence: Claude Code takes no role-based
+    // sandbox flag, so on that harness the leash and the daemon are the whole
+    // boundary. A Desk that printed "a reviewer cannot write" for it would be
+    // wrong, which is why this claim is declared rather than inferred.
+    const claude = defaultHarnessRegistry().get("claude-code");
+    for (const role of ["engineer", "reviewer", "caller"] as const) {
+      expect(claude?.confinement?.(role)).toBe("none");
+    }
+  });
+
   it("ships two real harnesses from different vendors", () => {
     // Not bookkeeping. `distinct_vendors = 2` is an equality check over
     // `vendor`, so a stock build with one real vendor cannot satisfy the

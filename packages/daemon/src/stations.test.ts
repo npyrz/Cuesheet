@@ -7,8 +7,10 @@ import {
 } from "@cuesheet/core";
 import {
   describeStations,
+  unknownConfinement,
   unknownRoles,
   unprobed,
+  type HarnessConfinement,
   type HarnessRoles,
 } from "./stations.js";
 
@@ -220,5 +222,113 @@ workspace = "/ws"
     expect(
       response.warnings.some((w) => w.message.includes("can only be")),
     ).toBe(false);
+  });
+});
+
+/**
+ * Step 42. The project view has to show a seat as a constraint, and the two
+ * halves of that constraint are kept by two different processes — so the
+ * assembly happens here, where both are known, rather than in a Desk that
+ * cannot import a harness.
+ */
+describe("what a Station is allowed to do", () => {
+  const seatedOn = (harness: string, role: string) =>
+    parseConfig(
+      `
+[[station]]
+id = "s"
+harness = "${harness}"
+role = "${role}"
+workspace = "/ws"
+`,
+      "/ws/cuesheet.toml",
+    );
+
+  /** Codex's real mapping: reviewer, caller and worker run read-only. */
+  const codexLike: HarnessConfinement = (_harness, role) =>
+    role === "engineer" ? "workspace-write" : "read-only";
+  /** Claude Code's real answer: it takes no role-based sandbox flag at all. */
+  const claudeLike: HarnessConfinement = () => "none";
+
+  const enforcementFor = async (
+    config: LoadedConfig,
+    confinement: HarnessConfinement,
+    roles: HarnessRoles = realRoles,
+  ) =>
+    (await describeStations(config, unprobed, roles, confinement)).stations[0]
+      ?.enforcement;
+
+  it("refuses a worker's writes in this process, whatever the CLI does", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("ollama", "worker"),
+      claudeLike,
+    );
+    expect(enforcement).toMatchObject({ writes: false, refusedBy: ["daemon"] });
+  });
+
+  it("names both keepers when the daemon and the CLI both refuse", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("codex", "worker"),
+      codexLike,
+      () => ["engineer", "reviewer", "worker", "caller"],
+    );
+    expect(enforcement?.refusedBy).toEqual(["daemon", "harness"]);
+  });
+
+  it("says a codex reviewer cannot write, and credits the CLI for it", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("codex", "reviewer"),
+      codexLike,
+    );
+    expect(enforcement).toMatchObject({
+      writes: false,
+      refusedBy: ["harness"],
+      confinement: "read-only",
+    });
+  });
+
+  it("does not claim a claude-code reviewer cannot write", async () => {
+    // The claim that would be false, and the whole reason this is computed per
+    // harness rather than per role: nothing refuses these writes outright. The
+    // leash bounds *where* they may land, which is a different sentence.
+    const enforcement = await enforcementFor(
+      seatedOn("claude-code", "reviewer"),
+      claudeLike,
+    );
+    expect(enforcement).toMatchObject({
+      writes: true,
+      refusedBy: [],
+      confinement: "none",
+    });
+  });
+
+  it("leaves confinement absent for a harness that does not declare one", async () => {
+    // Absent is not `"none"`. A third-party harness that says nothing has not
+    // said it confines nothing, and the Desk prints those differently.
+    const enforcement = await enforcementFor(
+      seatedOn("claude-code", "reviewer"),
+      unknownConfinement,
+    );
+    expect(enforcement && "confinement" in enforcement).toBe(false);
+    expect(enforcement?.writes).toBe(true);
+  });
+
+  it("reports whether the harness can play the seat at all", async () => {
+    const bad = await enforcementFor(
+      seatedOn("ollama", "reviewer"),
+      claudeLike,
+    );
+    expect(bad?.canPlaySeat).toBe(false);
+    const good = await enforcementFor(seatedOn("ollama", "worker"), claudeLike);
+    expect(good?.canPlaySeat).toBe(true);
+  });
+
+  it("leaves the seat unjudged when nobody knows the harness's roles", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("somebody-elses", "reviewer"),
+      unknownConfinement,
+      unknownRoles,
+    );
+    expect(enforcement && "canPlaySeat" in enforcement).toBe(false);
   });
 });

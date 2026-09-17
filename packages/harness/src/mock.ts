@@ -13,6 +13,7 @@
  * a standby that blocks until answered, incremental cost, and a diff.
  */
 import type {
+  Confinement,
   Connector,
   ContextFile,
   Harness,
@@ -67,6 +68,14 @@ export function createMockHarness(options: MockHarnessOptions = {}): Harness {
     id: "mock",
     vendor: "cuesheet",
     roles: ["engineer", "reviewer", "worker"],
+
+    // There is no subprocess, so there is no sandbox to set: this harness
+    // writes through the runtime's own leash and nothing else. "none" is the
+    // truthful answer, and it is also what makes the mock a useful stand-in
+    // for the harness a Desk has the least to promise about.
+    confinement(): Confinement {
+      return "none";
+    },
 
     async probe(): Promise<HarnessProbeResult> {
       // Always available: it is code in this process, so "installed" is not a

@@ -1135,6 +1135,210 @@ button.link {
   }
 }
 
+/* Step 42: the project view. Posture, not activity — nothing here animates,
+   because nothing here moves while you watch it. */
+.views {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.view-tab {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.view-tab[aria-pressed="true"] {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.project-view {
+  padding: 20px 16px 48px;
+  max-width: 1100px;
+}
+
+.project-head {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.project-title {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+}
+
+.project-where,
+.project-source {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.project-source {
+  margin-bottom: 18px;
+}
+
+.posture {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.posture-card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+/* A Station whose harness is missing is dimmed as a whole — its permissions
+   are still true, but nothing is going to exercise them today. */
+.posture-card[data-available="false"] {
+  opacity: 0.75;
+}
+
+.posture-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.posture-id {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.posture-role {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.posture-harness,
+.posture-spend {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.posture-cap {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.posture-cap[data-tone="warn"] {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.posture-cap[data-tone="over"] {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.posture-cap[data-tone="free"] {
+  color: var(--ok);
+}
+
+.posture-purpose {
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+
+.posture-probe {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.posture-probe[data-ok="false"] {
+  color: var(--bad);
+}
+
+.posture-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.posture-line {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+/* The glyph carries the meaning as well as the colour, so a reader who cannot
+   tell these apart can still tell a refusal from a permission. */
+.posture-mark {
+  text-align: center;
+  color: var(--dim);
+}
+
+.posture-line[data-tone="refused"] .posture-mark {
+  color: var(--bad);
+}
+
+.posture-line[data-tone="allowed"] .posture-mark {
+  color: var(--ok);
+}
+
+.posture-line[data-tone="unknown"] .posture-mark {
+  color: var(--warn);
+}
+
+.posture-by {
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.posture-capnote {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.posture-empty {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 24px 0;
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  /* The attribution moves under its sentence rather than squeezing it. */
+  .posture-line {
+    grid-template-columns: 16px 1fr;
+  }
+
+  .posture-by {
+    grid-column: 2;
+    white-space: normal;
+  }
+}
+
 /* The half-second between choosing a project and its resync landing. */
 .switching {
   padding: 24px 16px;

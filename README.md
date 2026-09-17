@@ -34,6 +34,7 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ✅ **Limits** | `GET /usage` reports every harness's plan windows, and the Desk draws them above the tiles. A run that cannot finish is refused *before* it starts, with the window that stopped it — and if `when_capped` could not route around the cap, the refusal says why. **Read the honest part:** the strip tells you what each vendor actually said, and today that is mostly a sentence rather than a bar — Claude Code reports a *status* (`not blocked yet`) rather than a percentage, Codex reports no plan window at all, and a local model cannot run out. The one real measurement any shipped harness produces is Claude Code reporting it is into overage. |
 | ✅ **The ledger** | What a project spent, by day, by vendor, by Station — including how much of each input was served from cache, which is the difference between two runs with identical token counts and severalfold different bills. Per-Station spend is on every run record. Runs from before that field existed are counted and *labelled* as unsplit rather than blamed on whichever Station happened to be first. |
 | ✅ **Fallback routing** | `when_capped` moves a step to another Station instead of stopping. It **refuses a swap that changes the seat**: a worker cannot stand in for a reviewer, and a harness that does not declare the role cannot take it. A Gate needs no special handling — it counts the vendors that actually acted, so a substitution that breaks `distinct_vendors` holds the run on its own. |
+| ✅ **The project view** | Everything about a project on one screen: who is on it, what each Station may and may not do, what it has spent, and how close its harness is to a cap. Permissions are written as constraints with the process that keeps each one named — because they are not all kept by the same one. The daemon refuses a `worker`'s writes; Codex's own sandbox runs a reviewer read-only; Claude Code does neither and leaves the leash as the whole boundary. A harness that declares nothing is reported as unknown rather than as unconfined. |
 | ✅ **The launch surface** | What the app opens on when no project is active, and where "All projects…" takes you back to: recents with when each was last opened, a folder that has gone marked as such rather than failing when you press it, `forget` for an entry you are done with, and the native picker. Leaving a project is a client action — its runs keep going. |
 | 📋 **Not built yet** | The Commons, phone pairing, the Caller, On-Call, `ollama`. One more that is easy to miss because this README describes it as if it exists: **the `cuesheet` CLI** is an empty package. The next phases are in [PLAN-STEP.MD](PLAN-STEP.MD). |
 
@@ -662,6 +663,14 @@ export default {
 
   // Where this runtime expects always-loaded context, so the Commons can project into it
   contextFiles: [{ path: "MY_AGENT.md", scope: "project" }],
+
+  // Optional. What *your own* sandbox does with a seat, so the Desk can say who
+  // enforces what. Leave it out and Cuesheet reports your harness as "does not
+  // say" rather than guessing that nothing is confined. The answer for a seat
+  // you did not list in `roles` is never read.
+  confinement(role) {
+    return role === "reviewer" ? "read-only" : "workspace-write";
+  },
 
   // How to register MCP connectors for this runtime
   async writeConnectors(connectors) { /* ... */ },

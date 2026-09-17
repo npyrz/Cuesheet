@@ -7,6 +7,7 @@
  * a wire shape is a compile error in the Desk rather than a runtime surprise.
  */
 import type {
+  Confinement,
   HarnessProbe,
   HarnessUsage,
   Ledger,
@@ -24,6 +25,26 @@ import { apiUrl } from "./base.js";
 export interface StationView {
   station: Station;
   probe: HarnessProbe;
+  /**
+   * What this Station is actually allowed to do — Step 42.
+   *
+   * Computed by the daemon because half of it is a harness fact: only the
+   * harness knows what sandbox flag its subprocess is launched with, and the
+   * Desk cannot import `@cuesheet/harness` without inverting the dependency
+   * arrow the package layout exists to keep pointing one way.
+   */
+  enforcement: StationEnforcement;
+}
+
+/** Mirrors `StationEnforcement` in `daemon/stations.ts`. */
+export interface StationEnforcement {
+  /** False only when something refuses writes outright, not merely bounds them. */
+  writes: boolean;
+  refusedBy: ("daemon" | "harness")[];
+  /** Absent when the harness does not declare one — not the same as "none". */
+  confinement?: Confinement;
+  /** Absent when nothing knows this harness's roles. */
+  canPlaySeat?: boolean;
 }
 
 export interface ConfigWarning {

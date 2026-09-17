@@ -150,32 +150,15 @@ export function checkPath(
 }
 
 /**
- * Whether this Station's *role* forbids writing, whatever its leash allows.
+ * `writeDeniedByRole` used to live here, and moved to `roles.ts` in Step 42.
  *
- * A leash answers "which paths?"; this answers "at all?". They are separate
- * questions and they are enforced in separate places, which is why this is a
- * function of its own rather than another branch inside `checkPath` — that
- * one has no notion of an operation, and a `worker` must still be able to
- * read. Classifying a diff, writing a commit message and deduping a memory
- * are all reads.
- *
- * Only `worker` is listed, and the omission is deliberate rather than an
- * oversight. `codex.ts`'s `sandboxFor` already runs a `reviewer` and a
- * `caller` `read-only`, so the CLI-flag layer encodes a wider rule than this
- * one does — but extending the *facade* to match would change the Phase 7
- * gate path, and no test covers it in either direction. The README's claim
- * that is overdue is this one: a `worker` "cannot review; cannot write code."
- *
- * Returns the reason, so the caller can put it in a denial the operator reads,
- * and `undefined` when the role may write.
+ * Not a tidy-up: this module imports `node:fs/promises` for `resolveAndCheck`,
+ * so every value in it is unreachable from a browser bundle. The Desk's project
+ * view needs that rule as a *value*, and Step 40 paid for the lesson that a
+ * value taken from a module which touches disk renders the whole app blank.
+ * It is re-exported below so no caller had to change.
  */
-export function writeDeniedByRole(station: Station): string | undefined {
-  if (station.role !== "worker") return undefined;
-  return (
-    `Station "${station.id}" is a worker, and a worker never writes. ` +
-    `Give it the \`engineer\` role if it is meant to change code.`
-  );
-}
+export { writeDeniedByRole } from "./roles.js";
 
 /**
  * Compile one leash rule into a matcher.

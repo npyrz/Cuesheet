@@ -44,6 +44,7 @@
 import {
   checkPath,
   writeDeniedByRole,
+  type Confinement,
   type HarnessProbe,
   type StandbyAnswer,
   type Station,
@@ -93,6 +94,16 @@ export function createCodexHarness(options: CodexOptions = {}): Harness {
     id: "codex",
     vendor: "openai",
     roles: ["engineer", "reviewer", "caller"],
+
+    // Declared *from* `sandboxFor` rather than restated next to it: this is
+    // the flag the subprocess is actually launched with, and a second copy of
+    // the mapping would be free to drift into a Desk that promises a sandbox
+    // the CLI is not being given.
+    confinement(role): Confinement {
+      return sandboxFor({ id: "", harness: "codex", role }) === "read-only"
+        ? "read-only"
+        : "workspace-write";
+    },
 
     async probe(): Promise<HarnessProbeResult> {
       const binPath = await which(bin);

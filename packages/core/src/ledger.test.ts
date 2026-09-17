@@ -20,6 +20,71 @@ function station(stationId: string, vendor: string, cost: Cost): StationCost {
 }
 
 describe("buildLedger", () => {
+  /**
+   * Step 42 found this by putting `totals` and `byStation` on one screen: the
+   * card read "1 run" and the header read "0 runs" about the same run. Every
+   * bucket counted through `bump`; the grand total went through `add`, which
+   * takes a `Cost` and has no notion of a run.
+   */
+  it("counts the runs in its own total, not only in every bucket", () => {
+    const ledger = buildLedger([
+      run({
+        id: "r1",
+        cost: { tokensIn: 10, tokensOut: 2, usd: 0.3 },
+        result: {
+          status: "done",
+          durationMs: 1,
+          cost: { tokensIn: 10, tokensOut: 2, usd: 0.3 },
+          stations: [
+            station("opus", "anthropic", {
+              tokensIn: 10,
+              tokensOut: 2,
+              usd: 0.3,
+            }),
+          ],
+        },
+      }),
+      run({ id: "r2", cost: { tokensIn: 4, tokensOut: 1 } }),
+    ]);
+    expect(ledger.totals.runs).toBe(2);
+    // And the columns still describe the same two runs.
+    expect(ledger.byDay.reduce((sum, row) => sum + row.runs, 0)).toBe(2);
+    expect(ledger.runs).toHaveLength(2);
+  });
+
+  it("counts a run with no split as one unattributed run", () => {
+    const ledger = buildLedger([
+      run({ id: "r1", cost: { tokensIn: 4, tokensOut: 1, usd: 0.1 } }),
+    ]);
+    expect(ledger.unattributed.runs).toBe(1);
+  });
+
+  it("does not count a remainder as another unattributed run", () => {
+    // The run is already counted in `byStation`; counting its leftover here
+    // too would make the two columns describe different populations.
+    const ledger = buildLedger([
+      run({
+        id: "r1",
+        cost: { tokensIn: 100, tokensOut: 10, usd: 1 },
+        result: {
+          status: "done",
+          durationMs: 1,
+          cost: { tokensIn: 100, tokensOut: 10, usd: 1 },
+          stations: [
+            station("opus", "anthropic", {
+              tokensIn: 60,
+              tokensOut: 6,
+              usd: 0.6,
+            }),
+          ],
+        },
+      }),
+    ]);
+    expect(ledger.unattributed.runs).toBe(0);
+    expect(ledger.unattributed.usd).toBeCloseTo(0.4);
+    expect(ledger.totals.runs).toBe(1);
+  });
+
   it("splits a two-vendor run across its Stations", () => {
     // The Phase 7 shape: one engineer writes, a reviewer from a second vendor
     // checks. What the ledger is for is telling you which of the two the money

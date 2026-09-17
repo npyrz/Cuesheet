@@ -28,6 +28,7 @@
 import {
   checkPath,
   writeDeniedByRole,
+  type Confinement,
   type HarnessProbe,
   type StandbyAnswer,
   type Station,
@@ -78,6 +79,16 @@ export function createClaudeCodeHarness(
     id: "claude-code",
     vendor: "anthropic",
     roles: ["engineer", "reviewer", "caller"],
+
+    // Declared "none", which is a claim and not a shrug. Claude Code takes no
+    // role-based sandbox flag — `--permission-mode` is about prompting, not
+    // about seats — so on this harness a reviewer is bounded by the leash and
+    // by the daemon, and by nothing the CLI does. A Desk saying "a reviewer
+    // cannot write" would be wrong here and right on Codex; that asymmetry is
+    // the thing worth showing rather than smoothing over.
+    confinement(): Confinement {
+      return "none";
+    },
 
     async probe(): Promise<HarnessProbeResult> {
       const binPath = await which(bin);

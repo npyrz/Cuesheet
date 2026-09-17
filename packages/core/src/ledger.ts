@@ -100,10 +100,21 @@ export function buildLedger(
     // against the metered stream once; re-deriving it here would quietly pick
     // a different winner and put two numbers for one run on one screen.
     add(totals, run.cost);
+    // Counted here rather than folded into `add`, which takes a `Cost` and has
+    // no notion of a run — `bump` increments its own bucket for the same
+    // reason. Without this line `totals.runs` stayed 0 while every other row
+    // counted correctly, which nothing noticed until Step 42 put the number on
+    // a second surface next to `byStation`, where the two plainly disagreed.
+    totals.runs += 1;
     bump(byDay, day, run.cost);
 
     if (stations === undefined || stations.length === 0) {
       add(unattributed, run.cost);
+      // Only a run with no split at all counts as an unattributed *run*. The
+      // remainder added below belongs to a run that is already counted in
+      // `byStation`, and counting it again here would make the two columns
+      // describe different populations of the same runs.
+      unattributed.runs += 1;
       runRows.push(runRow(run, day, false));
       continue;
     }

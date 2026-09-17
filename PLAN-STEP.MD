@@ -60,7 +60,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
-| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–41 done** — launch surface, and a shell whose switcher is one action from anywhere, with the project the state is tagged by |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–42 done** — launch surface, a switcher one action from anywhere, and a project view that says what each seat is actually allowed to do, and who enforces it |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
@@ -820,7 +820,7 @@ The queue is per-daemon and runs are long, so the constraint worth writing down 
 ### Open questions to settle in the work, not now
 
 - ~~**Where a project's config lives.**~~ **Settled in Step 31: either, and the repo wins when present.** A `cuesheet.toml` at the project root commits with the code and is what a team sharing a set of Stations wants, so it is preferred whenever it exists; `~/.cuesheet/projects/<id>/cuesheet.toml` is the fallback, which keeps the promise that using Cuesheet on someone else's repository leaves no trace in it. The ordering is deliberately the one `loadConfig` already applies — nearest-to-the-work first, then the home directory — so Step 32 replaces that function's candidates without inverting its semantics. `projectConfigFile()` exists; the loader does not use it yet.
-- **What a project *is*, exactly.** A folder, or a folder plus Stations that may point outside it? Leashes are per-Station and already allow a workspace anywhere, so the two can legitimately diverge and the UI has to show which one it is describing.
+- ~~**What a project *is*, exactly.**~~ **Settled in Step 42: a folder, plus Stations that may legitimately point outside it — and the UI now shows which it is describing.** The project view carries the project root in its header and each Station's own workspace in its permissions, so a Station working outside the project reads as the divergence it is. Step 34 anticipated this exactly: a switcher could raise the question and not answer it, because one name in a topbar cannot say that a tile is working somewhere else.
 
 ---
 
@@ -1141,13 +1141,82 @@ An isolated daemon on a scratch `homedir` — the real `~/.cuesheet` was confirm
 
 Still open, and now visible in one more place: the switcher shows each project's `root`, and a Station whose `workspace` points outside it is still not distinguishable from one that does not. Step 42's job, as Step 34 said. The switcher makes the divergence easier to see and no easier to understand, which is the right amount for a menu to do.
 
-### Step 42 — The project view
+### Step 42 — The project view ✅
 
 The screen the request describes: for this project, its Stations — which harness, which model, which role — and its usage, on the same screen. Roles are the interesting part, because the README's claim is that they are enforced rather than requested, and the UI has never shown that. A `reviewer` that cannot write and a `worker` that cannot review should be legible as *constraints*, not as labels.
 
 Depends on Phase 10 for the usage half and Phase 9 for the local row; built after both so it renders data rather than placeholders.
 
-**Done when:** a project's whole posture — who is on it, what each one is allowed to do, what it has spent, how close it is to a cap — is one screen with nothing on it that says "coming soon."
+**Done when:** a project's whole posture — who is on it ✅, what each one is allowed to do ✅, what it has spent ✅, how close it is to a cap ✅ — is one screen with nothing on it that says "coming soon" ✅.
+
+> **Done.** `core/roles.ts` (new, browser-safe), a `confinement()` declaration on the `Harness` interface, `StationEnforcement` on `GET /stations`, `ui/posture.ts` and `ProjectView.tsx`. 773 tests pass, up from 724.
+
+#### "A reviewer cannot write" is true on Codex and false on Claude Code
+
+This is the step's whole finding. Writing the screen meant deciding what sentence to put under a `reviewer`, and the honest answer turned out to be *it depends on the harness*:
+
+- **The daemon** refuses a `worker`'s writes and nothing else's — `writeDeniedByRole`, enforced in-process, surfaced as a `denial` on the run.
+- **Codex's own sandbox** runs a `reviewer`, a `caller` *and* a `worker` `read-only`. That is a wider rule than the daemon's, kept by a different process.
+- **Claude Code** takes no role-based sandbox flag at all. `--permission-mode` is about prompting, not seats. A reviewer there is bounded by the leash and by nothing else.
+
+So a Desk that printed "a reviewer cannot write" would be lying about one of two shipped harnesses. `leash.ts` has carried a note for two phases saying the asymmetry is deliberate — widening the facade to match Codex would change the Phase 7 gate path with no test covering it either way — and **this step did not unify them.** It made the disagreement visible instead: every line on the screen says *who* keeps the promise, because that is the thing that changes when somebody swaps the harness.
+
+#### The claim had to travel from whoever can actually make it
+
+Only the harness knows what flag its subprocess is launched with, and the Desk cannot import `@cuesheet/harness` without inverting the dependency arrow. So `Harness` gained an **optional** `confinement(role)`, `describeStations` assembles it with the daemon's own rule into `StationEnforcement`, and the Desk renders what it is told rather than inferring from the role.
+
+**Absent is a fourth answer, and it is not `"none"`.** A third-party harness that declares nothing is *unknown*, and the screen says so — "does not say what it does with a reviewer" — rather than reporting it as unconfined. Writing a harness is the contribution this project most wants; guessing on a stranger's behalf would make the guess load-bearing. Codex declares its mapping *from* `sandboxFor` rather than restating it, so the flag the CLI gets and the sentence the Desk prints cannot drift; a contract test asserts both, and that every shipped harness declares something.
+
+#### The move that had to happen first
+
+`writeDeniedByRole` lived in `leash.ts`, which imports `node:fs/promises`. The project view needs it as a **value**, and Step 40's blank page is what a browser bundle does when it reaches a module that touches disk. So the role facts moved to `core/roles.ts` — no imports that reach a filesystem — published at `@cuesheet/core/roles` and re-exported from `leash.ts` so no caller changed. That is now the fourth subpath cut for this reason (`./types`, `./limits`, `./ledger`, `./roles`), and the rule Step 40 wrote is holding: **types from the barrel, values from a subpath.**
+
+#### Putting a number on a second screen found a bug in the first
+
+`ledger.totals.runs` was **always 0**. Every bucket — `byDay`, `byVendor`, `byStation` — counted through `bump`, which increments its own `runs`; the grand total went through `add`, which takes a `Cost` and has no notion of a run. Nothing caught it because nothing had ever drawn the two next to each other. The project view did, and read "$0.31 · 1 run" on the Station card above "Nothing spent yet" in the header.
+
+Fixed with three tests, including the one that says a *remainder* is not another unattributed run — the run it belongs to is already counted in `byStation`, and counting it twice would make the columns describe different populations of the same runs. The ledger panel has been showing this zero since Step 39.
+
+#### What the screen refuses to do
+
+- **Never claim a refusal nobody keeps.** A test asserts no line under a `claude-code` reviewer matches "cannot write" or "writes are refused".
+- **Never render an empty allow list as freedom.** `paths` absent means the leash defaults to deny, so such a Station can write *nothing* — and a screen listing its zero restrictions would say the exact opposite. It gets a refusal line.
+- **Never contradict itself two lines apart.** A Station whose writes are refused is not also told it "may write src/**"; its allow globs are described as applying to reads.
+- **Never say `$0.00` for a price nobody reported** — the same refusal the limits strip makes, and the reason a Station with unpriced runs shows a dash.
+
+#### Two screens, not one longer one
+
+The project view answers "what is this project's posture" and is read before work starts; the run surface answers "what is happening" and is read while it runs. A `project`/`runs` switch in the shell, in the palette as well, and deliberately not in a URL or in the daemon — which has no notion of what a client is looking at, the same decision Phase 8 made about the current project.
+
+**The limits strip stays on the runs view and is not repeated here.** They answer different questions and group differently on purpose: the strip is per *vendor*, because a plan belongs to one and two Stations on `claude-code` share a five-hour window. A posture row is per *harness*, because a Station does not run on a vendor — it runs on a harness, and it is the harness that was asked. A test asserts a `codex` Station shows no cap from an `anthropic` reading.
+
+#### Running the app found four things the five commands did not
+
+The rule from Step 40 again, and it keeps earning its place. Build, typecheck, lint, format and 773 tests were all green over every one of these:
+
+- **"a engineer".** Fixed in `core/roles.ts` with a vowel check rather than a table, because `ROLES` is a list somebody will add to — and bad grammar on a screen about enforcement makes the rest of the sentence easier to disbelieve.
+- **"— across 0 runs".** The dash the limits strip uses for "nobody reported a number", borrowed for "there is nothing to report". Different sentences, and only one of them was true.
+- **"1 runs".** Now formatted in `posture.ts`, where a test holds it.
+- **The deny line sorted above the permission it refines.** Ordering by `tone` put "Denied infra/**" above "May write src/**", so the screen refined a rule it had not stated yet. Lines are now two groups: what stops this Station at all, then the leash's story in the order it has to be told.
+
+#### One thing to know before repeating this by hand
+
+**`POST /runs` takes a `cuesheet`, not a `stationIds` list, and silently defaults to the first configured Station.** Driving the scratch daemon by hand with `{"stationIds":["tagger"]}` started the *`claude-code` engineer* instead of the mock worker — a real CLI run against a real plan, stopped after 28 seconds and $0.31. The route's shape is not this step's to change, and the recovery worked exactly as designed (`stop` took the process tree down and the run landed `stopped` with its cost attributed). Recorded because the next person exercising this screen with a real harness configured will otherwise repeat the charge, and because the run is why the screenshots above have real money on them.
+
+#### What was actually looked at
+
+An isolated daemon on a scratch `homedir` with four Stations chosen to cover the disagreements — a `claude-code` engineer with allow *and* deny globs, a `codex` reviewer, a `mock` worker, and a `mock` engineer with no `paths` at all — plus the Vite dev server and a headless browser:
+
+- the four cards, each saying something different about what is enforced and by whom,
+- the same screen with real spend on it, after a run,
+- both views, and the switch between them,
+- and the whole thing at **380px**, where the attribution wraps under its sentence and nothing scrolls sideways.
+
+**One thing was not exercised and is named rather than implied:** the "this harness cannot play this seat" line. It needs a registered harness whose roles exclude the seat, and the only such built-in is `ollama`, which Step 35 skipped — no build registers one, so the daemon answers `undefined` for its roles and correctly says nothing. The line is covered by tests at both layers; it has never been on screen.
+
+#### On Phase 8's open question — "what a project *is*, exactly"
+
+**Closed by this screen, or as close as it gets.** The question was whether a project is a folder or a folder plus Stations that may point outside it. The project view now shows the project root in its header and every Station's own workspace in its permissions, so a Station working outside the project is visible as the divergence it is rather than being implied by a single name in a topbar. That is what Step 34 said the project view owed the question.
 
 ### Step 43 — The run surface
 

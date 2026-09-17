@@ -15,7 +15,11 @@ import {
 import { createHarnessExecutor } from "./harness-executor.js";
 import type { ExecutorFactoryDeps } from "./server.js";
 import type { RunExecutor } from "./executor.js";
-import type { HarnessProber, HarnessRoles } from "./stations.js";
+import type {
+  HarnessConfinement,
+  HarnessProber,
+  HarnessRoles,
+} from "./stations.js";
 import type { UsageSource } from "./usage.js";
 
 export interface HarnessRuntimeOptions {
@@ -28,6 +32,7 @@ export interface HarnessRuntime {
   executorFactory: (deps: ExecutorFactoryDeps) => RunExecutor;
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
+  harnessConfinement: HarnessConfinement;
   usageSources: () => readonly UsageSource[];
 }
 
@@ -59,6 +64,13 @@ export function harnessRuntime(
     // warns about nothing — and the one `ollama` gets, since
     // `BUILTIN_HARNESS_IDS` lists it for probe ordering but no build ships it.
     harnessRoles: (harness) => registry.get(harness)?.roles,
+    // Optional on the interface, so this is two `undefined`s that mean
+    // different things and both come out the same way: no such harness, and a
+    // harness that declines to say. Neither is "nothing confines it" — the
+    // Desk prints those two as "unknown" and only a declared "none" as the
+    // claim that the leash is the whole boundary.
+    harnessConfinement: (harness, role) =>
+      registry.get(harness)?.confinement?.(role),
     // Every registered harness, read at call time rather than captured, so a
     // registry that gains one later is picked up without a restart. A `Harness`
     // satisfies `UsageSource` structurally — the cache deliberately asks for

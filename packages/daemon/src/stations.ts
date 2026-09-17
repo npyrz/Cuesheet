@@ -12,7 +12,9 @@
  */
 import {
   isGateRef,
+  writePosture,
   BUILTIN_HARNESS_IDS,
+  type Confinement,
   type ConfigWarning,
   type HarnessId,
   type HarnessProbe,
@@ -37,9 +39,51 @@ export type HarnessProber = (harness: HarnessId) => Promise<HarnessProbe>;
  */
 export type HarnessRoles = (harness: HarnessId) => readonly Role[] | undefined;
 
+/**
+ * What a harness's own sandbox does with a seat, or `undefined` when it does
+ * not say — Step 42.
+ *
+ * A third function rather than another field on the probe, for the reason
+ * {@link HarnessRoles} is one: this is static capability, not liveness, and an
+ * uninstalled CLI still confines the seats it confines. It is also the half of
+ * "roles are enforced, not requested" that this process cannot know on its
+ * own — only the harness knows what flag its subprocess is launched with.
+ */
+export type HarnessConfinement = (
+  harness: HarnessId,
+  role: Role,
+) => Confinement | undefined;
+
+/**
+ * What this Station is actually allowed to do, and who is stopping it.
+ *
+ * The leash itself is not repeated here — `station.workspace`, `station.paths`
+ * and `station.deny` are already on the view, and a second copy would be a
+ * second thing to keep true. What is here is the part no client can derive:
+ * which *process* refuses a write, and what the vendor's CLI does with the
+ * seat.
+ */
+export interface StationEnforcement {
+  /** False only when something refuses writes outright, not merely bounds them. */
+  writes: boolean;
+  /** Who refuses: this daemon, the harness's own sandbox, or both. */
+  refusedBy: ("daemon" | "harness")[];
+  /** Absent when the harness does not declare one. Not the same as "none". */
+  confinement?: Confinement;
+  /** Absent when nothing knows this harness's roles — a third-party one, say. */
+  canPlaySeat?: boolean;
+}
+
 export interface StationView {
   station: Station;
   probe: HarnessProbe;
+  /**
+   * Step 42. The project view has to show a seat as a *constraint* rather than
+   * a label, and "a reviewer cannot write" is true on `codex` and false on
+   * `claude-code` — so the claim is computed where both halves are known,
+   * rather than guessed at by a Desk that cannot import a harness.
+   */
+  enforcement: StationEnforcement;
 }
 
 export interface StationsResponse {
@@ -105,10 +149,20 @@ export const unprobed: HarnessProber = async (harness) => ({
  */
 export const unknownRoles: HarnessRoles = () => undefined;
 
+/**
+ * The inert default: no harness declares a sandbox.
+ *
+ * `undefined` again, and again it is the honest answer rather than a
+ * convenient one — a daemon with no registry wired up has not learned that
+ * nothing is confined, it has learned nothing.
+ */
+export const unknownConfinement: HarnessConfinement = () => undefined;
+
 export async function describeStations(
   loaded: LoadedConfig,
   probe: HarnessProber = unprobed,
   rolesOf: HarnessRoles = unknownRoles,
+  confinementOf: HarnessConfinement = unknownConfinement,
 ): Promise<StationsResponse> {
   const configured = loaded.config.station;
 
@@ -134,6 +188,7 @@ export async function describeStations(
         authed: false,
         error: "Unknown harness.",
       },
+      enforcement: enforcementOf(station, rolesOf, confinementOf),
     })),
     harnesses: [...probes.values()].sort(byInstalledThenName),
     cuesheets: Object.entries(loaded.config.cuesheet).map(([id, sheet]) => ({
@@ -148,6 +203,33 @@ export async function describeStations(
     warnings: [...loaded.warnings, ...seatWarnings(configured, rolesOf)],
     limits: loaded.config.limits,
     sourcePath: loaded.sourcePath,
+  };
+}
+
+/**
+ * What holds this Station back, assembled from the two processes that know.
+ *
+ * `writePosture` in core decides the refusal, so the rule the daemon enforces
+ * and the sentence the Desk prints come from one function rather than from a
+ * route that reimplements it.
+ */
+function enforcementOf(
+  station: Station,
+  rolesOf: HarnessRoles,
+  confinementOf: HarnessConfinement,
+): StationEnforcement {
+  const confinement = confinementOf(station.harness, station.role);
+  const roles = rolesOf(station.harness);
+  const { writes, refusedBy } = writePosture(station, confinement);
+
+  return {
+    writes,
+    refusedBy,
+    // Spread rather than assigned: `exactOptionalPropertyTypes` is on, and an
+    // explicit `undefined` here would be a different wire shape from absent —
+    // which is the distinction this field exists to carry.
+    ...(confinement !== undefined && { confinement }),
+    ...(roles !== undefined && { canPlaySeat: roles.includes(station.role) }),
   };
 }
 

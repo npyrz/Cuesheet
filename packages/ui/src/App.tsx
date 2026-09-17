@@ -12,6 +12,7 @@ import { LaunchSurface } from "./components/LaunchSurface.js";
 import { LedgerPanel } from "./components/LedgerPanel.js";
 import { LimitsStrip } from "./components/LimitsStrip.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
+import { ProjectView } from "./components/ProjectView.js";
 import { RunLog } from "./components/RunLog.js";
 import { StationTile } from "./components/StationTile.js";
 import { bridge } from "./api/base.js";
@@ -26,6 +27,17 @@ export function App(): React.JSX.Element {
   // is why the placeholder below has a second branch rather than a dead button.
   const chooseDirectory = bridge()?.chooseDirectory;
   const { state } = desk;
+  /**
+   * Which of the two screens is showing — Step 42.
+   *
+   * Two screens rather than one longer one, because they are read at different
+   * moments: the project view answers "what is this project's posture" before
+   * work starts, and the run surface answers "what is happening" while it
+   * does. Local to the shell and deliberately not in the URL or the daemon:
+   * the daemon has no notion of what a client is looking at, which is the same
+   * decision Phase 8 made about the current project.
+   */
+  const [view, setView] = useState<"project" | "runs">("project");
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
   const [ledger, setLedger] = useState(false);
@@ -92,6 +104,16 @@ export function App(): React.JSX.Element {
       // One per configured cuesheet. The gate names are in the label because
       // "this run will be reviewed and can be held" is the thing you want to
       // know *before* pressing it, not after.
+      {
+        id: "view-project",
+        label: "Show this project — who is on it and what they may do",
+        run: () => setView("project"),
+      },
+      {
+        id: "view-runs",
+        label: "Show the runs",
+        run: () => setView("runs"),
+      },
       // Switching, from inside the palette. The menu in the topbar is the
       // discoverable half; this is the half that works with a modal open, one
       // hand, and no idea where the mouse is.
@@ -158,6 +180,30 @@ export function App(): React.JSX.Element {
           chooseDirectory={chooseDirectory}
           onOpen={(root) => void desk.openFolder(root)}
         />
+        {/*
+          Two screens, one switch. `aria-pressed` rather than a link or a tab
+          list: there is no routing in this app — the daemon has no notion of
+          what a client is looking at — so these are buttons that say which one
+          is down.
+        */}
+        <nav className="views" aria-label="Views">
+          <button
+            type="button"
+            className="view-tab"
+            aria-pressed={view === "project"}
+            onClick={() => setView("project")}
+          >
+            project
+          </button>
+          <button
+            type="button"
+            className="view-tab"
+            aria-pressed={view === "runs"}
+            onClick={() => setView("runs")}
+          >
+            runs
+          </button>
+        </nav>
         <span className="conn" data-status={state.connection}>
           <span className="dot" aria-hidden="true" />
           {state.connection === "open"
@@ -197,95 +243,107 @@ export function App(): React.JSX.Element {
         none of it appears under the new project's name.
       */}
       {showing ? (
-        <>
-          {warnings.map((warning, index) => (
-            <div
-              className="banner warn"
-              key={`${warning.table ?? ""}-${index}`}
-            >
-              <span>{warning.message}</span>
-            </div>
-          ))}
+        view === "project" ? (
+          <ProjectView
+            projectId={desk.project.project.id}
+            projectName={desk.project.project.name}
+            projectRoot={desk.project.project.root}
+            stations={state.stations}
+            usage={state.usage}
+            onAddStation={() => setAdding(true)}
+            onOpenLedger={() => setLedger(true)}
+          />
+        ) : (
+          <>
+            {warnings.map((warning, index) => (
+              <div
+                className="banner warn"
+                key={`${warning.table ?? ""}-${index}`}
+              >
+                <span>{warning.message}</span>
+              </div>
+            ))}
 
-          {/*
+            {/*
           Above the tiles, because it is what an operator checks *before*
           starting work rather than after. Renders nothing at all until the
           first `/usage` fetch lands — an empty frame tells them less than the
           space it takes.
         */}
-          {state.stations && (
-            <LimitsStrip usage={state.usage} limits={state.stations.limits} />
-          )}
-
-          <main>
-            {state.standbys.length > 0 && (
-              <section>
-                <h2 className="section-title">Standby</h2>
-                {state.standbys.map((standby) => (
-                  <div className="standby" key={standby.id}>
-                    <span>{standby.ask}</span>
-                    <span className="spacer" />
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => void desk.answer(standby.id, "go")}
-                    >
-                      go
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void desk.answer(standby.id, "no")}
-                    >
-                      no
-                    </button>
-                  </div>
-                ))}
-              </section>
+            {state.stations && (
+              <LimitsStrip usage={state.usage} limits={state.stations.limits} />
             )}
 
-            <section>
-              <h2 className="section-title">Stations</h2>
-              <div className="tiles">
-                {stations.map(({ station, probe }) => (
-                  <StationTile
-                    key={station.id}
-                    station={station}
-                    probe={probe}
-                    {...(state.stationActivity[station.id] && {
-                      activity: state.stationActivity[station.id],
-                    })}
-                    onOpenRun={select}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="tile add"
-                  onClick={() => setAdding(true)}
-                >
-                  + add a station
-                </button>
-              </div>
-              {state.stations && stations.length === 0 && (
-                <p className="hint">
-                  No Stations yet. Add one — nothing here requires you to open
-                  the TOML.
-                </p>
+            <main>
+              {state.standbys.length > 0 && (
+                <section>
+                  <h2 className="section-title">Standby</h2>
+                  {state.standbys.map((standby) => (
+                    <div className="standby" key={standby.id}>
+                      <span>{standby.ask}</span>
+                      <span className="spacer" />
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => void desk.answer(standby.id, "go")}
+                      >
+                        go
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void desk.answer(standby.id, "no")}
+                      >
+                        no
+                      </button>
+                    </div>
+                  ))}
+                </section>
               )}
-            </section>
 
-            <section>
-              <h2 className="section-title">Runs</h2>
-              <RunLog
-                runs={state.runs}
-                selected={run}
-                events={events}
-                onSelect={select}
-                onStop={(runId) => void desk.stop(runId)}
-                loadDiff={desk.diff}
-              />
-            </section>
-          </main>
-        </>
+              <section>
+                <h2 className="section-title">Stations</h2>
+                <div className="tiles">
+                  {stations.map(({ station, probe }) => (
+                    <StationTile
+                      key={station.id}
+                      station={station}
+                      probe={probe}
+                      {...(state.stationActivity[station.id] && {
+                        activity: state.stationActivity[station.id],
+                      })}
+                      onOpenRun={select}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="tile add"
+                    onClick={() => setAdding(true)}
+                  >
+                    + add a station
+                  </button>
+                </div>
+                {state.stations && stations.length === 0 && (
+                  <p className="hint">
+                    No Stations yet. Add one — nothing here requires you to open
+                    the TOML.
+                  </p>
+                )}
+              </section>
+
+              <section>
+                <h2 className="section-title">Runs</h2>
+                <RunLog
+                  runs={state.runs}
+                  selected={run}
+                  events={events}
+                  onSelect={select}
+                  onStop={(runId) => void desk.stop(runId)}
+                  loadDiff={desk.diff}
+                />
+              </section>
+            </main>
+          </>
+        )
       ) : (
         <main>
           {/*

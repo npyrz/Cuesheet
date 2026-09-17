@@ -23,6 +23,7 @@
  * avoid.
  */
 import type {
+  Confinement,
   Cost,
   DiffStat,
   HarnessId,
@@ -36,6 +37,10 @@ import type {
   Vendor,
   Verdict,
 } from "@cuesheet/core";
+
+// Part of the contract a harness implements, so it is spelled here as well as
+// in core: a third party writing a harness imports this module, not core's.
+export type { Confinement } from "@cuesheet/core";
 
 // ── Events a harness may raise ──────────────────────────────────────────────
 
@@ -247,6 +252,22 @@ export interface Harness {
   /** Register MCP connectors (M4). A no-op is a valid implementation. */
   writeConnectors(connectors: readonly Connector[]): Promise<void>;
   run(ctx: RunContext): Promise<RunResult>;
+  /**
+   * What this runtime's *own* sandbox does with a seat — Step 42.
+   *
+   * Optional, and absent is a real answer rather than a missing one: it means
+   * "this harness does not say", which a surface must report as unknown and
+   * not as unconfined. Declaring `"none"` is the opposite claim, and an
+   * honest one — `claude-code` takes no role-based sandbox flag, so the leash
+   * and the daemon are the whole boundary there.
+   *
+   * It exists because "roles are enforced, not requested" is kept in two
+   * processes: this one refuses a worker's writes, and the vendor's CLI runs a
+   * reviewer read-only. Only the harness knows the second half, and a Desk
+   * that claimed "cannot write" for every reviewer would be wrong about
+   * `claude-code` — so the claim travels from whoever can actually make it.
+   */
+  confinement?(role: Role): Confinement;
 }
 
 /** Re-exported so a harness module needs one import, as in the README. */
