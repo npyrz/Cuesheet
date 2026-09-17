@@ -73,6 +73,12 @@ textarea {
 .topbar {
   display: flex;
   align-items: center;
+  /* Wraps rather than overflowing. At 380px the row — brand, switcher,
+     connection, two buttons — is wider than the window, and a topbar that
+     pushes the page sideways takes every surface under it with it. Step 40
+     settled that nothing breaks at phone width; this is the shell's half of
+     that, found by looking rather than by reasoning about it. */
+  flex-wrap: wrap;
   gap: 12px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
@@ -998,15 +1004,140 @@ button.link {
   color: var(--dim);
 }
 
-/* Step 32: the active project's name in the top bar, and the placeholder the
-   Desk shows before Step 40 builds a real launch surface. */
-.topbar .project {
+/* Step 41: the switcher. Replaces Step 32's name-in-the-topbar and Step 34's
+   `<select>`, which could not show a row's reason for being inert. */
+.switcher {
+  position: relative;
+}
+
+.switcher-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(42vw, 320px);
+  padding: 4px 8px;
   font-size: 12px;
   letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--tile, #1b1d22);
-  color: var(--muted, #9aa0a6);
+}
+
+.switcher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-caret {
+  color: var(--dim);
+}
+
+/* Catches the click that dismisses the menu. Below the menu, above the Desk. */
+.switcher-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.switcher-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 21;
+  /* min() rather than a fixed width: the menu must not out-measure a phone,
+     which is the responsive rule Step 40 settled for every surface. */
+  width: min(92vw, 360px);
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}
+
+.switcher-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.switcher-item:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+/* Disabled means two different things here, so they do not look the same: the
+   project you are on keeps full contrast and is merely inert, while a folder
+   that is gone is dimmed. */
+.switcher-item:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.switcher-item[data-active="true"]:disabled {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.switcher-item-where {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-item-when {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: baseline;
+  font-size: 11px;
+  color: var(--dim);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.switcher-item-problem {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.switcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+/* At phone width the menu is wider than the space to the right of the trigger,
+   so it stops hanging off it and spans the window instead. `.switcher` going
+   static is what does it: the nearest positioned ancestor becomes the sticky
+   topbar, so `top: 100%` still means "under the bar" with no magic number for
+   a bar whose height changes when it wraps. */
+@media (max-width: 520px) {
+  .switcher {
+    position: static;
+  }
+
+  .switcher-menu {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+}
+
+/* The half-second between choosing a project and its resync landing. */
+.switching {
+  padding: 24px 16px;
 }
 
 main.empty {

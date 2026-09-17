@@ -24,6 +24,22 @@ export interface CuesheetBridge {
   platform: string;
   daemonPort?: number;
   chooseDirectory?: () => Promise<string | null>;
+  /**
+   * Tell the shell which project the Desk is showing, `null` for none.
+   *
+   * Optional like the picker, and for the same reason: a browser has no title
+   * bar of ours and no tray, so it has nothing to tell. The Desk never depends
+   * on the answer — nothing here reads back — which is what keeps this a shell
+   * nicety rather than a second source of truth about the current project.
+   */
+  setActiveProject?: (project: ActiveProject | null) => void;
+}
+
+/** The whole of what the shell is told. See `switcher.ts`. */
+export interface ActiveProject {
+  id: string;
+  name: string;
+  root: string;
 }
 
 declare global {

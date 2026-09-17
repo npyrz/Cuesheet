@@ -11,7 +11,11 @@
  * point: the phone in M3 gets the same app with no bridge at all.
  */
 import { contextBridge, ipcRenderer } from "electron";
-import { CHOOSE_DIRECTORY_CHANNEL, parseDaemonPort } from "./launch.js";
+import {
+  ACTIVE_PROJECT_CHANNEL,
+  CHOOSE_DIRECTORY_CHANNEL,
+  parseDaemonPort,
+} from "./launch.js";
 
 const daemonPort = parseDaemonPort(process.argv);
 
@@ -22,4 +26,11 @@ contextBridge.exposeInMainWorld("cuesheet", {
   ...(daemonPort === undefined ? {} : { daemonPort }),
   chooseDirectory: (): Promise<string | null> =>
     ipcRenderer.invoke(CHOOSE_DIRECTORY_CHANNEL) as Promise<string | null>,
+  // Fire-and-forget, and the Desk treats it that way: `setActiveProject` is
+  // optional on `CuesheetBridge`, so a browser — which has no title bar of
+  // ours and no tray — simply does not call it. The main process validates
+  // whatever arrives here; see `parseActiveProject`.
+  setActiveProject: (project: unknown): void => {
+    ipcRenderer.send(ACTIVE_PROJECT_CHANNEL, project);
+  },
 });

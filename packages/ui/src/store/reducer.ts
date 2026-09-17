@@ -54,6 +54,20 @@ export interface StationActivity {
 }
 
 export interface DeskState {
+  /**
+   * Which project every other field here describes, or `null` before the
+   * first attach.
+   *
+   * Step 41, and it is the state's own answer to "a second project's runs are
+   * never visible from the first." Without it the only defence was call-site
+   * discipline: `switchTo` sets the new project on the client, React paints,
+   * and the socket effect dispatches the reset *after* that paint — one frame
+   * of the new project's name over the old project's runs. Tagging the state
+   * lets the surface ask whether what it holds belongs to what it is naming,
+   * which is a question a test can put to the reducer and a `.tsx` gate
+   * cannot.
+   */
+  projectId: string | null;
   connection: ConnectionStatus;
   /** `null` until the first `/stations` fetch lands. */
   stations: StationsResponse | null;
@@ -80,6 +94,7 @@ export interface DeskState {
 }
 
 export const initialState: DeskState = {
+  projectId: null,
   connection: "connecting",
   stations: null,
   usage: null,
@@ -115,8 +130,13 @@ export type DeskAction =
    * `standbys` is the one that would do damage rather than merely mislead: a
    * standby id is addressable daemon-wide, so answering a carried-over one from
    * the new project's Desk would succeed, against a run in the old one.
+   *
+   * `projectId` is carried on the action rather than left to the caller to
+   * set afterwards: the reset and the new identity are the same fact, and
+   * splitting them across two dispatches reintroduces exactly the window this
+   * is here to close.
    */
-  | { type: "project" }
+  | { type: "project"; projectId: string | null }
   | { type: "error"; message: string | null };
 
 const ZERO_COST: Cost = { tokensIn: 0, tokensOut: 0 };
@@ -212,7 +232,11 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
       // vendor. It is the only thing on this Desk that is still true about the
       // project being arrived at, so blanking it would make the strip flicker
       // on every switch and tell the operator nothing they did not know.
-      return { ...initialState, usage: state.usage };
+      return {
+        ...initialState,
+        projectId: action.projectId,
+        usage: state.usage,
+      };
 
     case "error":
       return { ...state, error: action.message };
@@ -555,6 +579,23 @@ function addCost(
 }
 
 // ── Selectors ───────────────────────────────────────────────────────────────
+
+/**
+ * Whether what this state holds belongs to the project being named on screen.
+ *
+ * Step 41's third done-when, as one question. A surface renders runs, tiles
+ * and standbys only while this is true; the frame around them — the switcher
+ * above all — renders either way, because a shell that disappears during the
+ * switch window is a shell you cannot switch again from.
+ *
+ * False is not an error state, it is the half-second between choosing a
+ * project and its resync landing. The honest thing to draw there is the new
+ * project's name over nothing, not the new project's name over the old
+ * project's work.
+ */
+export function isShowing(state: DeskState, projectId: string | null): boolean {
+  return projectId !== null && state.projectId === projectId;
+}
 
 export function selectedRun(state: DeskState): Run | null {
   if (state.selectedRunId === null) return null;

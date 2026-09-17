@@ -11,11 +11,13 @@ import { CommandPalette, type Command } from "./components/CommandPalette.js";
 import { LaunchSurface } from "./components/LaunchSurface.js";
 import { LedgerPanel } from "./components/LedgerPanel.js";
 import { LimitsStrip } from "./components/LimitsStrip.js";
+import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { RunLog } from "./components/RunLog.js";
 import { StationTile } from "./components/StationTile.js";
 import { bridge } from "./api/base.js";
 import { isPaletteChord, modifierKey } from "./format.js";
-import { selectedEvents, selectedRun } from "./store/reducer.js";
+import { isShowing, selectedEvents, selectedRun } from "./store/reducer.js";
+import { describeSwitcher, switchCommands } from "./switcher.js";
 import { useDesk } from "./store/useDesk.js";
 
 export function App(): React.JSX.Element {
@@ -32,6 +34,21 @@ export function App(): React.JSX.Element {
   const events = selectedEvents(state);
   const stations = state.stations?.stations ?? [];
   const warnings = state.stations?.warnings ?? [];
+  const activeId =
+    desk.project.status === "open" ? desk.project.project.id : null;
+  /**
+   * Whether what the reducer holds belongs to the project the shell is naming.
+   *
+   * False for the moment between choosing a project and its resync landing —
+   * the switch happens on the client, so there is a paint in between. Step
+   * 41's third done-when is that nothing of the old project is drawn under the
+   * new one's name in that paint, and this is where the question gets asked.
+   */
+  const showing = isShowing(state, activeId);
+  const rows = useMemo(
+    () => describeSwitcher(desk.projects, activeId),
+    [desk.projects, activeId],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -75,6 +92,19 @@ export function App(): React.JSX.Element {
       // One per configured cuesheet. The gate names are in the label because
       // "this run will be reviewed and can be held" is the thing you want to
       // know *before* pressing it, not after.
+      // Switching, from inside the palette. The menu in the topbar is the
+      // discoverable half; this is the half that works with a modal open, one
+      // hand, and no idea where the mouse is.
+      ...switchCommands(rows).map((command) => ({
+        id: command.id,
+        label: command.label,
+        run: () => void desk.switchTo(command.projectId),
+      })),
+      {
+        id: "all-projects",
+        label: "All projects — leave this one running and go back to the list",
+        run: () => desk.closeProject(),
+      },
       ...(state.stations?.cuesheets ?? []).map((sheet) => ({
         id: `cuesheet-${sheet.id}`,
         label:
@@ -87,14 +117,16 @@ export function App(): React.JSX.Element {
         needsPrompt: true,
       })),
     ],
-    [desk, run, state.stations],
+    [desk, run, rows, state.stations],
   );
 
   // No project, no Desk. A first-run install has nothing to show tiles *of*,
   // and the daemon deliberately does not invent a project to fill the gap.
   //
-  // Step 40's launch surface. Step 41 puts a switcher above the open project;
-  // this is what there is when none is open.
+  // Step 40's launch surface — reachable again as of Step 41, which is what
+  // "All projects…" in the switcher and in the palette does. It is what there
+  // is when no project is open, and leaving a project open is a client action:
+  // nothing on the daemon stops.
   if (desk.project.status !== "open") {
     return (
       <LaunchSurface
@@ -112,43 +144,20 @@ export function App(): React.JSX.Element {
       <header className="topbar">
         <span className="brand">CUESHEET</span>
         {/*
-          The smallest thing that exercises switching, not the switcher.
-          Step 41 makes it one keyboard-reachable action and puts the active
-          project in the window title and the tray; Step 40 gives recents and
-          the missing-folder state a designed surface. A `select` is here
-          because Step 34 is about what a switch must not disturb, and that
-          needs a way to perform one — anything more would be thrown away.
-
-          Projects whose folder has gone are rendered and disabled rather than
-          hidden: a list that silently drops one is how someone concludes
-          their project was deleted.
+          Always rendered, and rendered *before* anything that depends on the
+          resync having landed. A shell that blanked during a switch would be a
+          shell you could not switch out of again — which is the same mistake
+          as a launch surface you cannot get back to.
         */}
-        {desk.projects.length > 1 ? (
-          <select
-            className="project"
-            aria-label="project"
-            title={desk.project.project.root}
-            value={desk.project.project.id}
-            onChange={(changed) => {
-              void desk.switchTo(changed.target.value);
-            }}
-          >
-            {desk.projects.map((candidate) => (
-              <option
-                key={candidate.id}
-                value={candidate.id}
-                disabled={candidate.status !== "ok"}
-              >
-                {candidate.name}
-                {candidate.status === "ok" ? "" : " (missing)"}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="project" title={desk.project.project.root}>
-            {desk.project.project.name}
-          </span>
-        )}
+        <ProjectSwitcher
+          rows={rows}
+          activeName={desk.project.project.name}
+          activeRoot={desk.project.project.root}
+          onSwitch={(id) => void desk.switchTo(id)}
+          onClose={desk.closeProject}
+          chooseDirectory={chooseDirectory}
+          onOpen={(root) => void desk.openFolder(root)}
+        />
         <span className="conn" data-status={state.connection}>
           <span className="dot" aria-hidden="true" />
           {state.connection === "open"
@@ -180,97 +189,123 @@ export function App(): React.JSX.Element {
         </div>
       )}
 
-      {warnings.map((warning, index) => (
-        <div className="banner warn" key={`${warning.table ?? ""}-${index}`}>
-          <span>{warning.message}</span>
-        </div>
-      ))}
-
       {/*
-        Above the tiles, because it is what an operator checks *before*
-        starting work rather than after. Renders nothing at all until the
-        first `/usage` fetch lands — an empty frame tells them less than the
-        space it takes.
+        Everything below belongs to a project, and is drawn only while the
+        state actually holds *this* project's work. Between choosing a project
+        and its resync landing there is a paint where the reducer still has the
+        last one's runs, tiles and standbys — Step 41's third done-when is that
+        none of it appears under the new project's name.
       */}
-      {state.stations && (
-        <LimitsStrip usage={state.usage} limits={state.stations.limits} />
-      )}
+      {showing ? (
+        <>
+          {warnings.map((warning, index) => (
+            <div
+              className="banner warn"
+              key={`${warning.table ?? ""}-${index}`}
+            >
+              <span>{warning.message}</span>
+            </div>
+          ))}
 
-      <main>
-        {state.standbys.length > 0 && (
-          <section>
-            <h2 className="section-title">Standby</h2>
-            {state.standbys.map((standby) => (
-              <div className="standby" key={standby.id}>
-                <span>{standby.ask}</span>
-                <span className="spacer" />
+          {/*
+          Above the tiles, because it is what an operator checks *before*
+          starting work rather than after. Renders nothing at all until the
+          first `/usage` fetch lands — an empty frame tells them less than the
+          space it takes.
+        */}
+          {state.stations && (
+            <LimitsStrip usage={state.usage} limits={state.stations.limits} />
+          )}
+
+          <main>
+            {state.standbys.length > 0 && (
+              <section>
+                <h2 className="section-title">Standby</h2>
+                {state.standbys.map((standby) => (
+                  <div className="standby" key={standby.id}>
+                    <span>{standby.ask}</span>
+                    <span className="spacer" />
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => void desk.answer(standby.id, "go")}
+                    >
+                      go
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void desk.answer(standby.id, "no")}
+                    >
+                      no
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            <section>
+              <h2 className="section-title">Stations</h2>
+              <div className="tiles">
+                {stations.map(({ station, probe }) => (
+                  <StationTile
+                    key={station.id}
+                    station={station}
+                    probe={probe}
+                    {...(state.stationActivity[station.id] && {
+                      activity: state.stationActivity[station.id],
+                    })}
+                    onOpenRun={select}
+                  />
+                ))}
                 <button
                   type="button"
-                  className="primary"
-                  onClick={() => void desk.answer(standby.id, "go")}
+                  className="tile add"
+                  onClick={() => setAdding(true)}
                 >
-                  go
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void desk.answer(standby.id, "no")}
-                >
-                  no
+                  + add a station
                 </button>
               </div>
-            ))}
-          </section>
-        )}
+              {state.stations && stations.length === 0 && (
+                <p className="hint">
+                  No Stations yet. Add one — nothing here requires you to open
+                  the TOML.
+                </p>
+              )}
+            </section>
 
-        <section>
-          <h2 className="section-title">Stations</h2>
-          <div className="tiles">
-            {stations.map(({ station, probe }) => (
-              <StationTile
-                key={station.id}
-                station={station}
-                probe={probe}
-                {...(state.stationActivity[station.id] && {
-                  activity: state.stationActivity[station.id],
-                })}
-                onOpenRun={select}
+            <section>
+              <h2 className="section-title">Runs</h2>
+              <RunLog
+                runs={state.runs}
+                selected={run}
+                events={events}
+                onSelect={select}
+                onStop={(runId) => void desk.stop(runId)}
+                loadDiff={desk.diff}
               />
-            ))}
-            <button
-              type="button"
-              className="tile add"
-              onClick={() => setAdding(true)}
-            >
-              + add a station
-            </button>
-          </div>
-          {state.stations && stations.length === 0 && (
-            <p className="hint">
-              No Stations yet. Add one — nothing here requires you to open the
-              TOML.
-            </p>
-          )}
-        </section>
-
-        <section>
-          <h2 className="section-title">Runs</h2>
-          <RunLog
-            runs={state.runs}
-            selected={run}
-            events={events}
-            onSelect={select}
-            onStop={(runId) => void desk.stop(runId)}
-            loadDiff={desk.diff}
-          />
-        </section>
-      </main>
+            </section>
+          </main>
+        </>
+      ) : (
+        <main>
+          {/*
+            Not a spinner and not an empty Desk: naming the project says which
+            of the two things that could be happening is happening. The
+            switcher above is still live, so a mistaken switch costs one click.
+          */}
+          <p className="hint switching">Opening {desk.project.project.name}…</p>
+        </main>
+      )}
 
       <CommandPalette
         open={palette}
         onClose={() => setPalette(false)}
         onStart={(prompt) => void desk.start(prompt)}
         commands={commands}
-        canStart={stations.length > 0}
+        // Not while the Desk is between projects: the Stations on screen
+        // belong to the one being left, and starting a run against them is the
+        // one thing here that would be more than a misleading render.
+        canStart={showing && stations.length > 0}
       />
 
       {ledger && (

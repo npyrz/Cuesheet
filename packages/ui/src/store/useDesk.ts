@@ -29,7 +29,9 @@ import {
   stopRun,
   type NewStation,
 } from "../api/client.js";
+import { bridge } from "../api/base.js";
 import { connectEvents } from "../api/socket.js";
+import { activeProject } from "../switcher.js";
 import { deskReducer, initialState, type DeskState } from "./reducer.js";
 
 /** How many runs the list pane holds. Plenty for a session; not unbounded. */
@@ -73,6 +75,14 @@ export interface DeskApi {
   switchTo(id: string): Promise<void>;
   /** Drop a recent from the registry. Never touches the folder. */
   forget(id: string): Promise<void>;
+  /**
+   * Go back to the launch surface without closing anything on the daemon.
+   *
+   * Step 40 named the gap this fills: with openable recents the launch surface
+   * became unreachable, because boot reopens the project you were last in. A
+   * way back is the other half of a switcher.
+   */
+  closeProject(): void;
   start(prompt: string, cuesheet?: string): Promise<void>;
   stop(runId: RunId): Promise<void>;
   select(runId: RunId): Promise<void>;
@@ -299,13 +309,21 @@ export function useDesk(): DeskApi {
   useEffect(() => {
     // No project, no socket. Connecting to a project-scoped path without one
     // would fail every reconnect on a schedule.
-    if (projectId === null) return;
+    //
+    // The reset still has to happen: going back to the launch surface leaves a
+    // Desk full of the project just left, and the next project to be opened
+    // would paint over it for a frame. `projectId: null` is the state saying
+    // it belongs to nothing, which is what `isShowing` asks about.
+    if (projectId === null) {
+      dispatch({ type: "project", projectId: null });
+      return;
+    }
     // Everything the Desk holds describes the project it was on. Cleared
     // before the socket opens, so the switch never renders one project's
     // tiles, standbys or run list under another's name. See the `project`
     // action in `reducer.ts` for why the standby is the one that would do
     // damage rather than merely mislead.
-    dispatch({ type: "project" });
+    dispatch({ type: "project", projectId });
     // These two are caches of state, and the effects that keep them in step
     // do not run until the next render — so after a reset they describe the
     // project just left for one tick. Not a correctness bug on its own: run
@@ -496,6 +514,43 @@ export function useDesk(): DeskApi {
     [fail],
   );
 
+  /**
+   * Leave the project open on the daemon and go back to the list.
+   *
+   * The gap Step 40 named and could not close: with recents that open, the
+   * launch surface became unreachable, because boot reopens the project you
+   * were last in. This is the way back — and it is *only* a client action, the
+   * same claim Step 34 made about switching. Runs in the project being left
+   * keep running, their events keep reaching their store, and reopening it
+   * replays them.
+   *
+   * The registry is untouched on purpose: closing is not forgetting, and a
+   * project that fell out of recents because somebody wanted a look at the
+   * list would be a surprising way to lose it.
+   */
+  const closeProject = useCallback(() => {
+    setProject({ status: "none" });
+  }, []);
+
+  /**
+   * Tell the shell what is open, so the window title and the tray follow.
+   *
+   * One-way and unacknowledged. Nothing in the Desk reads this back, and the
+   * daemon is told nothing at all — Phase 8 decided it has no notion of a
+   * current project, and two windows on two projects is what that decision is
+   * for. In a browser `setActiveProject` is simply absent.
+   */
+  useEffect(() => {
+    // `loading` deliberately says nothing rather than `null`: the first paint
+    // happens before `GET /projects` answers, and a title that flashed
+    // "Cuesheet" before settling on the project is a worse first second than
+    // one that arrives a beat late.
+    if (project.status === "loading") return;
+    bridge()?.setActiveProject?.(
+      activeProject(project.status === "open" ? project.project : null),
+    );
+  }, [project]);
+
   const dismissError = useCallback(() => {
     dispatch({ type: "error", message: null });
   }, []);
@@ -508,6 +563,7 @@ export function useDesk(): DeskApi {
       openFolder,
       switchTo,
       forget,
+      closeProject,
       start,
       stop,
       select,
@@ -523,6 +579,7 @@ export function useDesk(): DeskApi {
       openFolder,
       switchTo,
       forget,
+      closeProject,
       start,
       stop,
       select,

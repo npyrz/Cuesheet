@@ -34,10 +34,18 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { EventBus } from "@cuesheet/daemon";
 import {
+  ACTIVE_PROJECT_CHANNEL,
   bridgeArguments,
   CHOOSE_DIRECTORY_CHANNEL,
   devServerUrl,
 } from "./launch.js";
+import {
+  parseActiveProject,
+  trayProjectLabel,
+  trayTooltip,
+  windowTitle,
+  type ActiveProject,
+} from "./project.js";
 import {
   assetCandidates,
   trayIconName,
@@ -88,6 +96,16 @@ let daemon: DaemonConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+
+/**
+ * The project the Desk says it is showing, or `null` for the launch surface.
+ *
+ * Module scope rather than a closure, because `refreshTrayMenu` rebuilds the
+ * menu from nothing every time it runs — including from the "Start at login"
+ * click handler. A project held anywhere narrower would vanish from the menu
+ * the first time somebody toggled an unrelated checkbox.
+ */
+let activeProject: ActiveProject | null = null;
 
 /**
  * Start the daemon, or attach to the one that is already there.
@@ -145,7 +163,10 @@ async function createWindow(port: number): Promise<void> {
     height: 820,
     minWidth: 760,
     minHeight: 520,
-    title: "Cuesheet",
+    // A window recreated from the tray while a project is open must come back
+    // titled. The renderer re-announces on load anyway, but not before the
+    // window has been on screen for a beat under the wrong name.
+    title: windowTitle(activeProject),
     // Painted before the renderer has any CSS, so a dark Desk does not flash
     // white on every launch.
     backgroundColor: "#0d0d0f",
@@ -262,7 +283,7 @@ function createTray(port: number): void {
   if (process.platform === "darwin") image.setTemplateImage(true);
 
   tray = new Tray(image);
-  tray.setToolTip(`Cuesheet — daemon on 127.0.0.1:${port}`);
+  tray.setToolTip(trayTooltip(activeProject, port));
   refreshTrayMenu(port);
 
   // Windows convention: a left click opens the app. macOS opens the menu on
@@ -282,6 +303,10 @@ function refreshTrayMenu(port: number): void {
 
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      // The project first and the daemon under it: which project this is is
+      // the question the tray could not answer before Step 41, and the port
+      // is the one it already could.
+      { label: trayProjectLabel(activeProject), enabled: false },
       { label: `Daemon on 127.0.0.1:${port}`, enabled: false },
       { type: "separator" },
       { label: "Open the Desk", click: showWindow },
@@ -372,9 +397,30 @@ async function boot(): Promise<void> {
   }
 
   ipcMain.handle(CHOOSE_DIRECTORY_CHANNEL, chooseDirectory);
+  ipcMain.on(ACTIVE_PROJECT_CHANNEL, (_event, payload: unknown) => {
+    setActiveProject(parseActiveProject(payload));
+  });
   createTray(daemon.port);
   if (daemon.bus !== null) watchForNotifications(daemon.bus);
   await createWindow(daemon.port);
+}
+
+/**
+ * The Desk has switched projects — or gone back to the launch surface, which
+ * is the same message with `null` in it.
+ *
+ * **A switch is not a stop** (Step 34), and neither is going back to the list:
+ * the daemon's queues and runs belong to its runtimes, not to this window. So
+ * everything this does is cosmetic by design — a title and a tray label — and
+ * nothing here touches the daemon.
+ */
+function setActiveProject(project: ActiveProject | null): void {
+  activeProject = project;
+  mainWindow?.setTitle(windowTitle(project));
+  if (daemon !== null) {
+    tray?.setToolTip(trayTooltip(project, daemon.port));
+    refreshTrayMenu(daemon.port);
+  }
 }
 
 /**

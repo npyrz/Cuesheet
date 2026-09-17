@@ -4,6 +4,7 @@ import {
   activeRun,
   deskReducer,
   initialState,
+  isShowing,
   selectedEvents,
   selectedRun,
   type DeskAction,
@@ -670,9 +671,9 @@ describe("switching projects", () => {
     expect(before.standbys).toHaveLength(1);
     expect(Object.keys(before.stationActivity)).toEqual(["opus"]);
 
-    const after = deskReducer(before, { type: "project" });
+    const after = deskReducer(before, { type: "project", projectId: "beta" });
 
-    expect(after).toEqual(initialState);
+    expect(after).toEqual({ ...initialState, projectId: "beta" });
   });
 
   /**
@@ -682,7 +683,7 @@ describe("switching projects", () => {
    * new project's Desk would succeed, against a run in the old project.
    */
   it("drops a standby that belongs to the project being left", () => {
-    const after = deskReducer(busy(), { type: "project" });
+    const after = deskReducer(busy(), { type: "project", projectId: "beta" });
     expect(after.standbys).toEqual([]);
     expect(after.stationActivity).toEqual({});
     expect(after.selectedRunId).toBeNull();
@@ -690,12 +691,60 @@ describe("switching projects", () => {
 
   it("reports connecting rather than whatever the old socket last said", () => {
     const open = deskReducer(busy(), { type: "connection", status: "open" });
-    expect(deskReducer(open, { type: "project" }).connection).toBe(
-      "connecting",
-    );
+    expect(
+      deskReducer(open, { type: "project", projectId: "beta" }).connection,
+    ).toBe("connecting");
   });
 
   it("does not carry an error across the switch", () => {
-    expect(deskReducer(busy(), { type: "project" }).error).toBeNull();
+    expect(
+      deskReducer(busy(), { type: "project", projectId: "beta" }).error,
+    ).toBeNull();
+  });
+
+  /**
+   * Step 41's third done-when, asked of the state rather than of a component.
+   *
+   * The switch happens on the client before anything is fetched, so between
+   * choosing a project and its resync landing there is a state that holds one
+   * project's runs while the shell names another. `isShowing` is what a
+   * surface asks before it draws them, and it is false for exactly that
+   * window.
+   */
+  it("stops claiming to show the project it has been told it left", () => {
+    const before = busy();
+    const alpha = deskReducer(before, { type: "project", projectId: "alpha" });
+    expect(isShowing(alpha, "alpha")).toBe(true);
+    expect(isShowing(alpha, "beta")).toBe(false);
+  });
+
+  it("does not show anything before the first attach", () => {
+    expect(isShowing(initialState, "alpha")).toBe(false);
+    // A shell with no project open names nothing, so there is nothing for the
+    // state to belong to — `null` is never "showing", even against itself.
+    expect(isShowing({ ...initialState, projectId: null }, null)).toBe(false);
+  });
+
+  /**
+   * The bug this tag exists for, written out as the sequence that produced it:
+   * runs arrive for alpha, the operator picks beta, and beta's fetches have
+   * not landed. The runs are still in the state — nothing has replaced them
+   * yet — and the surface must not draw them under beta's name.
+   */
+  it("keeps one project's runs out of another's surface mid-switch", () => {
+    const alpha = deskReducer(busy(), { type: "project", projectId: "alpha" });
+    const withRuns = deskReducer(alpha, {
+      type: "snapshot",
+      runs: [run()],
+    });
+    expect(withRuns.runs).toHaveLength(1);
+    expect(isShowing(withRuns, "alpha")).toBe(true);
+
+    const switching = deskReducer(withRuns, {
+      type: "project",
+      projectId: "beta",
+    });
+    expect(isShowing(switching, "beta")).toBe(true);
+    expect(switching.runs).toEqual([]);
   });
 });

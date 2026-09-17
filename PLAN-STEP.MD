@@ -60,7 +60,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
-| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Step 40 done** — launch surface, and a blank-page bug found by running the app |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–41 done** — launch surface, and a shell whose switcher is one action from anywhere, with the project the state is tagged by |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
@@ -113,7 +113,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - **`held` is terminal.** The standby happens *before* the run ends, so by the time a record reads `held` a human has already answered. Releasing a Hold is a new run, not a resumption — resuming would mean persisting executor state across process restarts, which is a much larger feature than it looks.
 
 **Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
-- [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. What is *not* ticked by this and is not being quietly folded in: the app still has no launch surface — no recents, no missing-folder state, no keyboard route to the switcher — which is Steps 40–41 and is why Phase 11 still says "the Desk rebuilt"
+- [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. The launch surface, the missing-folder state and the keyboard route to the switcher were explicitly *not* ticked by that phase and were built in Steps 40–41; Phase 11 still says "the Desk rebuilt" because the project view, the run surface and the design system are Steps 42–44
 - [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 12** — moved behind Projects because its own scoping question is unanswerable until a project is a thing, which is a dependency rather than a demotion
 - [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 10.**
 - [ ] `ollama` harness, so the local/worker story is real. **Now Phase 9** — and this line used to say it was blocked by nothing but a missing install, which was wrong. Ollama is a completion endpoint, not an agent loop; the `worker`-only reading the README already specifies is what makes it small
@@ -1077,11 +1077,69 @@ An isolated daemon on a scratch `homedir` — never the developer's real `~/.cue
 
 It is not a defect in this step and it is not fixed by widening it: what an operator needs is a way *back* to the launch surface from an open project, which is the switcher, which is **Step 41**. Recording it here so the next step inherits a known requirement rather than rediscovering it.
 
-### Step 41 — The project shell and the switcher
+### Step 41 — The project shell and the switcher ✅
 
 The frame every other surface lives in. Switching is one action, keyboard-reachable, and the constraint from Step 34 is the acceptance test rather than an aspiration.
 
-**Done when:** switching is possible from anywhere including mid-run, the window title and tray reflect the active project, and a second project's runs are never visible from the first.
+**Done when:** switching is possible from anywhere including mid-run ✅, the window title and tray reflect the active project ✅, and a second project's runs are never visible from the first ✅.
+
+> **Done.** `ProjectSwitcher.tsx` and `switcher.ts` in the UI, `project.ts` in the desktop shell, a `projectId` tag on the reducer's state, and `closeProject`. 724 tests pass, up from 698.
+
+#### The third clause was a real bug, and it was one frame long
+
+**The Desk did show one project's runs under another project's name, on every switch.** `switchTo` sets the new project on the client and React paints; the reset that clears the last project's runs, tiles and standbys is dispatched from the socket effect, which runs *after* that paint. So there was exactly one DOM state naming B over A's work. Step 34 built the reset and its four tests, and the ordering hole survived them because a reducer test cannot see a paint.
+
+The fix is a `projectId` on `DeskState`, carried on the `project` action rather than set by a second dispatch — the reset and the new identity are one fact, and splitting them across two dispatches is how the window got there in the first place. `isShowing(state, activeId)` is then a question the surface asks before it draws anything project-shaped, and a question `reducer.test.ts` can put to the reducer directly. Two new reducer tests assert it, and the four existing `{ type: "project" }` call sites now carry an id rather than the field being optional — an optional one would have let the next caller reopen the hole.
+
+**The evidence is a recording, not a screenshot.** A one-frame state cannot be photographed, so a `MutationObserver` recorded every DOM state a live switch passed through while a run streamed in the project being left. With the gate: 8 states, none naming the new project over the old one's run, and one state showing the gated "Opening api…" frame — proof the branch is reached rather than dead. With the gate temporarily removed as a counterfactual: the same 8 states — the gate adds none, it *replaces* one — and that one state names `api` while `add rate limiting` is still on screen. That is the bug, reproduced and then closed.
+
+#### What the shell must not do while switching
+
+**Gate the body, never the frame.** Blanking the whole Desk during the switch window would satisfy the third clause by breaking the first: no switcher, nothing to switch from. The topbar and the switcher render unconditionally — the recording confirms the switcher was present in every state, including the gated one — and the gated branch names the project it is opening rather than showing a spinner, because "which of the two things is happening" is the only question worth answering there.
+
+The palette's `canStart` is gated too. A misleading render is bad; starting a run against the Stations of the project you just left would be worse, and it is the one thing on that screen that does more than mislead.
+
+#### The `<select>` was a placeholder and this is why it could not stay
+
+A native select cannot show a row's *reason*. Step 34 rendered a missing folder as an option reading `(missing)` with nowhere to say more, while Step 40's launch surface — same list, same registry answer — gave it a sentence. Two renders of one list with two different honesty levels is exactly the divergence that rots, so `describeSwitcher` is built **on** `describeRecents` rather than beside it, and the missing-folder rule has one implementation and one test asking it of both surfaces.
+
+The first draft put the reason in the row's right-hand column, where a sentence crushed the path it was explaining down to three characters. It has its own line now. That was found by looking at it.
+
+#### Step 40's named gap, closed
+
+**With openable recents the launch surface was unreachable** — boot reopens the last project that still exists, so the list only appeared when nothing was openable. "All projects…" is the way back, in the menu and in the palette, and it is a client action in the same sense a switch is: the project stays open on the daemon, its runs keep running, and the registry is untouched, because closing is not forgetting. Verified live: leaving a project with a run in flight, the launch surface drew its three recents while `GET /runs` still reported that run `running`.
+
+#### The window title and the tray
+
+`window.cuesheet.setActiveProject` is the one message that travels renderer → main, and `parseActiveProject` is strict about it — wrong types, empty strings and a name carrying a newline all read as "nothing open", which is the state that is always safe to be wrong about because the next switch corrects it. A title bar is one line and a project folder can be named anything the filesystem allows.
+
+**The active project is module-scope in `main.ts`, not a closure.** `refreshTrayMenu` rebuilds the menu from nothing every time it runs, including from the "Start at login" click handler — a project held anywhere narrower would have vanished from the tray the first time somebody toggled an unrelated checkbox. The title leads with the project (`api — Cuesheet`): window lists, dock previews and `⌘`-Tab cards all truncate from the end, and three windows on three projects would otherwise be three identical entries.
+
+Verified against a running Electron shell over the main process's own inspector: `api — Cuesheet` → switch → `web — Cuesheet` → "All projects…" → `Cuesheet`. **The honest limit:** the tray's strings are unit-tested and set by the same function on the same value as the title, and the run's log confirms a tray was created rather than skipped for a missing icon — but the macOS menu bar itself was not photographed, because this machine denies screen capture to the session. The tooltip and menu label are believed on the title's evidence, not on their own.
+
+#### Running the app found two things five green commands did not, again
+
+Step 40 wrote the rule: the only thing that finds these is opening the page. Both of this step's were invisible to build, typecheck, lint, format and 724 tests.
+
+**Focus opened the menu but could not use it.** `menu.querySelector("button")?.focus()` finds the first row — which is usually the project you are already on, which is disabled, and a disabled button cannot take focus. Focus stayed on the trigger, so the menu was keyboard-*openable* and not keyboard-*operable*. `button:not(:disabled)` fixes it, and the keyboard path now runs end to end: Tab to the trigger, Enter, focus lands on the first project you can actually switch to, Enter switches, Escape closes and returns focus to the trigger.
+
+**Two overflows at 380px**, which is the width Step 40 settled the whole phase on. The menu hung off a trigger 105px from the left edge and ran 75px past the window; and `.topbar` — which predates this step — did not wrap, so the Desk itself scrolled sideways at phone width, something Step 40 checked on the launch surface only. The menu fix is `.switcher { position: static }` inside a `max-width` query, which makes the sticky topbar the positioning context so `top: 100%` still means "under the bar" with no magic number for a bar whose height changes when it wraps. Both were measured, fixed and re-measured: no horizontal scroll, menu inside the viewport with a 12px gutter.
+
+#### What was actually looked at
+
+An isolated daemon on a scratch `homedir` — the real `~/.cuesheet` was confirmed untouched afterwards — with three projects, one of whose folders was deleted after registration, a `mock` run held at a standby so it was genuinely mid-run, the Vite dev server, a headless browser driven over CDP, and the packaged-shape Electron shell with its main process under `--inspect`:
+
+- switching from the menu, from the palette, and from the keyboard alone,
+- switching **mid-run**, twice, with the run still `running` and still on screen after the round trip,
+- the recording of every DOM state a switch passes through, with and without the gate,
+- "All projects…" to the launch surface and back, with the left project's run still going,
+- closing a project and reopening **the same one**, which is the path where `projectId` goes `web` → `null` → `web` and the socket has to be torn down and rebuilt rather than left attached: it comes back `daemon connected`, with its Stations and its run list, not stuck on `connecting…`,
+- the window title following all three transitions,
+- and the whole shell at 380px.
+
+#### On Phase 8's open question — "what a project *is*, exactly"
+
+Still open, and now visible in one more place: the switcher shows each project's `root`, and a Station whose `workspace` points outside it is still not distinguishable from one that does not. Step 42's job, as Step 34 said. The switcher makes the divergence easier to see and no easier to understand, which is the right amount for a menu to do.
 
 ### Step 42 — The project view
 
@@ -1378,7 +1436,7 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 - [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
 - [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists). The glyph **has** now been looked at, by decoding the file and rendering it at 8× (see Step 24): it is sound from 24px up and muddy at 16, where the fader tracks collapse into grey. What is left is a design decision about 16px proportions, not an observation — kept unticked because the decision is unmade
 - [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide
-- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, and **re-opened by Step 44**: that photograph is of the Desk Phase 11 replaces, and ticked here means exercised on a Windows machine, not handled in code. Nothing is known to be broken; it is simply no longer known to be right
+- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, and **re-opened by Step 44**: that photograph is of the Desk Phase 11 replaces, and ticked here means exercised on a Windows machine, not handled in code. Nothing is known to be broken; it is simply no longer known to be right. Step 41 rebuilt the topbar this hint sits in — it now wraps at phone width and carries a switcher — without touching where the hint comes from: still `modifierKey()`, still the shell's `process.platform`. That keeps the row un-ticked rather than making it worse, and it is now a rebuilt bar that has never been seen on Windows rather than a rebuilt page
 - [x] Paths with spaces in packaged builds — installed to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` and launched
 
 ---
