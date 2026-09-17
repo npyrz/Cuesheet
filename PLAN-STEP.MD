@@ -60,7 +60,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
-| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–42 done** — launch surface, a switcher one action from anywhere, and a project view that says what each seat is actually allowed to do, and who enforces it |
+| 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–43 done** — launch surface, switcher, a project view that says what each seat may do, and a run surface that leads with the blocking finding rather than logging it |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
@@ -1218,11 +1218,59 @@ An isolated daemon on a scratch `homedir` with four Stations chosen to cover the
 
 **Closed by this screen, or as close as it gets.** The question was whether a project is a folder or a folder plus Stations that may point outside it. The project view now shows the project root in its header and every Station's own workspace in its permissions, so a Station working outside the project is visible as the divergence it is rather than being implied by a single name in a topbar. That is what Step 34 said the project view owed the question.
 
-### Step 43 — The run surface
+### Step 43 — The run surface ✅
 
 The live run, rebuilt on what three real harnesses actually emit rather than on what `mock` emitted in Phase 4: text, tool calls, file changes, denials, cost, verdicts, gates, standbys. Verdicts and gates in particular have never had a designed treatment — a blocking finding that holds a run is the most important thing this app can tell you, and it currently arrives as another line in a log.
 
-**Done when:** the Phase 7 gate run replays into the new surface and the blocking finding is the thing you see first, not the thing you scroll for.
+**Done when:** the Phase 7 gate run replays into the new surface — **not ticked as written**: that run's record did not survive, so what replays is a reconstruction of it plus a live held gate run standing in for the original; see below — and the blocking finding is the thing you see first, not the thing you scroll for ✅, proven twice, including on live wire data.
+
+> **Done, with one clause deliberately left unticked.** `ui/runview.ts`, `RunSurface.tsx` replacing `RunLog.tsx`, and a replayable fixture of the Phase 7 run. 801 tests pass, up from 775.
+>
+> **The first clause is not ticked, and that is the point of the next section.** A ✅ with a footnote explaining why it is not quite the thing is the pattern Phase 7 spent a retrospective on. The original record does not exist; what was built replays a *reconstruction* of it, and a live held gate run carries the wire data the original would have. Both are real evidence and neither is the clause as written, so the clause stays open and says why.
+
+#### Why the first clause is not ticked
+
+**The original Phase 7 run cannot replay, because its record no longer exists.** It was recorded months ago on a real repo with both CLIs billed, and its run store lived in `~/.cuesheet` — a directory this machine does not have. So two pieces of evidence were produced instead, and neither is quietly substituted for the original:
+
+1. **A live held gate run, driven through the daemon with two mock vendors** — the `gate-run.test.ts` arrangement, by hand, in a browser. Real wire data: a real `Verdict` with a `severity: "block"` finding, a real `GateReport` holding on it, a real standby asking whether to override, and a real `held` status once it was refused. This is the stronger half.
+2. **The Phase 7 run as a fixture**, reconstructed in `ui/src/fixtures/gate-run.ts` from the transcript this document recorded under Step 30 — the prompt, both vendors, `+22 −1` on `upload.js`, the security finding, the gate's two reasons, `$0.5552`, `2m 51s`. It replays **through the reducer**, not into the formatter directly, because that is the path a real run takes.
+
+Deliberately **not** done: re-running the real two-vendor gate to re-photograph something the repo already recorded. That is about $0.55 of somebody else's plan for a screenshot.
+
+#### Two different things are called "blocking", and running it is what found that
+
+`Finding.severity: "block"` is the **reviewer's** judgement. A Gate's `blocking` is a list of **categories the operator declared hold-worthy**, and `core/gate.ts` holds on that list — not on severity. The first live gate run drove that home: the reviewer filed `security`/`block`, the gate had no `blocking` list, and the run finished **clean**.
+
+That is correct behaviour and it makes a headline reading "a reviewer filed a blocking finding" over a finished run misleading, because it implies a hold that never happened. So the headline says which it is — *"A reviewer filed a blocking finding, and nothing stopped this run."* — and the finding still leads, because it is still the thing worth reading. A second pass found the other half: that sentence must not appear on a run that is **still live**, which is every run sitting on a Hold's standby, where the gate's record does not exist yet. A claim about an outcome is only made once there is one.
+
+#### The surface is ordered by what it costs to miss
+
+Phase 4's pane rendered every event as one row of the same shape, so the reviewer's objection sat between a tool call and a cost line in the same typeface. The order now is: **headline, findings, gates, stream, diff** — and the headline is chosen by severity rather than recency, in this order: a blocking finding, a failure, a question waiting on a human, then a Hold with no finding behind it. A run that is simply running gets no headline at all; a surface that announces every state teaches people to skip the announcement.
+
+**Severity is read off the finding, never off the decision.** The recorded Phase 7 verdict is a `pass` *carrying* a blocking finding — `mock`'s `review: "blocking"` exists for exactly that case — and a surface keyed on `decision` would have drawn it green.
+
+**The mark is on the run row too.** "Seen first" is not satisfied by a pane you have to open: the list is what you see before you click, and a row reading only `held` sends somebody hunting for the reason. A blocking finding puts `blocking: security` on the row.
+
+#### What the real streams changed about the stream
+
+- **Prose is coalesced per Station**, because Claude Code streams text a few words at a time and one row each turns a paragraph into forty rows of chrome. The break is on the **Station**, not only on the event kind — a two-vendor run interleaves the engineer's prose with the reviewer's, and merging those would fold the objection into the paragraph of the agent it is about.
+- **A cost event must not break a paragraph either.** It was breaking one, and watching the live run is what showed it: costs land between sentences, so one thought rendered as four rows split by an event nobody draws. Fixed, with a test.
+- **Cost events are not rows at all.** Every harness emits them continuously; the total belongs in the header.
+- **A denial is not an error and not noise.** It is the only visible evidence a boundary held, so it keeps its own tone and its path.
+- **`toolSummary` treats `input` as hostile**, because it is `unknown` on the wire and comes from a vendor CLI's JSON. A thrown property access inside a render is a blank pane — Step 40's failure with a different cause. Tested against `null`, numbers, arrays, wrong-typed fields and a bare string.
+
+#### What was actually looked at
+
+An isolated daemon on a scratch `homedir`, two mock vendors with different `vendor` strings, a real git workspace, the Vite dev server and a headless browser:
+
+- a run whose reviewer filed a blocking finding in a category no Gate named — finishing clean, and saying so,
+- the same cuesheet with `blocking = ["security"]`, which held: the standby asking to override, the finding at the top of the pane while the run waited, and the `HOLD` gate row with its reason once the override was refused,
+- the run list carrying `blocking: security` on both rows,
+- and the whole surface at **380px**, with no horizontal scroll.
+
+#### One thing this step deliberately did not build
+
+**Filter chips over `RUN_EVENT_TYPES`.** The constant's own comment offers them, and with `cost` now filtered out of the stream a chip list would be the natural next thing. It is not in the done-when, nothing in the app enumerates event kinds for display yet, and Step 44 owns the surfaces' states and controls. Named here so the next person finds a decision rather than an oversight.
 
 ### Step 44 — A design system, once
 

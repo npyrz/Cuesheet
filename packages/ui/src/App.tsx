@@ -13,7 +13,7 @@ import { LedgerPanel } from "./components/LedgerPanel.js";
 import { LimitsStrip } from "./components/LimitsStrip.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProjectView } from "./components/ProjectView.js";
-import { RunLog } from "./components/RunLog.js";
+import { RunSurface } from "./components/RunSurface.js";
 import { StationTile } from "./components/StationTile.js";
 import { bridge } from "./api/base.js";
 import { isPaletteChord, modifierKey } from "./format.js";
@@ -332,7 +332,7 @@ export function App(): React.JSX.Element {
 
               <section>
                 <h2 className="section-title">Runs</h2>
-                <RunLog
+                <RunSurface
                   runs={state.runs}
                   selected={run}
                   events={events}

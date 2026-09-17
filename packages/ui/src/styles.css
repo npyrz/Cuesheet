@@ -917,75 +917,159 @@ button.link {
   font-size: 11px;
 }
 
-/* ── Gates and verdicts ─────────────────────────────────────────────────── */
+/* ── The run surface: findings, gates, and the stream ──────────────────── */
 
-.gates {
+/* Step 43. The headline is the whole of the done-when made visible: a
+   blocking finding is the most important thing this app can say, so it is a
+   block above the stream rather than a row inside it. */
+.headline {
+  margin: 10px 0;
+  padding: 12px 14px;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--dim);
   border-radius: var(--radius);
-  padding: 8px 10px;
-  margin: 8px 0;
   background: var(--panel);
-  display: flex;
-  flex-direction: column;
+}
+
+.headline[data-tone="block"] {
+  border-left-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, var(--panel));
+}
+
+.headline[data-tone="refused"] {
+  border-left-color: var(--bad);
+}
+
+.headline[data-tone="warn"] {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--panel));
+}
+
+.headline-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.headline-line {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.findings,
+.gates {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
   gap: 6px;
 }
 
-.gate-line {
+.finding-row,
+.gate-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
-  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 12px;
 }
 
+/* Severity is a word as well as a colour: this screen exists to be believed
+   by somebody who cannot tell the two reds apart. Full contrast and keyboard
+   work is Step 44. */
+.finding-sev,
 .gate-outcome {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--panel-2);
   border: 1px solid var(--line);
+  color: var(--muted);
   flex: none;
 }
 
-/* A held run is the one state that has to read as "stop", so it borrows the
-   same colour the run list uses for a failure rather than inventing one. */
-.gate-hold,
-.gate-fail {
+[data-tone="block"] > .finding-sev,
+[data-tone="block"] > .gate-outcome {
   color: var(--bad);
   border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
 }
 
-.gate-pass {
+[data-tone="warn"] > .finding-sev,
+[data-tone="warn"] > .gate-outcome {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+}
+
+[data-tone="good"] > .gate-outcome {
   color: var(--ok);
   border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
 }
 
-.gate-skipped,
-.gate-abstain {
-  color: var(--muted);
-}
-
+.finding-cat,
 .gate-name {
   color: var(--text);
-  font-size: 13px;
 }
 
-.verdict {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-left: 2px;
+.finding-text,
+.gate-reasons {
+  flex: 1 1 260px;
+  color: var(--text);
 }
 
-.finding {
-  margin: 0;
-  font-size: 12px;
+.gate-reasons {
   color: var(--muted);
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
+}
+
+.finding-where,
+.finding-by {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* The mark on a run row. A row reading only `held` sends somebody hunting for
+   the reason, which is the thing this step exists to stop. */
+.run-mark {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  justify-self: start;
+}
+
+.run-mark[data-tone="block"] {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
+}
+
+.run-mark[data-tone="warn"] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+}
+
+.log-row[data-tone="refused"] .what {
+  color: var(--warn);
+}
+
+.log-row[data-tone="block"] .what {
+  color: var(--bad);
+}
+
+.log .who {
+  color: var(--dim);
+  margin-right: 8px;
+}
+
+.log .detail {
+  color: var(--muted);
+  margin-left: 8px;
 }
 
 .sev {
