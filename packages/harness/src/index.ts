@@ -89,11 +89,27 @@ export {
 } from "./codex.js";
 export type { CodexOptions, CodexState } from "./codex.js";
 
+export {
+  createOllamaHarness,
+  ollamaHarness,
+  createOllamaState,
+  mapOllamaEvent,
+  parseTags,
+  listModels,
+  probeOllama,
+  resolveHost,
+  seatRefusal,
+  OLLAMA_BIN,
+  OLLAMA_DEFAULT_HOST,
+} from "./ollama.js";
+export type { OllamaOptions, OllamaState } from "./ollama.js";
+
 export { observedStation } from "./observe.js";
 
 import { claudeCodeHarness } from "./claude-code.js";
 import { codexHarness } from "./codex.js";
 import { mockHarness } from "./mock.js";
+import { ollamaHarness } from "./ollama.js";
 import { createHarnessRegistry, type HarnessRegistry } from "./registry.js";
 import type { Harness } from "./types.js";
 
@@ -110,9 +126,15 @@ import type { Harness } from "./types.js";
  * demonstrable but not usable; shipping two from different vendors is what
  * makes the README's own example satisfiable without the operator installing
  * anything beyond the CLIs they already have.
+ *
+ * `ollama` costs nothing to register on a machine that does not have it: its
+ * probe is an HTTP request to loopback that refuses in milliseconds, where the
+ * other two shell out to a binary. It is also the only one whose absence used
+ * to be reported as "a harness nobody registered" — `BUILTIN_HARNESS_IDS` has
+ * listed it since Step 5, and until now `GET /stations` had to say so.
  */
 export function defaultHarnesses(): Harness[] {
-  return [mockHarness, claudeCodeHarness, codexHarness];
+  return [mockHarness, claudeCodeHarness, codexHarness, ollamaHarness];
 }
 
 export function defaultHarnessRegistry(): HarnessRegistry {

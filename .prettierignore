@@ -5,3 +5,8 @@ package-lock.json
 
 # Hand-aligned ASCII diagrams and tables. Prettier reflows them into mush.
 *.md
+
+# Captured harness streams — byte-for-byte records of what a vendor's server
+# actually sent. Reformatting one would make the fixture a paraphrase of the
+# wire rather than the wire, which is the whole reason these files exist.
+packages/harness/src/fixtures

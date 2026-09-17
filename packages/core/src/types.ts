@@ -441,6 +441,19 @@ export interface HarnessProbe {
   version?: string;
   /** Absolute path the binary resolved to, for diagnostics. */
   binPath?: string;
+  /**
+   * Models this runtime has available *right now*, when it can say.
+   *
+   * Absent on every harness whose model comes from static config, which is all
+   * of them but `ollama` — and absent is not `[]`. `[]` is the real answer to
+   * "a server is running and nothing is pulled", and a Desk has to be able to
+   * say that instead of offering an empty picker indistinguishable from one it
+   * was never given a list for.
+   *
+   * A hint for a picker, never a check. It goes stale between one probe and
+   * the next: an `ollama rm` while the Desk is open is enough.
+   */
+  models?: readonly string[];
   /** Why the probe failed, when it did. */
   error?: string;
 }

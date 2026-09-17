@@ -58,7 +58,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | **6 · Packaging and CI** | 25–27 | 🟡 alpha → **Milestone B `v0.1.0-alpha`** | ✅ **Reached.** CI green on both runners; `v0.1.0-alpha` published with five installers |
 | **7 · Gates, for real** | 28–30 | 🔵 beta | ✅ **Done.** `codex` harness written against captured streams; two-vendor gate run end to end |
 | **8 · Projects** | 31–34 | 🔵 beta | ✅ **Done.** One daemon serves many projects, isolated; an alpha profile upgrades into it losing nothing; and switching between them disturbs no run |
-| 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ◐ **Step 36 done**, without the harness. Step 35 open — no Ollama on this machine, so no stream to capture |
+| 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ◐ **Steps 40–43 done** — launch surface, switcher, a project view that says what each seat may do, and a run surface that leads with the blocking finding rather than logging it |
 | 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
@@ -116,7 +116,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. The launch surface, the missing-folder state and the keyboard route to the switcher were explicitly *not* ticked by that phase and were built in Steps 40–41; Phase 11 still says "the Desk rebuilt" because the project view, the run surface and the design system are Steps 42–44
 - [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 12** — moved behind Projects because its own scoping question is unanswerable until a project is a thing, which is a dependency rather than a demotion
 - [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 10.**
-- [ ] `ollama` harness, so the local/worker story is real. **Now Phase 9** — and this line used to say it was blocked by nothing but a missing install, which was wrong. Ollama is a completion endpoint, not an agent loop; the `worker`-only reading the README already specifies is what makes it small
+- [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [ ] **The Desk rebuilt** around all of the above — **now Phase 11.** The current one was built to prove a daemon could stream a run into a browser, and has no level above the run
 - [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **now Step 52**
 - [ ] Config migrations, and an upgrade that never discards run history — **now Steps 33 and 53**
@@ -838,13 +838,11 @@ So the honest small version is the one the README already specifies, and this ph
 
 **That is a feature rather than a shortfall.** A harness that never writes to a workspace has no partial-leash story to document, because it has no write path at all — the thing that made `codex`'s leash structurally weaker than `claude-code`'s does not arise. And the README's own argument for the role is a safety argument: *"a small local model is not a reviewer. A 7–30B model reviewing a frontier model's output approves nearly everything, which is worse than no review because it manufactures confidence."* Shipping with `roles: ["worker"]` makes that structural instead of advisory.
 
-### Step 35 — The harness ⏭ skipped for now
+### Step 35 — The harness ✅
 
-> **Skipped deliberately, 2026-09-16, and the blocker is environmental.** Ollama is not installed here and nothing is listening on `127.0.0.1:11434`, so there is no `/api/tags` document and no `/api/chat` stream to capture — and this repo does not write a mapper from memory. The operator was offered the install and chose to skip the step rather than pull a model, which is a decision about their disk, not about the design.
+> **The skip expired, on 2026-09-16, exactly the way its own note said it would.** That note read: *"it is the environment kind of blocker, which the Status section warns expires silently. An `ollama` on the PATH and a model pulled is the whole of it."* A Windows machine with Ollama 0.32.9 on it and one `ollama pull qwen3:0.6b` was the whole of it. The step body below was not revised before the work — it was correct as written, and the two interface firsts it predicted are both real.
 >
-> **What that costs, precisely:** nothing structural. `BUILTIN_HARNESS_IDS` already lists `"ollama"`, so `GET /stations` reports it as a harness nobody registered rather than pretending it does not exist, and Step 36 below was built and proven without it. What is still owed is the harness itself.
->
-> **What to check before believing this note:** it is the *environment* kind of blocker, which the Status section warns expires silently. An `ollama` on the PATH and a model pulled is the whole of it — no design question is outstanding, and the step body below is unchanged and still correct.
+> Kept rather than deleted because a skip that turns out to have been right about its own expiry is the evidence for writing the next one that way.
 
 
 `packages/harness/src/ollama.ts`. `vendor: "ollama"`, `roles: ["worker"]`, `contextFiles: []` — Ollama keeps no context file of its own, which is precisely the hole Phase 12 exists to fill, and the README already names it: *"Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, Ollama keeps nothing."*
@@ -856,7 +854,34 @@ Two things make this the first harness of its shape, and both are interface ques
 
 Written against a **captured** stream like the other two: `/api/chat` with `"stream": true` emits NDJSON, and the rule from Phase 7 holds without exception.
 
-**Done when:** with Ollama running, the harness appears in `/stations` with the models actually pulled on that machine; with Ollama stopped, it reports not-running without failing the request or hanging it.
+**Done when:** with Ollama running, the harness appears in `/stations` with the models actually pulled on that machine ✅; with Ollama stopped, it reports not-running without failing the request or hanging it ✅.
+
+Both proven against a live daemon on Windows rather than against the fakes. Running: `{"installed":true,"authed":true,"version":"0.32.9","binPath":"http://127.0.0.1:11434","models":["qwen3:0.6b"],"harness":"ollama"}`. Stopped — the app killed, not just the port blocked — `GET /projects/:id/stations` answered **200 in 244 ms** with `installed: true, authed: false` and *"Ollama is installed but nothing is listening … start it with `ollama serve`"*.
+
+#### What the work settled
+
+**The probe has three states, and the middle one is the whole reason it is its own function.** Every other harness has two — the binary is there or it is not. Ollama adds *installed, on the PATH, nothing listening*, which is the ordinary state of a machine that just booted. Collapsing it into "not installed" tells an operator to download something they already have. The server is asked **first** and the binary only when it does not answer, because a remote `OLLAMA_HOST` is supported and there is no binary on this machine in that case.
+
+**`HarnessProbe.models` was added to core, and `undefined` versus `[]` carries the design** — the same distinction Step 36 drew for `HarnessRoles`, arrived at independently for the same reason. Absent means "nobody asked, or I could not"; `[]` is the real answer *"a server is running and nothing is pulled"*, which a Desk has to be able to say rather than falling back to a free-text box. It is a hint for a picker and never a check: an `ollama rm` while the Desk is open is enough to stale it.
+
+**`roles: ["worker"]` is enforced in `run()`, not only declared.** A `reviewer` seat is refused *before the request is made* — no tokens, no answer, nothing to mistake for a review. Step 36 put the same claim in the daemon as a `/stations` warning, and the two are not redundant: the warning is what an operator sees while writing config, and this is what happens to the operator who did not read it. Registering `ollama` also made that Step 36 warning fire against a **shipped** harness for the first time; until now no built-in had a role list narrow enough to trip it.
+
+**`usd: 0`, and it is the one harness where a zero is a fact rather than a guess.** `meter.ts` already says an absent price "means the harness could not price it, which is not the same claim as 'it cost nothing'" — `codex` leaves it absent for exactly that reason. Local inference has no marginal price, so the strong claim is the honest one, and a ledger showing a local worker as "cost unknown" would understate what it knows. `mock` was the only harness that could produce the `unmetered` usage row; that row now has a real model behind it.
+
+**`think: false` was captured working and is deliberately not sent.** It suppresses the scratchpad at the source, and `qwen3:0.6b` honours it — the second fixture is that capture, and it collapses the stream from 142 frames to **two**. But it was only verified against a thinking-capable model, and no non-thinking model was on the machine to see what one does with the flag. Sending an unverified flag to every model is precisely what `codex.ts`'s *read the help, do not recall it* rule exists to prevent. So `thinking` is dropped in the mapper instead, the way `codex` drops `reasoning`, and its tokens are still counted: `eval_count` was 146 against 32 characters of content.
+
+**Keeping both captures is what made the mapper correct.** One fixture alone would have taught it that a frame is a token. Two — 142 frames and 2 frames, same endpoint, same model — make "a frame is a fragment, never a line" a fact rather than a style choice, and a test asserts the mapper adds no newline of its own.
+
+#### Two defects the first real run found, which no fake would have
+
+Both were invisible until a real local worker ran through the real daemon, and both are fixed with tests that fail without the fix.
+
+- **The run record attributed a diff to a harness with no write path.** `runDiff` always preferred a fresh `git diff` over the workspace, and a `git diff` reports what is *dirty*, not what this run did. Those are the same answer only because a run that writes is the normal case — and a worker-only run is the case where they come apart. The first `ollama` run landed `filesChanged: 2` against a workspace two earlier runs had left dirty. Both `mock`'s worker branch and `ollama` already declined to return a diff; that was not enough, because their restraint only reached `lastResult`, the branch a fresh `git diff` wins. **The check belongs where the attribution is made**, so `runDiff` now returns nothing when *every* Station in the run is a non-writing seat — every, not the last, because the README's own `ship` cuesheet ends in a commit-message worker and must not erase the engineer's diff on its way out. It defers to core's `writeDeniedByRole` rather than restating who may write; the reviewer half of that question is still the open finding recorded under Step 36.
+- **The cost went on the wire twice.** The mapper emitted a `cost` event *and* `settle()` recorded through the meter, which emits its own — two identical events a millisecond apart. The totals were never wrong, since `reconcileCost` prefers a harness's returned total over the summed stream, but a Desk drawing the stream would render a free harness as costing double. `codex` pushes events and never touches the meter; `mock` uses the meter. **Both are valid; doing both is not**, which is what happens when half of one pattern gets copied. The test that catches it needed the *real* meter in the fake `RunContext` — a stub that only accumulated let the bug through the one test written to find it.
+
+#### A smaller thing worth writing down
+
+The test suite's first attempt injected `env: {}` to isolate the PATH, and passed on a machine with no Ollama while proving nothing on this one: `which`'s `path` option falls back to the real environment when it is `undefined`. The seam had to be the **whole lookup**, not the variable it reads. Two probe tests were green for the wrong reason before that was found.
 
 ### Step 36 — The worker seat means something ✅
 
@@ -1212,7 +1237,9 @@ An isolated daemon on a scratch `homedir` with four Stations chosen to cover the
 - both views, and the switch between them,
 - and the whole thing at **380px**, where the attribution wraps under its sentence and nothing scrolls sideways.
 
-**One thing was not exercised and is named rather than implied:** the "this harness cannot play this seat" line. It needs a registered harness whose roles exclude the seat, and the only such built-in is `ollama`, which Step 35 skipped — no build registers one, so the daemon answers `undefined` for its roles and correctly says nothing. The line is covered by tests at both layers; it has never been on screen.
+~~**One thing was not exercised and is named rather than implied:** the "this harness cannot play this seat" line. It needs a registered harness whose roles exclude the seat, and the only such built-in is `ollama`, which Step 35 skipped — no build registers one, so the daemon answers `undefined` for its roles and correctly says nothing. The line is covered by tests at both layers; it has never been on screen.~~
+
+**Now exercised — Step 35 closed this.** With `ollama` registered, a `role = "reviewer"` Station on it makes a live daemon answer: *"Station "bad-reviewer" is a reviewer, but the "ollama" harness can only play the worker seat. A model that cannot review will still answer as if it had, and an approval you cannot tell from a real one is worse than none."* First time any **shipped** harness has had a role list narrow enough to trip it.
 
 #### On Phase 8's open question — "what a project *is*, exactly"
 

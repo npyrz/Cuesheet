@@ -418,6 +418,25 @@ async function waitForStatus(
 }
 
 describe("a worker cue", () => {
+  /**
+   * Make the workspace a git repo with one commit.
+   *
+   * Without this `diffWorkspace` reports nothing at all, and a test asserting
+   * "no diff was attributed" would pass for the wrong reason — it has to be a
+   * workspace where a diff genuinely *would* be reported.
+   */
+  async function gitWorkspace(): Promise<void> {
+    const { run: spawnRun } = await import("@cuesheet/harness");
+    await spawnRun("git", ["init", "-q", "."], { cwd: workspace });
+    await spawnRun("git", ["config", "user.email", "t@example.com"], {
+      cwd: workspace,
+    });
+    await spawnRun("git", ["config", "user.name", "T"], { cwd: workspace });
+    await writeFile(path.join(workspace, "src/seed.txt"), "seed\n", "utf8");
+    await spawnRun("git", ["add", "-A"], { cwd: workspace });
+    await spawnRun("git", ["commit", "-qm", "init"], { cwd: workspace });
+  }
+
   /** Rewrites this project's config so its only Station is a worker. */
   async function workerProject(): Promise<string> {
     await writeFile(
@@ -460,6 +479,77 @@ deny = [".git/**"]
       .join("");
     expect(text).toContain("chore:");
     expect(stored.run.cost.tokensOut).toBeGreaterThan(0);
+  });
+
+  it("claims no diff for a workspace somebody else made dirty", async () => {
+    // A `git diff` reports what is dirty, not what this run did, and those are
+    // the same answer only because a run that writes is the normal case. This
+    // is the case where they come apart — and it was found by a real `ollama`
+    // worker run, which landed `filesChanged: 2` against a workspace two
+    // earlier runs had left dirty, by a harness with no write path at all.
+    //
+    // The harness declining to return a diff was not enough: `runDiff`
+    // preferred a fresh `git diff` and overrode it. The check has to live
+    // where the attribution is made.
+    await gitWorkspace();
+    const url = await workerProject();
+    await writeFile(
+      path.join(workspace, "src", "someone-elses-work.ts"),
+      "export const stray = 1;\n",
+      "utf8",
+    );
+
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "label this change" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("done");
+    expect(stored.run.result?.diff).toBeUndefined();
+    expect(await fetchDiff(url, runId)).toBeNull();
+  });
+
+  it("still attributes the diff when an engineer shares the cuesheet", async () => {
+    // The rule is "every Station in the run is a non-writing seat", not "the
+    // last one is". A worker running after an engineer — which is the
+    // README's own `ship` cuesheet, ending in a commit-message worker — must
+    // not erase the engineer's diff on its way out.
+    await gitWorkspace();
+    await writeFile(
+      path.join(cwd, "cuesheet.toml"),
+      `
+[[station]]
+id = "hand"
+harness = "mock"
+role = "engineer"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+deny = [".git/**"]
+
+[[station]]
+id = "qwen"
+harness = "mock"
+role = "worker"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+deny = [".git/**"]
+
+[cuesheet.ship]
+cues = [
+  { station = "hand", action = "implement" },
+  { station = "qwen", action = "commit-message" },
+]
+`,
+      "utf8",
+    );
+    const url = await bootProject();
+
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "write it", cuesheet: "ship" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.result?.diff?.filesChanged).toBeGreaterThan(0);
   });
 
   it("is refused by the facade if it reaches for a write anyway", async () => {

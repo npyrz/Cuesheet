@@ -32,6 +32,7 @@ import {
   isGateRef,
   parseVerdict,
   REVIEW_INSTRUCTIONS,
+  writeDeniedByRole,
   type Cost,
   type DiffStat,
   type GateParticipant,
@@ -428,6 +429,24 @@ async function runStation(
  * Prefers a fresh `git diff` over the run's workspace. Falls back to whatever
  * the last Station's harness returned, which is what covers a harness whose
  * workspace is somewhere the run record does not name.
+ *
+ * **Unless no Station in the run could have written anything.** A `git diff`
+ * reports whatever is dirty in the workspace, not what this run did, and those
+ * are the same answer only because a run that writes is the normal case. A run
+ * made entirely of non-writing seats is the case where they come apart: the
+ * first real `ollama` worker run through this daemon landed with
+ * `filesChanged: 2` against a workspace two earlier runs had left dirty, by a
+ * harness with no write path at all.
+ *
+ * `mock`'s worker branch and `ollama` both already decline to return a diff
+ * for exactly this reason. That was not enough, because this function
+ * overrode them — the harness's restraint only reached `lastResult`, which is
+ * the branch a fresh `git diff` wins. The check belongs here, where the
+ * attribution is actually made.
+ *
+ * Deliberately a check over *every* Station rather than the last: one engineer
+ * anywhere in a cuesheet means the run may legitimately own the diff, and a
+ * worker running last after an engineer must not erase it.
  */
 async function runDiff(
   ctx: ExecutionContext,
@@ -438,6 +457,8 @@ async function runDiff(
   patch: string;
   stat: NonNullable<RunResultSummary["diff"]>;
 } | null> {
+  if (stations.length > 0 && stations.every(cannotWrite)) return null;
+
   const workspace =
     ctx.run.workspace ||
     stations.find((station) => station.workspace)?.workspace;
@@ -460,6 +481,22 @@ async function runDiff(
   }
   if (lastResult?.diff) return lastResult.diff;
   return null;
+}
+
+/**
+ * Whether a seat is structurally incapable of writing to the workspace.
+ *
+ * Deliberately narrow: `writeDeniedByRole` in core names `worker` and only
+ * `worker`, and this defers to it rather than restating the rule. A `reviewer`
+ * is *also* run read-only by Codex's sandbox and arguably belongs here — but
+ * the facade does not refuse a reviewer's write today, no test in the repo
+ * covers a reviewer writing in either direction, and widening the rule from
+ * inside a diff-attribution helper is how two copies of "who may write" start
+ * disagreeing. That finding is already recorded against Step 36 and still
+ * belongs to whoever writes the reviewer's read-only clone.
+ */
+function cannotWrite(station: Station): boolean {
+  return writeDeniedByRole(station) !== undefined;
 }
 
 /** How much of a Station's text to keep for verdict parsing. */

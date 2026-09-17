@@ -3,7 +3,7 @@ import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Station } from "@cuesheet/core";
+import { BUILTIN_HARNESS_IDS, type Station } from "@cuesheet/core";
 import { exerciseHarness, harnessContractViolations } from "./contract.js";
 import { createMockHarness, MOCK_OUTPUT_FILE, mockHarness } from "./mock.js";
 import { claudeCodeHarness } from "./claude-code.js";
@@ -174,12 +174,29 @@ describe("the registry", () => {
     expect(probe.error).toMatch(/No harness named "nope"/);
   });
 
-  it("ships mock, claude-code and codex", () => {
+  it("ships mock, claude-code, codex and ollama", () => {
     expect(defaultHarnessRegistry().ids()).toEqual([
       "mock",
       "claude-code",
       "codex",
+      "ollama",
     ]);
+  });
+
+  /**
+   * Step 35. `BUILTIN_HARNESS_IDS` has listed `ollama` since Step 5, and until
+   * the harness existed `GET /stations` had to report it as a harness nobody
+   * registered. Asserted against the constant rather than against a literal,
+   * so adding a fourth planned id without shipping it fails here rather than
+   * in a Desk that silently omits it.
+   */
+  it("registers every built-in id the vocabulary promises", () => {
+    const shipped = new Set(defaultHarnessRegistry().ids());
+    for (const id of BUILTIN_HARNESS_IDS) {
+      expect(shipped.has(id), `${id} is promised but not registered`).toBe(
+        true,
+      );
+    }
   });
 
   /**
