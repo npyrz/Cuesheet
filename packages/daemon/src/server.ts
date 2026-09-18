@@ -15,6 +15,7 @@ import { stat } from "node:fs/promises";
 import {
   addStation,
   buildLedger,
+  isFactId,
   cappedHarnesses,
   checkLimits,
   chooseFallback,
@@ -64,6 +65,11 @@ import {
   type UsageCache,
   type UsageSource,
 } from "./usage.js";
+import {
+  createCommonsStore,
+  CommonsError,
+  type CommonsStore,
+} from "./commons.js";
 import { isRunId } from "./ids.js";
 import {
   currentLock,
@@ -143,6 +149,8 @@ export interface StartDaemonOptions {
    * here, so `startDaemon`'s own tests never wait on somebody's CLI.
    */
   usageSources?: () => readonly UsageSource[];
+  /** The Commons. Defaults to `~/.cuesheet/commons` under `env`'s homedir. */
+  commons?: CommonsStore;
   replayLimit?: number;
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
@@ -239,6 +247,7 @@ export async function startDaemon(
   const usage = createUsageCache({
     sources: options.usageSources ?? (() => []),
   });
+  const commons = options.commons ?? createCommonsStore({ env });
 
   // A finished run is the one moment plan usage actually moves — `claude-code`
   // learns its limits only from inside a run, so its answer changes exactly
@@ -333,6 +342,7 @@ export async function startDaemon(
     harnessConfinement,
     knownHarnesses,
     usage,
+    commons,
     env,
     registry,
     runtimes,
@@ -551,6 +561,7 @@ interface RouteDeps {
   harnessConfinement: HarnessConfinement;
   knownHarnesses: KnownHarnesses;
   usage: UsageCache;
+  commons: CommonsStore;
   env: HostEnv;
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
@@ -580,6 +591,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     harnessConfinement,
     knownHarnesses,
     usage,
+    commons,
     env,
     registry,
     runtimes,
@@ -599,6 +611,101 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
    * answer, not this route's.
    */
   app.get("/usage", async () => usage.get());
+
+  // ── The Commons ───────────────────────────────────────────────────────────
+
+  /**
+   * **Global, like `/usage` and for a related reason.** The store is one
+   * repository at `~/.cuesheet/commons`; what varies per project is which
+   * facts *project into* it, which is Step 47's subject and rides on a fact's
+   * own `projects` field rather than on the route.
+   */
+  app.get("/commons", async () => ({ facts: await commons.list() }));
+
+  app.get("/commons/history", async (request) => {
+    const limit = parseLimit(
+      (request.query as Record<string, unknown>)["limit"],
+    );
+    // The whole shape, `reason` included: "history is unavailable" and
+    // "nothing has happened yet" are different answers.
+    return commons.history(limit);
+  });
+
+  app.get("/commons/:id", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    // Validated before it reaches the filesystem. A fact id is a filename, so
+    // an unvalidated param is a path traversal — the rule run ids already
+    // carry, for the same reason.
+    if (!isFactId(id)) {
+      return reply.code(400).send({ error: "Malformed fact id." });
+    }
+    const fact = await commons.get(id);
+    if (fact === null) return reply.code(404).send({ error: "No such fact." });
+    return { fact };
+  });
+
+  app.post("/commons", async (request, reply) => {
+    const body = request.body;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+    const {
+      id,
+      title,
+      body: text,
+      tags,
+      projects,
+      station,
+      run,
+    } = body as Record<string, unknown>;
+
+    if (typeof title !== "string" || title.trim() === "") {
+      return reply.code(400).send({ error: "`title` is required." });
+    }
+    if (typeof text !== "string") {
+      return reply.code(400).send({ error: "`body` is required." });
+    }
+    if (id !== undefined && !isFactId(id)) {
+      return reply.code(400).send({
+        error:
+          "`id` must be lowercase letters, digits and single hyphens — it is " +
+          "a filename.",
+      });
+    }
+
+    try {
+      const written = await commons.write({
+        ...(typeof id === "string" && { id }),
+        title,
+        body: text,
+        ...(Array.isArray(tags) && { tags: onlyStrings(tags) }),
+        ...(Array.isArray(projects) && { projects: onlyStrings(projects) }),
+        ...(typeof station === "string" && { station }),
+        ...(typeof run === "string" && { run }),
+      });
+      // The whole write, not a bare 201: a fact written but *not* recorded in
+      // history is a different outcome from one that was, and a client that
+      // cannot tell them apart will imply a history that is not there.
+      return reply.code(201).send(written);
+    } catch (error) {
+      if (error instanceof CommonsError) {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.delete("/commons/:id", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    if (!isFactId(id)) {
+      return reply.code(400).send({ error: "Malformed fact id." });
+    }
+    const removed = await commons.remove(id);
+    if (removed === null) {
+      return reply.code(404).send({ error: "No such fact." });
+    }
+    return removed;
+  });
 
   // ── Projects ──────────────────────────────────────────────────────────────
 
@@ -1106,6 +1213,11 @@ async function workspaceProblem(
   } catch {
     return `Workspace ${resolved} does not exist.`;
   }
+}
+
+/** Drop anything in a JSON array that is not a string, rather than rejecting. */
+function onlyStrings(values: readonly unknown[]): string[] {
+  return values.filter((value): value is string => typeof value === "string");
 }
 
 function parseLimit(raw: unknown): number | undefined {

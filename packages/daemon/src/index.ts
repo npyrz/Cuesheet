@@ -73,6 +73,14 @@ export { createStandbyRegistry, StandbyAbandonedError } from "./standby.js";
 export type { StandbyRegistry, OpenStandby } from "./standby.js";
 
 export { describeStations, unprobed, unknownRoles } from "./stations.js";
+export { createCommonsStore, CommonsError } from "./commons.js";
+export type {
+  CommonsStore,
+  CommonsOptions,
+  CommonsWrite,
+  WriteFactInput,
+} from "./commons.js";
+
 export {
   createUsageCache,
   DEFAULT_USAGE_TTL_MS,

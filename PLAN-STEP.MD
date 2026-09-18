@@ -61,7 +61,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
-| 12 · The Commons | 46–50 | 🔵 beta | ⬜ |
+| 12 · The Commons | 46–50 | 🔵 beta | ◐ **Step 46 done** — facts are files in a git repo the operator owns, and a missing `git` degrades rather than fails |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
@@ -1477,13 +1477,43 @@ The pitch is one sentence: today Claude Code keeps `CLAUDE.md`, Codex keeps `AGE
 
 **Why this moved behind Projects and the Desk**, having been next in the previous revision of this plan: its own first open question was *"whether projection is per-workspace or global."* That question is not answerable by thinking harder about the Commons. It is answerable by Phase 8 existing, and unanswerable before it. Building the store first would have meant choosing arbitrarily and migrating later — the deferral is a dependency, not a demotion.
 
-### Step 46 — The store
+### Step 46 — The store ✅
 
 `~/.cuesheet/commons/` as a git repo: markdown with frontmatter, one fact per file. Read, write, list, delete. Provenance on every entry — which Station, which Run, when.
 
 Plain files in a repo the operator owns, deliberately: the README promises "you can read it, grep it, diff it, and leave", and a database would make that a lie.
 
-**Done when:** a fact written through the API is a committed file on disk, and `git log` explains where it came from.
+**Done when:** a fact written through the API is a committed file on disk ✅, and `git log` explains where it came from ✅.
+
+#### What the work settled
+
+**TOML frontmatter between `+++`, not YAML between `---`.** The convention is YAML, and this is deliberately not it. The README says "markdown with frontmatter" and never names a dialect; `smol-toml` is already a dependency of `core` — it parses every `cuesheet.toml` — and it exports `stringify` as well as `parse`. A YAML parser would have been a new dependency bought to write a format core already reads and writes. `+++` is Hugo's TOML fence, so the choice is at least a convention somebody else made. The operator's side of the bargain holds either way: it is text, it diffs, and every key in it is one they could have typed.
+
+**A fact id is a filename, so it is the same surface a run id is.** `isFactId` sits beside `RUN_ID_PATTERN` in spirit and is checked at the route boundary before anything reaches disk — lowercase, digits, single hyphens, nothing else. That one pattern also rules out a leading dot, a Windows drive letter, and two ids differing only by case on a case-insensitive filesystem. Without it `DELETE /commons/..%2f..%2fprojects` deletes the project registry, and there is a test that says so.
+
+**`slugify` answers `null` rather than inventing `untitled-4`.** A caller handed a generated name would discover the collision later, in a store whose entire value is that things can be found in it. The store turns that `null` into a sentence asking for an explicit id.
+
+#### `git` is optional, and the first version of that promise was not true
+
+The design was right and the implementation was not: probing with `which` before spawning is **not enough**, because `run` *rejects* when a binary cannot be started. A `git` that is on PATH at probe time and gone, unreadable or not executable at spawn time throws from inside `spawn` — so the store's whole promise held only for the one case somebody had thought of.
+
+A test that pointed `gitBin` at a file that does not exist found it, which is exactly the shape of the real failure. Every git call now goes through a wrapper that turns a failure-to-start into an answer, and the promise is enforced rather than intended: **a missing `git` keeps your facts as files and reports that history is unavailable.** Every mutation returns `committed` so a caller can say which happened, rather than implying a history that is not there.
+
+**Identity rides on the commit, never on the operator's config.** A fresh machine has no `user.email` and a commit without one fails outright, so an identity has to be supplied — but writing one into `git config` to achieve that would be Cuesheet reaching outside its own directory to change how every other repository on the machine commits. Per-commit `-c user.name` / `-c user.email`, and the identity names **Cuesheet** rather than the operator: a machine-written commit attributed to a person is a lie in the one place that exists to answer who did something. A test asserts the repo's local config is left empty.
+
+**Provenance is written twice, because two questions are being asked.** The frontmatter carries `station`, `run` and `at` — that is what Step 47's projection and Step 48's inbox read. The commit message carries the same three in a body under a subject that names the fact, because `git log` is the literal thing this step's done-when asks about, and `--oneline` should be readable without `--stat`. All three are optional in the type: a fact a human typed has no Station and no Run, and inventing one would make "what did an agent write while I was not looking" a filter nobody could trust.
+
+**A `.gitattributes` pinning `eol=lf` is written at `git init`.** Cheap now; without it a commons created on Windows commits CRLF markdown, and Step 47's "re-running the projection twice produces no diff" fails there for a reason that has nothing to do with projections.
+
+The non-obvious half is the *first* commit, since `.gitattributes` is staged in the same `git add -A` as the first fact — so it is fair to ask whether it governs its own commit. **It does**, checked rather than assumed: `git ls-files --eol` reports `i/lf` for a fact whose working copy is `w/mixed`, and the committed blob has no carriage returns. Git reads attributes from the working tree at stage time, not from `HEAD`. The test asserts the committed bytes rather than the file's presence, because "the rule is written down" and "the rule was applied" are different claims.
+
+**Two smaller decisions that will matter later.** `rev-parse --git-dir` rather than looking for a `.git` directory, so a commons the operator turned into a worktree or a submodule is not re-initialised underneath them. And a file somebody hand-edited into something unparseable is *skipped* by `list()` rather than failing it — Step 48's inbox is where a malformed fact gets shown to a human, and it is unreachable if listing throws.
+
+**`history()` reports a reason rather than collapsing into an empty list.** A repository with no commits, a missing `git` and a broken one are three different things, and the store distinguishes "cannot" from "nothing" everywhere else — `committed` plus `reason` on every write is that same discipline. Step 48's inbox has to be able to say *history is unavailable* rather than *nothing has happened*.
+
+**One bug worth recording because nothing would have caught it.** `remove` reached its sibling through `this.get(...)` inside a returned object literal. That works while the method is called as a method and breaks the moment anyone destructures the store or hands `remove` to a callback — and every test called it the one way that works. The reader is now a hoisted closure like every other helper in that scope, with a test that destructures the store deliberately.
+
+**`GET /commons` is global**, like `/usage` and for a related reason: there is one store at `~/.cuesheet/commons`. What varies per project is which facts *project into* it, and that rides on a fact's own `projects` field — Step 47's subject, not this route's.
 
 ### Step 47 — Projections
 
