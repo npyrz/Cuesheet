@@ -3,8 +3,17 @@ import {
   parseConfig,
   type HarnessProbe,
   type LoadedConfig,
+  type Role,
 } from "@cuesheet/core";
-import { describeStations, unprobed } from "./stations.js";
+import {
+  describeStations,
+  unknownConfinement,
+  unknownRoles,
+  unprobed,
+  type HarnessConfinement,
+  type HarnessRoles,
+  builtinHarnesses,
+} from "./stations.js";
 
 const TOML = `
 [[station]]
@@ -35,8 +44,8 @@ cues = [
   { station = "sonnet", action = "review" },
 ]
 
-[limits]
-warn_at = 0.85
+[remote]
+tailnet = true
 `;
 
 const loaded = (): LoadedConfig => parseConfig(TOML, "/ws/cuesheet.toml");
@@ -113,11 +122,12 @@ describe("describeStations", () => {
   });
 
   it("passes the loader's warnings straight through", async () => {
-    // `[limits]` rather than `[gate]`: gates are implemented now, so they no
-    // longer warn. The route's job — telling a user which of their tables are
-    // parsed but not live — is unchanged.
+    // `[remote]` rather than `[gate]` or `[limits]`: both of those have since
+    // shipped and no longer warn. The route's job — telling a user which of
+    // their tables are parsed but not live — is unchanged, and the table it
+    // has to name keeps moving.
     const response = await describeStations(loaded(), unprobed);
-    expect(response.warnings.some((w) => w.table === "limits")).toBe(true);
+    expect(response.warnings.some((w) => w.table === "remote")).toBe(true);
     expect(response.sourcePath).toBe("/ws/cuesheet.toml");
   });
 
@@ -138,5 +148,224 @@ describe("describeStations", () => {
     // up as a Station, just an unusable one.
     expect(response.stations).toHaveLength(1);
     expect(response.stations[0]?.probe.harness).toBe("third-party");
+  });
+});
+
+/** What the real registry answers, for the two harnesses these configs use. */
+const ROLE_TABLE: Record<string, readonly Role[]> = {
+  "claude-code": ["engineer", "reviewer", "caller"],
+  ollama: ["worker"],
+};
+
+const realRoles: HarnessRoles = (harness) => ROLE_TABLE[harness];
+
+describe("seats a harness cannot play", () => {
+  const seated = (harness: string, role: string) =>
+    parseConfig(
+      `
+[[station]]
+id = "local"
+harness = "${harness}"
+role = "${role}"
+workspace = "/ws"
+`,
+      "/ws/cuesheet.toml",
+    );
+
+  it("warns when a worker-only harness is put in a reviewer seat", async () => {
+    // The README promises this out loud, and the reason is not pedantry: a
+    // small local model asked to review a frontier model's diff approves
+    // nearly everything, so the failure looks exactly like a pass.
+    const response = await describeStations(
+      seated("ollama", "reviewer"),
+      unprobed,
+      realRoles,
+    );
+    const warning = response.warnings.find((w) =>
+      w.message.includes('Station "local"'),
+    );
+    expect(warning?.table).toBe("station");
+    expect(warning?.message).toContain(
+      '"ollama" harness can only play the worker seat',
+    );
+    // No backticks: the Desk renders a warning as bare text in a banner.
+    expect(warning?.message).not.toContain("`");
+    expect(warning?.message).toContain("worse than none");
+  });
+
+  it("says nothing when the seat fits", async () => {
+    const response = await describeStations(
+      seated("ollama", "worker"),
+      unprobed,
+      realRoles,
+    );
+    expect(response.warnings).toEqual([]);
+  });
+
+  it("says nothing about a harness nobody has registered", async () => {
+    // `BUILTIN_HARNESS_IDS` lists `ollama` for probe ordering, but no build
+    // ships one — and third-party harnesses are a supported case. A config
+    // that could not be opened without the plugin declaring its roles would
+    // make writing one hostile.
+    const response = await describeStations(
+      seated("ollama", "reviewer"),
+      unprobed,
+      unknownRoles,
+    );
+    expect(response.warnings).toEqual([]);
+  });
+
+  it("keeps the loader's own warnings alongside its own", async () => {
+    const response = await describeStations(loaded(), unprobed, realRoles);
+    expect(response.warnings.some((w) => w.table === "remote")).toBe(true);
+    // `TOML`'s ollama station is a worker in a worker seat, so the only seat
+    // warning that could appear is one that should not.
+    expect(
+      response.warnings.some((w) => w.message.includes("can only be")),
+    ).toBe(false);
+  });
+});
+
+/**
+ * Step 42. The project view has to show a seat as a constraint, and the two
+ * halves of that constraint are kept by two different processes — so the
+ * assembly happens here, where both are known, rather than in a Desk that
+ * cannot import a harness.
+ */
+describe("what a Station is allowed to do", () => {
+  const seatedOn = (harness: string, role: string) =>
+    parseConfig(
+      `
+[[station]]
+id = "s"
+harness = "${harness}"
+role = "${role}"
+workspace = "/ws"
+`,
+      "/ws/cuesheet.toml",
+    );
+
+  /** Codex's real mapping: reviewer, caller and worker run read-only. */
+  const codexLike: HarnessConfinement = (_harness, role) =>
+    role === "engineer" ? "workspace-write" : "read-only";
+  /** Claude Code's real answer: it takes no role-based sandbox flag at all. */
+  const claudeLike: HarnessConfinement = () => "none";
+
+  const enforcementFor = async (
+    config: LoadedConfig,
+    confinement: HarnessConfinement,
+    roles: HarnessRoles = realRoles,
+  ) =>
+    (await describeStations(config, unprobed, roles, confinement)).stations[0]
+      ?.enforcement;
+
+  it("refuses a worker's writes in this process, whatever the CLI does", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("ollama", "worker"),
+      claudeLike,
+    );
+    expect(enforcement).toMatchObject({ writes: false, refusedBy: ["daemon"] });
+  });
+
+  it("names both keepers when the daemon and the CLI both refuse", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("codex", "worker"),
+      codexLike,
+      () => ["engineer", "reviewer", "worker", "caller"],
+    );
+    expect(enforcement?.refusedBy).toEqual(["daemon", "harness"]);
+  });
+
+  it("says a codex reviewer cannot write, and credits the CLI for it", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("codex", "reviewer"),
+      codexLike,
+    );
+    expect(enforcement).toMatchObject({
+      writes: false,
+      refusedBy: ["harness"],
+      confinement: "read-only",
+    });
+  });
+
+  it("does not claim a claude-code reviewer cannot write", async () => {
+    // The claim that would be false, and the whole reason this is computed per
+    // harness rather than per role: nothing refuses these writes outright. The
+    // leash bounds *where* they may land, which is a different sentence.
+    const enforcement = await enforcementFor(
+      seatedOn("claude-code", "reviewer"),
+      claudeLike,
+    );
+    expect(enforcement).toMatchObject({
+      writes: true,
+      refusedBy: [],
+      confinement: "none",
+    });
+  });
+
+  it("leaves confinement absent for a harness that does not declare one", async () => {
+    // Absent is not `"none"`. A third-party harness that says nothing has not
+    // said it confines nothing, and the Desk prints those differently.
+    const enforcement = await enforcementFor(
+      seatedOn("claude-code", "reviewer"),
+      unknownConfinement,
+    );
+    expect(enforcement && "confinement" in enforcement).toBe(false);
+    expect(enforcement?.writes).toBe(true);
+  });
+
+  it("reports whether the harness can play the seat at all", async () => {
+    const bad = await enforcementFor(
+      seatedOn("ollama", "reviewer"),
+      claudeLike,
+    );
+    expect(bad?.canPlaySeat).toBe(false);
+    const good = await enforcementFor(seatedOn("ollama", "worker"), claudeLike);
+    expect(good?.canPlaySeat).toBe(true);
+  });
+
+  it("leaves the seat unjudged when nobody knows the harness's roles", async () => {
+    const enforcement = await enforcementFor(
+      seatedOn("somebody-elses", "reviewer"),
+      unknownConfinement,
+      unknownRoles,
+    );
+    expect(enforcement && "canPlaySeat" in enforcement).toBe(false);
+  });
+});
+
+/**
+ * Step 45. The probe list was `BUILTIN_HARNESS_IDS` ∪ the harnesses the
+ * config named — and `mock` is in neither on a fresh install, so the demo
+ * harness that ships precisely so a machine with no CLI can watch the app
+ * work was invisible to every UI that has ever asked.
+ */
+describe("which harnesses the Desk is told about", () => {
+  const seen = async (known?: () => readonly string[]) => {
+    const response = await describeStations(
+      loaded(),
+      async (harness) => ({ harness, installed: true, authed: true }),
+      undefined,
+      undefined,
+      known,
+    );
+    return response.harnesses.map((probe) => probe.harness).sort();
+  };
+
+  it("names what this build registered, not what the repo planned for", async () => {
+    expect(await seen(() => ["mock", "claude-code"])).toContain("mock");
+  });
+
+  it("keeps naming a planned harness nobody registered", async () => {
+    // It is still something to install, and a list that drops it is a list
+    // that stops telling anybody the CLI exists.
+    expect(await seen(() => ["mock"])).toEqual(
+      ["claude-code", "codex", "mock", "ollama"].sort(),
+    );
+  });
+
+  it("falls back to the planned list when nothing says otherwise", async () => {
+    expect(await seen()).toEqual(["claude-code", "codex", "ollama"].sort());
+    expect(builtinHarnesses()).toEqual(["claude-code", "codex", "ollama"]);
   });
 });

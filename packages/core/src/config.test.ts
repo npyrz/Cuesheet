@@ -77,8 +77,20 @@ describe("the README's config example", () => {
 
   it("does not discard deferred config it warned about", () => {
     // A UI-driven rewrite that dropped these would eat the user's Gates.
-    expect(loaded.deferred["limits"]).toMatchObject({ warn_at: 0.85 });
     expect(loaded.deferred["remote"]).toMatchObject({ tailnet: true });
+    expect(loaded.deferred["oncall"]).toBeDefined();
+  });
+
+  it("parses `[limits]`, which stopped being deferred in Step 38", () => {
+    // It was in `deferred` until the pre-run check needed to read it. A table
+    // moving from parsed-and-ignored to parsed-and-live is exactly the
+    // migration `deferred` exists to make safe.
+    expect(loaded.deferred["limits"]).toBeUndefined();
+    expect(loaded.config.limits).toMatchObject({
+      warn_at: 0.85,
+      block_at: 0.97,
+      when_capped: { codex: "qwen" },
+    });
   });
 
   it("parses the gate the ship cuesheet references", () => {

@@ -24,6 +24,7 @@ import {
   type RunResult,
 } from "@cuesheet/harness";
 import {
+  chooseFallback,
   describeGate,
   evaluateGate,
   expandHome,
@@ -31,6 +32,7 @@ import {
   isGateRef,
   parseVerdict,
   REVIEW_INSTRUCTIONS,
+  writeDeniedByRole,
   type Cost,
   type DiffStat,
   type GateParticipant,
@@ -39,8 +41,10 @@ import {
   type LoadedConfig,
   type RunEvent,
   type RunResultSummary,
+  type HarnessId,
   type RunStatus,
   type Station,
+  type StationCost,
   type Verdict,
 } from "@cuesheet/core";
 import type { ExecutionContext, RunExecutor } from "./executor.js";
@@ -51,6 +55,17 @@ export interface HarnessExecutorOptions {
   /** Read at run time, not captured, so `reloadConfig()` affects the next run. */
   config: () => LoadedConfig;
   env?: HostEnv;
+  /**
+   * Which harnesses are at or past `block_at`, asked once per run.
+   *
+   * A function rather than a value for the same reason `config` is: a cap
+   * reached during a long cuesheet should route the *next* step, not be
+   * decided at enqueue time and then be wrong for twenty minutes.
+   *
+   * Absent means nothing is capped, which is what keeps every existing test —
+   * and `startDaemon` used as a library — from needing a usage cache.
+   */
+  capped?: () => Promise<readonly HarnessId[]>;
 }
 
 export class NoStationError extends Error {
@@ -77,6 +92,11 @@ export function createHarnessExecutor(
     const started = Date.now();
     const loaded = options.config();
     const steps = planSteps(loaded, ctx.run);
+    // Asked once, before the first step. A cap that arrives mid-run routes the
+    // next run rather than this one — re-polling between every cue would spawn
+    // a CLI per step to answer a question whose answer moves on the scale of
+    // hours.
+    const capped = options.capped ? await options.capped() : [];
     const stations = steps
       .filter((step) => step.kind === "station")
       .map((step) => step.station);
@@ -99,6 +119,11 @@ export function createHarnessExecutor(
     // work and who checked it, not who filed a verdict.
     const verdicts: Verdict[] = [];
     const participants: GateParticipant[] = [];
+    // What each Station spent, recorded as the step ends. The alternative is
+    // deriving it from `events.jsonl` at query time, which would mean opening
+    // every run ever to draw one chart — the cost `list()` answering off
+    // `readdir` was designed to avoid.
+    const stationCosts: StationCost[] = [];
     const gates: GateReport[] = [];
 
     // The loop is wrapped rather than left to reject, because the two shipped
@@ -172,7 +197,41 @@ export function createHarnessExecutor(
           continue;
         }
 
-        const station = step.station;
+        // `when_capped`, and the two refusals that keep it safe. The decision
+        // is in `core/fallback.ts` so its rules are testable without a daemon;
+        // what is here is the part that needs a registry and a bus.
+        const asked = step.station;
+        const routed =
+          capped.length === 0
+            ? ({ kind: "proceed" } as const)
+            : chooseFallback({
+                station: asked,
+                limits: loaded.config.limits,
+                stations: loaded.config.station,
+                capped,
+                rolesOf: (id) => options.registry.get(id)?.roles,
+              });
+
+        if (routed.kind === "refused") {
+          // Announced, not silently swallowed: the Station is about to run
+          // against a capped plan and fail, and "it failed" without "and here
+          // is why we could not route around it" is the message that wastes
+          // somebody's afternoon.
+          emitError(ctx, routed.reason);
+        }
+
+        const station =
+          routed.kind === "substitute" ? routed.station : step.station;
+        if (routed.kind === "substitute") {
+          ctx.emit({
+            t: "text",
+            at: new Date().toISOString(),
+            runId: ctx.run.id,
+            stationId: station.id,
+            chunk: `${routed.reason}\n`,
+          });
+        }
+
         const harness = options.registry.get(station.harness);
         if (!harness) {
           // A typo'd harness name is a config error, and it names itself.
@@ -189,6 +248,7 @@ export function createHarnessExecutor(
           ? await reviewBrief(ctx, stations, env)
           : ctx.run.prompt;
 
+        const stepStarted = Date.now();
         const outcome = await runStation(ctx, harness, station, env, brief);
         lastResult = outcome.result;
         addCost(cost, outcome.result.cost);
@@ -196,6 +256,17 @@ export function createHarnessExecutor(
           stationId: station.id,
           harness: harness.id,
           vendor: harness.vendor,
+        });
+        // Recorded whatever the step's outcome — a Station that failed halfway
+        // still spent what it spent, and a ledger that only counts successes
+        // understates a bill in the direction nobody wants to be surprised in.
+        stationCosts.push({
+          stationId: station.id,
+          harness: harness.id,
+          vendor: harness.vendor,
+          cost: outcome.result.cost ?? { ...ZERO_COST },
+          durationMs: Date.now() - stepStarted,
+          ...(routed.kind === "substitute" && { substitutedFor: asked.id }),
         });
 
         if (reviewing) {
@@ -257,6 +328,7 @@ export function createHarnessExecutor(
       status,
       cost,
       durationMs: Date.now() - started,
+      ...(stationCosts.length > 0 && { stations: stationCosts }),
       ...(diff && diff.stat.filesChanged > 0 && { diff: diff.stat }),
       ...(verdicts.length > 0
         ? { verdicts }
@@ -357,6 +429,24 @@ async function runStation(
  * Prefers a fresh `git diff` over the run's workspace. Falls back to whatever
  * the last Station's harness returned, which is what covers a harness whose
  * workspace is somewhere the run record does not name.
+ *
+ * **Unless no Station in the run could have written anything.** A `git diff`
+ * reports whatever is dirty in the workspace, not what this run did, and those
+ * are the same answer only because a run that writes is the normal case. A run
+ * made entirely of non-writing seats is the case where they come apart: the
+ * first real `ollama` worker run through this daemon landed with
+ * `filesChanged: 2` against a workspace two earlier runs had left dirty, by a
+ * harness with no write path at all.
+ *
+ * `mock`'s worker branch and `ollama` both already decline to return a diff
+ * for exactly this reason. That was not enough, because this function
+ * overrode them — the harness's restraint only reached `lastResult`, which is
+ * the branch a fresh `git diff` wins. The check belongs here, where the
+ * attribution is actually made.
+ *
+ * Deliberately a check over *every* Station rather than the last: one engineer
+ * anywhere in a cuesheet means the run may legitimately own the diff, and a
+ * worker running last after an engineer must not erase it.
  */
 async function runDiff(
   ctx: ExecutionContext,
@@ -367,6 +457,8 @@ async function runDiff(
   patch: string;
   stat: NonNullable<RunResultSummary["diff"]>;
 } | null> {
+  if (stations.length > 0 && stations.every(cannotWrite)) return null;
+
   const workspace =
     ctx.run.workspace ||
     stations.find((station) => station.workspace)?.workspace;
@@ -389,6 +481,22 @@ async function runDiff(
   }
   if (lastResult?.diff) return lastResult.diff;
   return null;
+}
+
+/**
+ * Whether a seat is structurally incapable of writing to the workspace.
+ *
+ * Deliberately narrow: `writeDeniedByRole` in core names `worker` and only
+ * `worker`, and this defers to it rather than restating the rule. A `reviewer`
+ * is *also* run read-only by Codex's sandbox and arguably belongs here — but
+ * the facade does not refuse a reviewer's write today, no test in the repo
+ * covers a reviewer writing in either direction, and widening the rule from
+ * inside a diff-attribution helper is how two copies of "who may write" start
+ * disagreeing. That finding is already recorded against Step 36 and still
+ * belongs to whoever writes the reviewer's read-only clone.
+ */
+function cannotWrite(station: Station): boolean {
+  return writeDeniedByRole(station) !== undefined;
 }
 
 /** How much of a Station's text to keep for verdict parsing. */
@@ -592,6 +700,15 @@ function addCost(total: Cost, delta: Cost | undefined): void {
   if (!delta) return;
   total.tokensIn += delta.tokensIn;
   total.tokensOut += delta.tokensOut;
+  // Summed, not recomputed: these are a breakdown *of* `tokensIn`, so two
+  // Stations' cache reads add the same way their inputs do. Absent stays
+  // absent — a run where one harness reported a breakdown and another did not
+  // has a partial one, and pretending the silent half was zero would
+  // understate a cache hit rate rather than admit it is unknown.
+  if (delta.cacheRead !== undefined)
+    total.cacheRead = (total.cacheRead ?? 0) + delta.cacheRead;
+  if (delta.cacheWrite !== undefined)
+    total.cacheWrite = (total.cacheWrite ?? 0) + delta.cacheWrite;
   if (delta.usd !== undefined) total.usd = (total.usd ?? 0) + delta.usd;
 }
 

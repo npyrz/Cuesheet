@@ -162,6 +162,28 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
           }
           publish(event);
         },
+        /**
+         * A question for a human, and the run stops until it is answered.
+         *
+         * **The status is written down as well as announced — Step 45.** It
+         * used to be announced only: `emitStatus` publishes an event and does
+         * not touch the store, so a run waiting on somebody was recorded as
+         * `running`. Live clients were fine, because the Desk's reducer
+         * follows the event — and that is exactly what made it hard to see.
+         *
+         * The cost is paid on a resync, which is every reconnect and every
+         * restart. `snapshot` rebuilds open standbys by keeping only those
+         * whose run the *store* says is on standby — deliberately, because a
+         * question with **go** and **no** under it, for a run that ended while
+         * the app was closed, is the loudest lie this Desk can tell. With the
+         * status never persisted, that filter dropped every genuinely open
+         * question instead: reload the window and the question is gone, while
+         * the run waits for an answer that can no longer be given.
+         *
+         * A first run meets this every time. The demo harness raises a
+         * standby on purpose, so the first run anybody does is the one that
+         * hangs if they reload.
+         */
         ask(request) {
           const opened = standbys.open({ ...request, runId: run.id });
           publish({
@@ -172,8 +194,19 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
             ask: opened.standby.ask,
           });
           emitStatus(run.id, "standby");
+          // Not awaited: `ask` returns the promise the harness is waiting on,
+          // and making the harness wait for a disk write to announce that it
+          // is waiting would put a filesystem in the middle of a question.
+          // A failed write must not take the run down either — the event is
+          // already out, and the live Desk is already showing the question.
+          void store
+            .update(run.id, { status: "standby" })
+            .catch(() => undefined);
           return opened.answer.then((answer) => {
             emitStatus(run.id, "running");
+            void store
+              .update(run.id, { status: "running" })
+              .catch(() => undefined);
             return answer;
           });
         },
@@ -364,10 +397,18 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
  * under-counting is the direction that lets someone blow past a cap.
  */
 function reconcileCost(reported: Cost, accumulated: Cost): Cost {
+  // The cache fields are in this predicate deliberately. Without them, a
+  // harness that reported *only* a cache read — every input token served from
+  // cache, no fresh tokens, no price — would read as "reported nothing" and be
+  // silently replaced by the summed stream. That is the double-billing
+  // direction the project rule about additive-versus-inclusive token fields
+  // exists to catch, arriving through a type change rather than a mapper.
   const reportedAnything =
     reported.tokensIn > 0 ||
     reported.tokensOut > 0 ||
-    reported.usd !== undefined;
+    reported.usd !== undefined ||
+    reported.cacheRead !== undefined ||
+    reported.cacheWrite !== undefined;
   return reportedAnything ? reported : accumulated;
 }
 

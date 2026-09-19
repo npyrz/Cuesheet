@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunEvent, RunStatus, Standby } from "@cuesheet/core";
 import { createEventBus } from "./bus.js";
 import { createFileRunStore, type RunStore } from "./store.js";
@@ -57,6 +57,14 @@ async function waitForActive(h: Harness, runId: string): Promise<void> {
   const deadline = Date.now() + 4_000;
   while (h.queue.activeRunId() !== runId) {
     if (Date.now() > deadline) throw new Error(`run ${runId} never started`);
+    await new Promise((r) => setTimeout(r, 1));
+  }
+}
+
+async function waitForStarted(started: readonly string[]): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  while (started.length === 0) {
+    if (Date.now() > deadline) throw new Error("executor never started");
     await new Promise((r) => setTimeout(r, 1));
   }
 }
@@ -436,6 +444,14 @@ describe("standbys", () => {
     const pending = await waitForStandby(h);
     expect(pending.ask).toBe("Write to infra/?");
     expect(h.statusesFor(run.id)).toContain("standby");
+    // Written down, not only announced — Step 45. The event alone kept live
+    // clients right and left the *record* saying "running", which is what a
+    // reconnect reads: `snapshot` keeps an open standby only while the store
+    // says the run is waiting, so a reload dropped the question and left the
+    // run waiting for an answer nobody could give any more.
+    await vi.waitFor(async () =>
+      expect((await h.store.get(run.id))?.run.status).toBe("standby"),
+    );
 
     h.standbys.resolve(pending.id, "go");
     await h.queue.idle();
@@ -532,6 +548,11 @@ describe("shutdown", () => {
       workspace: "/ws",
     });
     await waitForActive(h, active.id);
+    // `activeRunId` changes immediately before the executor is invoked. Under
+    // parallel load, releasing and shutting down in that narrow gap can abort
+    // the active run before its first line, making this assertion test the
+    // scheduler rather than the queue. Wait for the side effect we assert.
+    await waitForStarted(started);
 
     release();
     await h.queue.shutdown();

@@ -183,6 +183,38 @@ describe("addStation", () => {
     });
   });
 
+  it("keeps a `[limits]` table, `when_capped` and all, through a UI write", async () => {
+    // `[limits]` moved from deferred to parsed in Step 38, which changes which
+    // code path it takes through the writer — and `when_capped` is the shape
+    // most likely to be mangled, because it is an inline sub-table under a
+    // `.loose()` schema. The schema comment promises it survives a round trip
+    // through the Desk's own writer; this is that promise, checked.
+    const dir = await scratch();
+    const target = join(dir, "cuesheet.toml");
+    const original = [
+      "[limits]",
+      "warn_at = 0.7",
+      "block_at = 0.9",
+      'when_capped = { codex = "qwen" }',
+      "",
+    ].join("\n");
+    await writeFile(target, original, "utf8");
+
+    await addStation({ ...BASE }, { sourcePath: target, env: envAt(dir) });
+
+    const text = await readFile(target, "utf8");
+    expect(text.startsWith(original)).toBe(true);
+    const reloaded = parseConfig(text, target);
+    expect(reloaded.config.limits).toMatchObject({
+      warn_at: 0.7,
+      block_at: 0.9,
+      when_capped: { codex: "qwen" },
+    });
+    // And the Station the writer came to add is there, which is what makes
+    // this a round trip rather than a no-op.
+    expect(reloaded.config.station.map((s) => s.id)).toContain(BASE.id);
+  });
+
   it("keeps a hand-written gate table through a UI write", async () => {
     // Gates are parsed now rather than deferred, which is a different code
     // path through the writer — and the same promise: what you wrote by hand

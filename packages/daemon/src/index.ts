@@ -72,9 +72,43 @@ export type {
 export { createStandbyRegistry, StandbyAbandonedError } from "./standby.js";
 export type { StandbyRegistry, OpenStandby } from "./standby.js";
 
-export { describeStations, unprobed } from "./stations.js";
+export { describeStations, unprobed, unknownRoles } from "./stations.js";
+export { createCommonsStore, CommonsError } from "./commons.js";
+export type {
+  CommonsStore,
+  CommonsOptions,
+  CommonsWrite,
+  WriteFactInput,
+} from "./commons.js";
+
+export {
+  createCommonsProjector,
+  mergeProjection,
+  renderProjection,
+  ProjectionError,
+  PROJECTION_BEGIN,
+  PROJECTION_END,
+} from "./projections.js";
+export type {
+  CommonsProjector,
+  CommonsProjectionOptions,
+  ProjectionReport,
+} from "./projections.js";
+
+export {
+  createUsageCache,
+  DEFAULT_USAGE_TTL_MS,
+  DEFAULT_USAGE_TIMEOUT_MS,
+} from "./usage.js";
+export type {
+  UsageCache,
+  UsageCacheOptions,
+  UsageResponse,
+  UsageSource,
+} from "./usage.js";
 export type {
   HarnessProber,
+  HarnessRoles,
   StationView,
   StationsResponse,
 } from "./stations.js";

@@ -150,6 +150,17 @@ export function checkPath(
 }
 
 /**
+ * `writeDeniedByRole` used to live here, and moved to `roles.ts` in Step 42.
+ *
+ * Not a tidy-up: this module imports `node:fs/promises` for `resolveAndCheck`,
+ * so every value in it is unreachable from a browser bundle. The Desk's project
+ * view needs that rule as a *value*, and Step 40 paid for the lesson that a
+ * value taken from a module which touches disk renders the whole app blank.
+ * It is re-exported below so no caller had to change.
+ */
+export { writeDeniedByRole } from "./roles.js";
+
+/**
  * Compile one leash rule into a matcher.
  *
  * A rule with no glob syntax in it — `paths = ["src/config"]` — is expanded to

@@ -24,6 +24,22 @@ export interface CuesheetBridge {
   platform: string;
   daemonPort?: number;
   chooseDirectory?: () => Promise<string | null>;
+  /**
+   * Tell the shell which project the Desk is showing, `null` for none.
+   *
+   * Optional like the picker, and for the same reason: a browser has no title
+   * bar of ours and no tray, so it has nothing to tell. The Desk never depends
+   * on the answer — nothing here reads back — which is what keeps this a shell
+   * nicety rather than a second source of truth about the current project.
+   */
+  setActiveProject?: (project: ActiveProject | null) => void;
+}
+
+/** The whole of what the shell is told. See `switcher.ts`. */
+export interface ActiveProject {
+  id: string;
+  name: string;
+  root: string;
 }
 
 declare global {
@@ -59,15 +75,21 @@ export function apiUrl(path: string): string {
 }
 
 /**
- * The WebSocket URL.
+ * The WebSocket URL for one project's events.
  *
- * `/ws` is registered at the daemon's root, not under `/api`, and the dev
- * proxy forwards it there — so this deliberately does not go through
- * {@link apiUrl}.
+ * Project-scoped since Step 32: a socket carries the events of the project you
+ * asked for and no other, because the daemon gives each project its own bus
+ * rather than filtering a shared one.
+ *
+ * It now goes through `/api` like every other call. It used to be the one
+ * exception — `/ws` at the daemon root, with its own proxy entry — and keeping
+ * that would have meant a second spelling of the project path in the dev proxy
+ * for no benefit. One prefix, one proxy rule.
  */
-export function socketUrl(): string {
+export function socketUrl(projectId: string): string {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/ws`;
   const origin = apiOrigin();
-  if (origin !== "") return `${origin.replace(/^http/, "ws")}/ws`;
+  if (origin !== "") return `${origin.replace(/^http/, "ws")}${path}`;
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/ws`;
+  return `${scheme}//${location.host}${path}`;
 }

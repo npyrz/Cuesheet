@@ -7,14 +7,14 @@
 A desktop app that turns Claude Code, Codex, Ollama and whatever comes next into one crew you actually manage — models, harnesses, roles, memory, limits, and permissions on a single desk. Then hands you the whole thing on your phone.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#what-actually-works-right-now)
+[![Development](https://img.shields.io/badge/development-beta-blue.svg)](#what-actually-works-right-now)
 [![Platform](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-desktop-black.svg)](#requirements)
 
 </div>
 
 ---
 
-> **Project status: alpha, and not yet downloadable.** The Desk runs, the daemon runs, and `claude-code` does real work through both — on macOS **and** Windows, from a checkout or from an installer you build yourself. Installers are real on both platforms, but nothing is signed and nothing has been published, so there is still no download link. Gates work, given a second harness from another vendor — which today means the built-in `mock`, since `codex` and `ollama` are not written yet. The Commons, the limits strip and the phone do not. This README is still the design spec and the contract: it describes what Cuesheet is being built to be, not what you can use today. [What actually works right now](#what-actually-works-right-now) is the honest list, and the [Roadmap](#roadmap) is the rest.
+> **Development track: beta. Latest release: [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha).** Alpha shipped; current source is now building toward `v0.5.0-beta`, not claiming to be that release already. The Desk runs, the daemon runs, and `claude-code` and `codex` both do real work through them on macOS and Windows. Gates work with two real vendors, `ollama` works worker-only, limits and fallback routing are live, and one daemon serves many isolated projects. The Commons store and its byte-stable `CLAUDE.md` / `AGENTS.md` projections work; approval, MCP recall and sync remain. The public installers are still the unsigned alpha builds, so macOS quarantine and Windows SmartScreen caveats apply. [What actually works right now](#what-actually-works-right-now) is the honest list; the [build plan](PLAN-STEP.MD) separates completed beta-track work from the remaining beta release bar.
 
 ### What actually works right now
 
@@ -26,12 +26,21 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ✅ **The Desk** | React UI: Station tiles, live run log, `⌘K` palette, add-a-Station panel that writes your TOML for you. |
 | ✅ **`claude-code`** | Real runs: streamed output, a `diff.patch`, cost, and stop-means-stop on the whole process tree. |
 | ✅ **The desktop app** | Electron shell with the daemon embedded — one process tree, no sidecar. Tray menu, native notifications, start-at-login, and a shutdown that never leaves a run stuck `running`. |
-| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, each built on its own platform and launched from a path with a space. Unsigned, and none published — the workflow that drafts them on a tag has not run on a runner yet. |
-| ✅ **Windows** | Run on a real Windows 10 box: install, build, the full test suite, a live `claude-code` run, a stop that takes the process tree to zero, a `taskkill /F` that reconciles to `interrupted`, the NSIS installer, and the installed app launched from a path with a space. Three things are still eyes-on: the tray glyph, a toast, and the `.cmd` shim path. |
-| ✅ **Gates** | A `{ gate = … }` cue runs a real second-opinion check: the reviewer gets the diff, its verdict is parsed, and a failed gate holds the run with the findings attached. Needs two harnesses from different vendors. |
-| 📋 **Not built yet** | The Commons, limits and routing, phone pairing, the Caller, On-Call, `codex`, `ollama`. |
+| ✅ **Installers** | `dmg`/`zip` (arm64 + x64) and an `nsis` installer, each built on its own platform and launched from a path with a space. Unsigned, but no longer unpublished: the tag workflow built all five on runners and `v0.1.0-alpha` is out. Unsigned still means quarantine on macOS and SmartScreen on Windows — see [Install](#install). |
+| ✅ **Windows** | Run on a real Windows 10 box: install, build, the full test suite, a live `claude-code` run, a stop that takes the process tree to zero, a `taskkill /F` that reconciles to `interrupted`, the NSIS installer, and the installed app launched from a path with a space. Two things are still open: a toast nobody has seen, because the test box has notifications disabled system-wide, and the tray glyph at 16px, which has been decoded and rendered but wants its own proportions. The `.cmd` shim is no longer among them — a Windows-gated test writes a real CRLF `.cmd` and executes it on the runner. |
+| ✅ **Gates** | A `{ gate = … }` cue runs a real second-opinion check: the reviewer gets the diff, its verdict is parsed, and a failed gate holds the run with the findings attached. Needs both CLIs installed — and with them, proven on two real vendors rather than fixtures: `claude-code` wrote a rate limiter, `codex` found unbounded memory growth in it, and the run landed `held` at $0.56. |
+| ✅ **Projects** | One daemon serves many. Each project has its own config, run history, queue and event stream, addressed as `/projects/:id/…` — the daemon deliberately has no "current project", so which one you mean is a path segment. An alpha install upgrades into this without losing anything: its config becomes project #1, rooted where its Stations said the code was, and every run record moves across byte for byte. |
+| ✅ **Switching** | The Desk reopens whichever project you were last in, and moves between them without disturbing anything: **a switch is not a stop.** Switch away mid-run and it keeps streaming to disk with nobody watching; switch back and the log comes back whole, because the run store is the authority and the socket's replay buffer is only a convenience. Switching is one action and reachable without a mouse — a menu in the shell, or `⌘K` and the project's name — and the window title and tray menu follow it, so two windows on two projects are told apart from the dock. The Desk never shows one project's runs under another's name: the state carries the project it belongs to, and the surface draws nothing it cannot vouch for. |
+| ✅ **Limits** | `GET /usage` reports every harness's plan windows, and the Desk draws them above the tiles. A run that cannot finish is refused *before* it starts, with the window that stopped it — and if `when_capped` could not route around the cap, the refusal says why. **Read the honest part:** the strip tells you what each vendor actually said, and today that is mostly a sentence rather than a bar — Claude Code reports a *status* (`not blocked yet`) rather than a percentage, Codex reports no plan window at all, and a local model cannot run out. The one real measurement any shipped harness produces is Claude Code reporting it is into overage. |
+| ✅ **The ledger** | What a project spent, by day, by vendor, by Station — including how much of each input was served from cache, which is the difference between two runs with identical token counts and severalfold different bills. Per-Station spend is on every run record. Runs from before that field existed are counted and *labelled* as unsplit rather than blamed on whichever Station happened to be first. |
+| ✅ **Fallback routing** | `when_capped` moves a step to another Station instead of stopping. It **refuses a swap that changes the seat**: a worker cannot stand in for a reviewer, and a harness that does not declare the role cannot take it. A Gate needs no special handling — it counts the vendors that actually acted, so a substitution that breaks `distinct_vendors` holds the run on its own. |
+| ✅ **The run surface** | A live run ordered by what it costs to miss, not by what arrived last: a blocking finding is a headline above the stream, with the Gate's own reasons under it, and the run's row in the list carries it too — so it is what you see before you click, not what you scroll for. Prose is coalesced per Station, costs live in the header rather than the log, and a denial keeps its own colour because it is the only visible evidence a leash held. |
+| ✅ **The project view** | Everything about a project on one screen: who is on it, what each Station may and may not do, what it has spent, and how close its harness is to a cap. Permissions are written as constraints with the process that keeps each one named — because they are not all kept by the same one. The daemon refuses a `worker`'s writes; Codex's own sandbox runs a reviewer read-only; Claude Code does neither and leaves the leash as the whole boundary. A harness that declares nothing is reported as unknown rather than as unconfined. |
+| ✅ **The launch surface** | What the app opens on when no project is active, and where "All projects…" takes you back to: recents with when each was last opened, a folder that has gone marked as such rather than failing when you press it, `forget` for an entry you are done with, and the native picker. Leaving a project is a client action — its runs keep going. |
+| ◐ **The Commons** | The git-backed fact store and byte-stable `CLAUDE.md` / `AGENTS.md` projections are built. Approval, MCP recall and cross-machine sync are not. |
+| 📋 **Not built yet** | Phone pairing, the Caller, On-Call. One more that is easy to miss because this README describes it as if it exists: **the `cuesheet` CLI** is an empty package. The next phases are in [PLAN-STEP.MD](PLAN-STEP.MD). |
 
-**Concretely, today:** clone it, `npm install`, `npm run build`, `npm run dev -w packages/desktop`. One harness, one Station at a time, no gates. Run records may be discarded on upgrade and the config format can still change under you.
+**Concretely, today:** download the unsigned alpha, or clone current beta-track source and run `npm install`, `npm run build`, `npm run dev -w packages/desktop`. Two harnesses, and a gate between them if you have both CLIs installed. The config format can still change under you — the freeze and general migration framework are part of the remaining beta bar — but run records are no longer discarded on upgrade, which is a promise the alpha-to-projects migration now keeps rather than states.
 
 ---
 
@@ -141,6 +150,10 @@ Nothing here requires you to type a path, paste a key, or read a config referenc
 
 Every vendor meters differently and none of them tell you where you stand until you hit the wall — usually eleven minutes into something that mattered. Cuesheet reads each harness's own reported usage, shows every window on one strip, warns you before a run starts that can't finish, and can route around a station that's tapped out.
 
+**That is the strip as designed, and what it draws today is narrower.** A bar appears only where a vendor reported a *fraction*, and most of them do not: Claude Code reports a status rather than a percentage, Codex reports no plan window at all, and a local model has no cap to draw. So the real strip is mostly sentences — "not blocked yet", "reports no plan windows", "cannot run out" — and it says how old each reading is, because Claude Code can only tell you what a run overheard. That is deliberate. A row of confident zeroes for vendors that reported nothing would be worse than no strip.
+
+**One correction to the mock-up above:** the fallback is not unconditional. Worker steps falling back to `qwen3-coder` is exactly the swap Cuesheet will make — a worker standing in for a worker. What it will *not* do is move a reviewer's step to a worker, or to any Station in a different seat, however the config is written. A router that quietly reseats an agent is doing at runtime what the config linter exists to warn a human about, and the README's own argument against a small local model in a reviewer's chair is a safety argument, not an ergonomic one. When it cannot route, the run is refused up front and told you why.
+
 ---
 
 ## Away from the desk
@@ -189,6 +202,7 @@ Twelve words and you know the system.
 | **Station** | One model, on one harness, in one role, bound to one workspace, under one leash. The unit you add. |
 | **Harness** | The integration for one runtime — `claude-code`, `codex`, `ollama`. Versioned, swappable, community-maintained. |
 | **Role** | What a Station is *for*: `engineer`, `reviewer`, `worker`, or `caller`. Roles change permissions, not just prompts. |
+| **Project** | A codebase Cuesheet knows about: a folder, its Stations, its cuesheets, and its run history. You open one, and switch between them without losing what is running in the other. *Not built yet* — today there is a single global config. |
 | **Cue** | One step: a Station and an action. |
 | **Cuesheet** | An ordered list of cues and gates. The plan. |
 | **Run** | One execution of a cuesheet: a prompt in, a diff and a set of verdicts out. Durable, replayable, costed. |
@@ -205,7 +219,7 @@ Twelve words and you know the system.
 ### Requirements
 
 - **macOS 13+, Windows 10+, or Linux.** Git.
-- At least one harness installed and authenticated:
+- At least one harness installed and authenticated — two from different vendors if you want Gates:
   - [Claude Code](https://claude.com/claude-code) — `claude login`
   - [Codex CLI](https://developers.openai.com/codex) — `codex login`
   - [Ollama](https://ollama.com) — `ollama pull qwen3-coder`
@@ -260,11 +274,11 @@ add rate limiting to the upload endpoint
 
 The run lands as a record on disk — prompt, event log, and a `diff.patch` you can read.
 
-**What this is not yet:** the flags below are the shape this is heading for, and they need Gates (M5), which are not built.
+**What this is not yet:** Gates are built and the two-vendor review below really runs — but only from the Desk and the HTTP API. The `cuesheet` CLI is still an empty package, so these flags are the shape it is heading for rather than something you can type.
 
 ```bash
 cuesheet run "add rate limiting to the upload endpoint" \
-  --engineer opus --review codex          # 📋 planned, not shipped
+  --engineer opus --review codex          # 📋 the gate runs; this CLI does not exist yet
 ```
 
 ### Pair your phone
@@ -373,7 +387,9 @@ blocking           = ["security", "correctness", "data-loss"]
 
 A Run that fails its gate is **held**, with the finding attached, and lands as a standby on whatever device you are holding.
 
-**This works today**, with one caveat: it needs two harnesses from different vendors, and `codex` is not written yet — so for now the second opinion has to come from another installed CLI. An unreadable review counts as an abstention, never as approval; a reviewer that crashes cannot wave anything through.
+**This works today, with two real vendors.** `claude-code` and `codex` both ship, so the config above is satisfiable with the CLIs you already have — no third-party harness required. It has been run end to end rather than fixtured: Claude Code added a rate limiter, Codex reviewed the actual diff and filed a blocking `security` finding for a limiter that retains every caller IP forever, and the gate held the run.
+
+An unreadable review counts as an abstention, never as approval; a reviewer that crashes cannot wave anything through.
 
 ### 🚨 On-Call — a reviewed patch waiting for you when the pager goes off
 
@@ -483,6 +499,19 @@ One store. Two projections. One server. Synced across every machine you work on.
 
 Today Claude Code keeps `CLAUDE.md`, Codex keeps `AGENTS.md`, Ollama keeps nothing, none of them can read the others', and every tool re-learns your codebase from zero, forever. Cuesheet keeps one store and projects it into whatever each harness expects.
 
+**One store, many projects, and the files land where each AI already looks.** A fact carries the projects it belongs to, and the projection has two layers:
+
+```
+  scope: project   →  <each project root>/CLAUDE.md      that project's facts
+                      <each project root>/AGENTS.md      same body, Codex's filename
+  scope: user      →  ~/.claude/CLAUDE.md                how you work · written once per machine
+                      ~/.codex/AGENTS.md                 never re-written per project
+```
+
+The split is not cosmetic. There is exactly one `~/.claude/CLAUDE.md` on your machine, so rendering a project's facts into it would mean the last project you opened wins and every other project's agents read someone else's context. Project-scope facts go to project roots; the user-scope files hold only what is true in every repo. Two Stations working the same project share one file rather than getting one each — what narrows a Station is its role and its leash, not a private copy of your memory.
+
+Generated content lives between markers, so a hand-written `CLAUDE.md` survives untouched, and committing the generated block is your call: it is how a teammate without Cuesheet gets the same context.
+
 Why both static files *and* an MCP server: files cost nothing and are always loaded, including by local models that will never reliably decide to call a tool. The MCP server carries the long tail that would blow your context budget if it were pasted into every session.
 
 Captured memories land in an **approval inbox**, not straight into the store — without a gate, agent-written memory drifts, duplicates, and quietly poisons every future session. Provenance is attached to every entry: which Station, which Run, when.
@@ -504,6 +533,43 @@ grant   = ["opus", "codex"]        # which Stations get it
 Cuesheet renders it into `.mcp.json` and `~/.codex/config.toml` and keeps them in sync.
 
 > **Known limit, stated honestly:** vendor-hosted connectors (the Gmail/Drive/Microsoft 365 integrations managed inside claude.ai) hold OAuth grants tied to that vendor's account and **cannot** be shared with another vendor's agent. To give every Station the same reach you must run your own MCP servers against your own OAuth clients. Cuesheet will help you wire them; it cannot repeal the constraint.
+
+### 🪙 The context economy
+
+📋 **Not built.** A gated two-model workflow burns roughly 3× a single session — that is the honest price of a second opinion and it is not going away. What *is* going away is the waste around it.
+
+| Lever | What it does | Why it is Cuesheet's to pull |
+|---|---|---|
+| **Cache-aware ledger** | Separates cached input from fresh input, per run and per Station | Cached input is billed at a fraction of fresh. Both CLIs already report it and Cuesheet currently throws it away — Claude Code's figures get summed into one input total, Codex's `cached_input_tokens` is dropped. So today the ledger can tell you what a run cost and not why |
+| **Brief budgets** | A byte cap on what a Station is handed, eliding whole files with a note rather than truncating mid-hunk | A reviewer gets the whole workspace diff today. Regenerate a lockfile and you have sent every line of it to a second vendor at full price |
+| **Path-weighted gates** | `always_review` / `never_review` globs alongside `skip_if_diff_under` | A line count is blind in both directions: five lines of auth is worth a review, five hundred lines of vendored bump is not |
+| **Repo map** | A stable symbol index in the projected context — files, exports, where they live | The biggest token sink in an agent run is rediscovering a repo that has not changed since yesterday. A captured Codex run in this repo opens with `rg --files` and a `cat` loop hunting for `AGENTS.md` |
+| **Context audit** | What every always-loaded file costs, per run, times the Stations that load it | A 40k-token hand-written `CLAUDE.md` is paid on every run by every Station forever, and no tool tells anybody |
+| **Local first pass** | Triage, labelling and commit messages on a `worker` Station | The cheapest token is the one a local model spent. This is the same argument On-Call makes, applied to ordinary work |
+
+**Everything generated must be byte-stable when nothing changed.** Prompt caching is prefix-based — one reordered line near the top of a context file invalidates the whole cache behind it, and a miss on 30k tokens costs an order of magnitude more than a hit. So no timestamps, no run ids and no `readdir`-ordered maps in anything Cuesheet writes into context.
+
+**Token counting is local and approximate, and says so.** The exact answer lives behind a vendor endpoint, and Cuesheet never holds the key to call one.
+
+### 🔀 One set of features, every harness
+
+Each CLI has something the other lacks, and neither can lend it across. The point of a manager is that the feature becomes yours rather than your vendor's.
+
+| What you would miss | Claude Code | Codex | The Cuesheet concept that covers both |
+|---|---|---|---|
+| A second opinion | subagents, same vendor only | — | **Stations + Gates** — any vendor reviews any other, and `distinct_vendors` makes it structural |
+| Always-loaded memory | `CLAUDE.md` | `AGENTS.md` | **The Commons** — one store, both files, per project |
+| Named repeatable workflows | slash commands, skills | prompts | **Cuesheets** — the same named flow whichever model runs it |
+| Run something after every change | hooks | none in 0.154.0 | **Hook cues** — a cue kind, so every harness has hooks, including local models |
+| Propose before doing | plan mode | — | **The Caller** — vendor-neutral, and the plan is config you can keep |
+| Undo a bad run | rewind | — | **Run records** — every run stores its patch; reverse-apply it |
+| Scoped permissions | `--permission-mode` | `--sandbox` | **Roles + leashes** — one vocabulary, mapped onto whichever flag the CLI speaks, and enforced in the daemon either way |
+| Pick up where you left off | its own sessions | its own sessions | **Run records** — honestly, this re-briefs from the record; it cannot resume a vendor's own session state, which lives in their store |
+| Connectors | `.mcp.json` | `~/.codex/config.toml` | **Declare once** — rendered into both |
+
+**The vendor columns describe what this repo has actually exercised** — `codex` 0.154.0, whose flags were read out of `--help` rather than recalled, and `claude-code` as captured in `packages/harness/src/fixtures/`. Both churn; the right-hand column is the part that is meant to survive them.
+
+**The mechanism is the cue list, which is why most of this is cheap.** Cues were an ordered list before Gates existed, and a gate turned out to be a cue kind; a hook is one too. The one place this does *not* work is worth stating: a harness cannot currently say what it supports — there is no `capabilities` on the interface — so "use plan mode if the runtime has one" has nowhere to live yet. That is a real gap, not a rounding error, and [PLAN-STEP.MD](PLAN-STEP.MD) Step 61 is where it gets decided.
 
 ### 🛡 Leashes
 
@@ -562,10 +628,10 @@ Every Run is a durable object: prompt, brief, diff, verdicts, tool calls, denial
 
 | Harness | Vendor | Roles | Status |
 |---|---|---|---|
-| `claude-code` | Anthropic | engineer | ✅ Working — reviewer and caller need M5/M6 |
+| `claude-code` | Anthropic | engineer, reviewer | ✅ Working — caller needs M6 |
 | `mock` | none | engineer | ✅ Working — ships on purpose, for developing against without burning tokens |
-| `codex` | OpenAI | engineer, reviewer, caller | 📋 Planned — M5, and the second vendor a Gate needs |
-| `ollama` | local | worker | 📋 Planned |
+| `codex` | OpenAI | engineer, reviewer | ✅ Working — the second vendor a Gate needs. Caller needs M6 |
+| `ollama` | local | worker | ✅ Working — worker only, and it refuses any other seat rather than warning about it. Lists the models actually pulled on your machine |
 | `gemini-cli` | Google | engineer, reviewer | 📋 Planned |
 | `opencode` | community | engineer | 📋 Planned |
 | `cursor-cli` | Cursor | engineer | 📋 Planned |
@@ -599,6 +665,14 @@ export default {
 
   // Where this runtime expects always-loaded context, so the Commons can project into it
   contextFiles: [{ path: "MY_AGENT.md", scope: "project" }],
+
+  // Optional. What *your own* sandbox does with a seat, so the Desk can say who
+  // enforces what. Leave it out and Cuesheet reports your harness as "does not
+  // say" rather than guessing that nothing is confined. The answer for a seat
+  // you did not list in `roles` is never read.
+  confinement(role) {
+    return role === "reviewer" ? "read-only" : "workspace-write";
+  },
 
   // How to register MCP connectors for this runtime
   async writeConnectors(connectors) { /* ... */ },
@@ -740,16 +814,20 @@ Cuesheet has not been audited. Do not expose the daemon to an untrusted network.
 
 | Milestone | Contents | State |
 |---|---|---|
-| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | ✅ macOS · 🚧 Windows |
-| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | 🚧 Desk and shell done; tray, packaging and signing next |
-| **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | 📋 |
+| **M0 · Spine** | Daemon, run queue, `claude-code` harness, CLI, run records | ✅ macOS **and** Windows — except the CLI, which is still an empty package |
+| **M1 · Desk** | Desktop app (macOS first), add-station flow, live tiles, streams, tray | ✅ Desk, shell, tray and packaging done on both; signing still open. A rebuild around projects is sequenced next |
+| **M2 · Limits** | Usage windows per vendor, pre-run warnings, fallback routing, ledger | ✅ Done — with the honest caveat that most vendors report less than the strip can draw |
 | **M3 · Pocket** | QR pairing, tailnet serving, mobile standby/GO, push, device revocation | 📋 |
-| **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | 📋 |
-| **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | 🚧 Gates, verdicts and Holds work; `codex` still to come |
+| **M4 · Commons** | Git-backed store, projections, MCP recall, capture hooks, approval inbox, cross-device sync | ◐ Store and projections done |
+| **M5 · Gates** | `codex` harness, reviewer role, verdict parsing, Gates, Holds | ✅ Done — two real vendors, end to end |
 | **M6 · Caller** | `caller` role, `cuesheet plan`, proposal review, save-as-cuesheet | 📋 |
 | **M7 · On-Call** | Triggers, triage/patch/review cuesheet, hotfix gate, storm control, incident records | 📋 |
 | **M8 · Fleet** | Multiple machines as nodes; run on the desktop from the laptop | 📋 |
 | **M9 · Ecosystem** | Harness SDK published, `gemini-cli` + `opencode`, connector registry, policy packs | 📋 |
+| **M10 · Economy** | Cache-aware ledger, brief budgets, path-weighted gates, repo map, context audit | 📋 |
+| **M11 · Parity** | Hooks as cues, rewind from a run record, harness capability probing | 📋 |
+
+**This table is a catalogue, not a running order.** It numbers features for a reader deciding whether to care; what gets built next is decided in [PLAN-STEP.MD](PLAN-STEP.MD), and the two have already diverged — M5 · Gates was built well ahead of M2–M4. The current order puts **projects and a rebuilt Desk ahead of M2 and M4**, because "open the app on the repo you were working on yesterday" is missing from this table entirely, and both of those milestones need it before they can be scoped.
 
 Later candidates: optional container isolation per workspace, [Agent Client Protocol](https://agentclientprotocol.com) as a transport so one harness covers many runtimes, CI mode, team-shared Commons with review.
 
@@ -801,7 +879,7 @@ It runs on your machine, against your working tree, with your credentials, over 
 No. It opens a branch and a PR, and that is the end of its authority. It cannot merge, cannot reach your infrastructure, and cannot arm at all without a reviewer from a second vendor. If it could not reproduce the bug with a failing test, it does not hand you a patch — it hands you what it found and stops.
 
 **Can I use only local models?**
-Yes, and Cuesheet runs fully offline. It will warn you when a `worker`-class model is placed in a `reviewer` seat, because that combination produces false confidence rather than safety.
+Yes, and Cuesheet runs fully offline. It warns you when a `worker`-class model is placed in a `reviewer` seat, because that combination produces false confidence rather than safety — the daemon says so at `GET /stations`, while you are still writing the config rather than three steps into a run.
 
 **What does it cost to run?**
 Cuesheet is free. The models are not. A gated two-model workflow runs roughly 3× the tokens of a single session — which is why `skip_if_diff_under` exists and why limits and the ledger are headline features rather than footnotes.

@@ -10,6 +10,7 @@
  */
 import {
   mkdtemp,
+  readdir,
   readFile,
   writeFile,
   realpath,
@@ -86,6 +87,19 @@ async function boot(runtime = quietRuntime()): Promise<DaemonHandle> {
   return daemon;
 }
 
+/** Where this file's single bootstrapped project's routes hang off. */
+function projectBase(): string {
+  if (!daemon) throw new Error("no daemon is running");
+  const runtime = daemon.defaultProject;
+  if (!runtime) throw new Error("the daemon bootstrapped no project");
+  return `${daemon.url}/projects/${runtime.project.id}`;
+}
+
+async function bootProject(runtime = quietRuntime()): Promise<string> {
+  await boot(runtime);
+  return projectBase();
+}
+
 async function post(url: string, body?: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",
@@ -122,7 +136,7 @@ async function waitForRun(url: string, runId: string): Promise<StoredRun> {
 
 describe("POST /runs against a real harness", () => {
   it("produces a full run record in under a second", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const started = Date.now();
 
     const response = await post(`${url}/runs`, { prompt: "add a greeting" });
@@ -148,7 +162,7 @@ describe("POST /runs against a real harness", () => {
   it("attributes every event to the run and the Station", async () => {
     // Stamped by the adapter rather than by each harness, so a harness cannot
     // misattribute an event — invisible until two runs are on screen at once.
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -162,7 +176,7 @@ describe("POST /runs against a real harness", () => {
   });
 
   it("records the file the harness wrote, and the one the leash refused", async () => {
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -196,7 +210,7 @@ describe("POST /runs against a real harness", () => {
     await spawnRun("git", ["add", "-A"], { cwd: workspace });
     await spawnRun("git", ["commit", "-qm", "init"], { cwd: workspace });
 
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -212,7 +226,7 @@ describe("POST /runs against a real harness", () => {
   it("answers a standby over HTTP and completes the run", async () => {
     // The full loop the README describes: the run pauses, the operator taps
     // GO from anywhere that can reach the API, and the run carries on.
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({
         registry: createHarnessRegistry([
           { ...createMockHarness({ standby: true }), id: "mock" },
@@ -226,7 +240,7 @@ describe("POST /runs against a real harness", () => {
 
     const standbyId = await waitForStandby(url, runId);
     expect(
-      (await post(`${url}/standbys/${standbyId}`, { answer: "go" })).ok,
+      (await post(`${daemon!.url}/standbys/${standbyId}`, { answer: "go" })).ok,
     ).toBe(true);
 
     const stored = await waitForRun(url, runId);
@@ -250,7 +264,7 @@ workspace = ${JSON.stringify(workspace)}
 `,
       "utf8",
     );
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -262,7 +276,7 @@ workspace = ${JSON.stringify(workspace)}
 
   it("fails readably when there is no Station at all", async () => {
     await writeFile(path.join(cwd, "cuesheet.toml"), "[desk]\n", "utf8");
-    const { url } = await boot();
+    const url = await bootProject();
     const { runId } = (await (
       await post(`${url}/runs`, { prompt: "go" })
     ).json()) as { runId: string };
@@ -277,7 +291,7 @@ describe("GET /stations with a real prober", () => {
   it("reports the mock as installed", async () => {
     // The mock ships rather than being a test fixture: someone with no agent
     // CLI installed can still open the app and watch the Desk work.
-    const { url } = await boot();
+    const url = await bootProject();
     const body = (await (await fetch(`${url}/stations`)).json()) as {
       stations: Array<{ probe: { installed: boolean; harness: string } }>;
     };
@@ -321,7 +335,7 @@ describe("stopping a run mid-flight", () => {
       },
     };
 
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({ registry: createHarnessRegistry([writeThenHang]) }),
     );
 
@@ -349,7 +363,7 @@ describe("stopping a run mid-flight", () => {
   it("lands as stopped, not running", async () => {
     // Step 23's invariant, one phase early: a run must always reach a terminal
     // status. `stepMs` makes the mock slow enough to catch in the act.
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({
         registry: createHarnessRegistry([
           {
@@ -402,3 +416,316 @@ async function waitForStatus(
   }
   throw new Error(`Run ${runId} never reached ${status}`);
 }
+
+describe("a worker cue", () => {
+  /**
+   * Make the workspace a git repo with one commit.
+   *
+   * Without this `diffWorkspace` reports nothing at all, and a test asserting
+   * "no diff was attributed" would pass for the wrong reason — it has to be a
+   * workspace where a diff genuinely *would* be reported.
+   */
+  async function gitWorkspace(): Promise<void> {
+    const { run: spawnRun } = await import("@cuesheet/harness");
+    await spawnRun("git", ["init", "-q", "."], { cwd: workspace });
+    await spawnRun("git", ["config", "user.email", "t@example.com"], {
+      cwd: workspace,
+    });
+    await spawnRun("git", ["config", "user.name", "T"], { cwd: workspace });
+    await writeFile(path.join(workspace, "src/seed.txt"), "seed\n", "utf8");
+    await spawnRun("git", ["add", "-A"], { cwd: workspace });
+    await spawnRun("git", ["commit", "-qm", "init"], { cwd: workspace });
+  }
+
+  /** Rewrites this project's config so its only Station is a worker. */
+  async function workerProject(): Promise<string> {
+    await writeFile(
+      path.join(cwd, "cuesheet.toml"),
+      `
+[[station]]
+id = "qwen"
+harness = "mock"
+role = "worker"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+deny = [".git/**"]
+`,
+      "utf8",
+    );
+    return bootProject();
+  }
+
+  it("completes having touched zero files", async () => {
+    // Step 36's second done-when clause, end to end: HTTP into the queue,
+    // into a harness in a worker seat, out to the store. The leash here is
+    // `**` — nothing about this run is denied by *path*, which is the point.
+    const url = await workerProject();
+    const before = await readdir(path.join(workspace, "src"));
+
+    const response = await post(`${url}/runs`, { prompt: "label this change" });
+    const { runId } = (await response.json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("done");
+    expect(await readdir(path.join(workspace, "src"))).toEqual(before);
+    expect(await readdir(workspace)).toEqual(["src"]);
+
+    // And it did real work rather than doing nothing: a commit-message line
+    // and the tokens it cost. A seat that means something has to still be a
+    // seat somebody would put a Station in.
+    const text = stored.events
+      .filter((event) => event.t === "text")
+      .map((event) => (event as { chunk: string }).chunk)
+      .join("");
+    expect(text).toContain("chore:");
+    expect(stored.run.cost.tokensOut).toBeGreaterThan(0);
+  });
+
+  it("claims no diff for a workspace somebody else made dirty", async () => {
+    // A `git diff` reports what is dirty, not what this run did, and those are
+    // the same answer only because a run that writes is the normal case. This
+    // is the case where they come apart — and it was found by a real `ollama`
+    // worker run, which landed `filesChanged: 2` against a workspace two
+    // earlier runs had left dirty, by a harness with no write path at all.
+    //
+    // The harness declining to return a diff was not enough: `runDiff`
+    // preferred a fresh `git diff` and overrode it. The check has to live
+    // where the attribution is made.
+    await gitWorkspace();
+    const url = await workerProject();
+    await writeFile(
+      path.join(workspace, "src", "someone-elses-work.ts"),
+      "export const stray = 1;\n",
+      "utf8",
+    );
+
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "label this change" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("done");
+    expect(stored.run.result?.diff).toBeUndefined();
+    expect(await fetchDiff(url, runId)).toBeNull();
+  });
+
+  it("still attributes the diff when an engineer shares the cuesheet", async () => {
+    // The rule is "every Station in the run is a non-writing seat", not "the
+    // last one is". A worker running after an engineer — which is the
+    // README's own `ship` cuesheet, ending in a commit-message worker — must
+    // not erase the engineer's diff on its way out.
+    await gitWorkspace();
+    await writeFile(
+      path.join(cwd, "cuesheet.toml"),
+      `
+[[station]]
+id = "hand"
+harness = "mock"
+role = "engineer"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+deny = [".git/**"]
+
+[[station]]
+id = "qwen"
+harness = "mock"
+role = "worker"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+deny = [".git/**"]
+
+[cuesheet.ship]
+cues = [
+  { station = "hand", action = "implement" },
+  { station = "qwen", action = "commit-message" },
+]
+`,
+      "utf8",
+    );
+    const url = await bootProject();
+
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "write it", cuesheet: "ship" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.result?.diff?.filesChanged).toBeGreaterThan(0);
+  });
+
+  it("is refused by the facade if it reaches for a write anyway", async () => {
+    // The mock's worker branch never writes, so this drives the refusal
+    // directly rather than through a run — proving the facade, not the script.
+    const { createWorkspace } = await import("@cuesheet/harness");
+    const ws = createWorkspace({
+      station: {
+        id: "qwen",
+        harness: "mock",
+        role: "worker",
+        workspace,
+        paths: ["**"],
+        deny: [],
+      },
+    });
+    await expect(ws.write("src/notes.md", "x")).rejects.toThrow(/never writes/);
+    expect(await readdir(path.join(workspace, "src"))).toEqual([]);
+  });
+});
+
+describe("the ledger's raw material", () => {
+  it("records what each Station spent, not just the run's total", async () => {
+    // Step 39's aggregation is only as honest as this: without a per-Station
+    // split the ledger can say what a run cost and never who spent it.
+    const url = await bootProject();
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "spend something" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    const stations = stored.run.result?.stations;
+    expect(stations).toHaveLength(1);
+    expect(stations?.[0]).toMatchObject({
+      stationId: "fake",
+      harness: "mock",
+      vendor: "cuesheet",
+    });
+    expect(stations?.[0]?.cost.tokensOut).toBeGreaterThan(0);
+    // It adds up to the run's own total, which is what keeps a ledger's
+    // columns reconciling.
+    expect(stations?.[0]?.cost.tokensIn).toBe(stored.run.cost.tokensIn);
+  });
+});
+
+describe("GET /ledger", () => {
+  it("turns a finished run into rows, split by Station and vendor", async () => {
+    // Step 39's done-when, as close as this suite can get to it: a real run
+    // through a real harness, aggregated into the rows a ledger draws.
+    const url = await bootProject();
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "spend something" })
+    ).json()) as { runId: string };
+    await waitForRun(url, runId);
+
+    const ledger = (await (await fetch(`${url}/ledger`)).json()) as {
+      totals: { tokensIn: number; runs: number };
+      byStation: { key: string; tokensOut: number }[];
+      byVendor: { key: string }[];
+      runs: { runId: string; attributed: boolean }[];
+      unattributed: { tokensIn: number; tokensOut: number };
+    };
+
+    expect(ledger.byStation[0]?.key).toBe("fake");
+    expect(ledger.byStation[0]?.tokensOut).toBeGreaterThan(0);
+    expect(ledger.byVendor[0]?.key).toBe("cuesheet");
+    expect(ledger.runs[0]).toMatchObject({ runId, attributed: true });
+    // The columns reconcile, which is the property that makes the page
+    // trustworthy rather than merely present.
+    expect(ledger.unattributed).toMatchObject({ tokensIn: 0, tokensOut: 0 });
+  });
+
+  it("is scoped to its project, the mirror image of `/usage` being global", async () => {
+    const url = await bootProject();
+    const { status } = await fetch(`${daemon?.url ?? ""}/ledger`).then((r) => ({
+      status: r.status,
+    }));
+    expect(status).toBe(404);
+    expect((await fetch(`${url}/ledger`)).status).toBe(200);
+  });
+});
+
+describe("when_capped", () => {
+  /** Two Stations in one seat, and a fallback from the first to the second. */
+  async function twoSeats(when: string): Promise<string> {
+    await writeFile(
+      path.join(cwd, "cuesheet.toml"),
+      `
+[[station]]
+id = "primary"
+harness = "mock"
+role = "engineer"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+
+[[station]]
+id = "spare"
+harness = "spare-mock"
+role = "engineer"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+
+[[station]]
+id = "helper"
+harness = "spare-mock"
+role = "worker"
+workspace = ${JSON.stringify(workspace)}
+paths = ["**"]
+
+[limits]
+${when}
+`,
+      "utf8",
+    );
+    return bootProject(cappedRuntime());
+  }
+
+  /** `mock` is capped; `spare-mock` is a second vendor that is not. */
+  function cappedRuntime() {
+    const primary = { ...createMockHarness({ standby: false }), id: "mock" };
+    const spare = {
+      ...createMockHarness({ standby: false }),
+      id: "spare-mock",
+      vendor: "spare",
+    };
+    return {
+      ...harnessRuntime({ registry: createHarnessRegistry([primary, spare]) }),
+      usageSources: () => [
+        {
+          id: "mock",
+          vendor: "cuesheet",
+          usage: async () => [
+            { window: "plan", state: "measured" as const, used: 1 },
+          ],
+        },
+        { id: "spare-mock", vendor: "spare", usage: async () => [] },
+      ],
+    };
+  }
+
+  it("routes a capped Station to its fallback, unattended", async () => {
+    const url = await twoSeats('when_capped = { primary = "spare" }');
+    const { runId } = (await (
+      await post(`${url}/runs`, { prompt: "carry on" })
+    ).json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("done");
+    const stations = stored.run.result?.stations;
+    // The spare did the work, and the record says whose step it took. A ledger
+    // showing "spare" where the cuesheet says "primary", with no explanation,
+    // is a ledger somebody files a bug about.
+    expect(stations?.[0]).toMatchObject({
+      stationId: "spare",
+      substitutedFor: "primary",
+    });
+  });
+
+  it("refuses the run rather than routing a worker into an engineer's seat", async () => {
+    // The safety clause, and the place two steps had to be reconciled.
+    // `helper` is a worker, so the router will not take the step — which means
+    // the cap still stands, which means Step 38's pre-run check refuses the
+    // run at the door. That is the right order of events: it is better to be
+    // told at second zero than to start a run against a capped plan.
+    const url = await twoSeats('when_capped = { primary = "helper" }');
+    const response = await post(`${url}/runs`, { prompt: "carry on" });
+    expect(response.status).toBe(409);
+
+    const body = (await response.json()) as {
+      error: string;
+      routing?: string[];
+    };
+    expect(body.error).toContain("would not finish");
+    // And it says *why the fallback did not save it*. A refusal reading "you
+    // are capped" while `when_capped` is configured and silent is a refusal
+    // somebody spends an afternoon on.
+    expect(body.routing?.[0]).toContain("cannot stand in for");
+  });
+});

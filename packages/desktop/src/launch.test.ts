@@ -6,6 +6,7 @@ import {
   daemonPortArg,
   devServerUrl,
   parseDaemonPort,
+  staysInApp,
 } from "./launch.js";
 import {
   assetCandidates,
@@ -173,5 +174,47 @@ describe("tray assets", () => {
         "tray.ico",
       ),
     ).toEqual(["/App/Contents/Resources/assets/tray.ico"]);
+  });
+});
+
+/**
+ * Step 45's guard. The mechanism is `target="_blank"` on every external link;
+ * this is what happens when somebody forgets one.
+ */
+describe("staysInApp", () => {
+  it("lets the packaged Desk load itself", () => {
+    expect(staysInApp("file:///C:/app/index.html", null)).toBe(true);
+  });
+
+  it("sends an install link out of the window", () => {
+    // Otherwise the Desk becomes claude.com, in a window with no address bar
+    // and no back button, with the daemon still running behind it.
+    expect(staysInApp("https://claude.com/claude-code", null)).toBe(false);
+    expect(staysInApp("https://ollama.com", DEFAULT_DEV_SERVER)).toBe(false);
+  });
+
+  it("lets the dev server reload in development", () => {
+    expect(staysInApp("http://localhost:5173/", DEFAULT_DEV_SERVER)).toBe(true);
+    expect(
+      staysInApp("http://localhost:5173/index.html", DEFAULT_DEV_SERVER),
+    ).toBe(true);
+  });
+
+  it("compares origins rather than prefixes", () => {
+    // `startsWith` would have called this the dev server.
+    expect(
+      staysInApp("http://localhost:5173.evil.test/", DEFAULT_DEV_SERVER),
+    ).toBe(false);
+    expect(staysInApp("http://localhost:51730/", DEFAULT_DEV_SERVER)).toBe(
+      false,
+    );
+  });
+
+  it("refuses a dev-server origin in a packaged build", () => {
+    expect(staysInApp("http://localhost:5173/", null)).toBe(false);
+  });
+
+  it("refuses what is not a URL at all", () => {
+    expect(staysInApp("not a url", DEFAULT_DEV_SERVER)).toBe(false);
   });
 });

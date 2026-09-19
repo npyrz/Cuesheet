@@ -4,7 +4,9 @@ import {
   activeRun,
   deskReducer,
   initialState,
+  isShowing,
   selectedEvents,
+  selectedEventsLoaded,
   selectedRun,
   type DeskAction,
   type DeskState,
@@ -625,5 +627,185 @@ describe("standby lifecycle", () => {
     );
 
     expect(after.standbys).toEqual([]);
+  });
+});
+
+/**
+ * Step 34. A switch is not a reconnect, and the difference is what `snapshot`
+ * cannot do: it corrects the state on the way *out*, when the new project's
+ * fetch lands, and until then every field still describes the project you left.
+ */
+describe("switching projects", () => {
+  /** A Desk mid-run: a working tile, an open standby, a selection, an error. */
+  const busy = (): DeskState =>
+    reduce([
+      { type: "snapshot", runs: [run({ status: "running" })] },
+      ev({
+        t: "status",
+        status: "running",
+        runId: "20260910T142233104Z-0001",
+        at: AT,
+      }),
+      // A `text` event rather than the `status` above, because activity is
+      // keyed by station and only the events that carry a `stationId` can
+      // light a tile.
+      ev({
+        t: "text",
+        chunk: "working on it",
+        runId: "20260910T142233104Z-0001",
+        stationId: "opus",
+        at: AT,
+      }),
+      ev({
+        t: "standby",
+        standbyId: "sb_1",
+        ask: "Write the file?",
+        runId: "20260910T142233104Z-0001",
+        at: AT,
+      }),
+      { type: "error", message: "something went wrong in the old project" },
+    ]);
+
+  it("clears everything the old project put on screen", () => {
+    const before = busy();
+    expect(before.runs).toHaveLength(1);
+    expect(before.standbys).toHaveLength(1);
+    expect(Object.keys(before.stationActivity)).toEqual(["opus"]);
+
+    const after = deskReducer(before, { type: "project", projectId: "beta" });
+
+    expect(after).toEqual({ ...initialState, projectId: "beta" });
+  });
+
+  /**
+   * The one that would do damage rather than mislead. Station ids are per
+   * config, so two projects both having an `opus` is ordinary — and a standby
+   * id is addressable daemon-wide, so answering a carried-over one from the
+   * new project's Desk would succeed, against a run in the old project.
+   */
+  it("drops a standby that belongs to the project being left", () => {
+    const after = deskReducer(busy(), { type: "project", projectId: "beta" });
+    expect(after.standbys).toEqual([]);
+    expect(after.stationActivity).toEqual({});
+    expect(after.selectedRunId).toBeNull();
+  });
+
+  it("reports connecting rather than whatever the old socket last said", () => {
+    const open = deskReducer(busy(), { type: "connection", status: "open" });
+    expect(
+      deskReducer(open, { type: "project", projectId: "beta" }).connection,
+    ).toBe("connecting");
+  });
+
+  it("does not carry an error across the switch", () => {
+    expect(
+      deskReducer(busy(), { type: "project", projectId: "beta" }).error,
+    ).toBeNull();
+  });
+
+  /**
+   * Step 41's third done-when, asked of the state rather than of a component.
+   *
+   * The switch happens on the client before anything is fetched, so between
+   * choosing a project and its resync landing there is a state that holds one
+   * project's runs while the shell names another. `isShowing` is what a
+   * surface asks before it draws them, and it is false for exactly that
+   * window.
+   */
+  it("stops claiming to show the project it has been told it left", () => {
+    const before = busy();
+    const alpha = deskReducer(before, { type: "project", projectId: "alpha" });
+    expect(isShowing(alpha, "alpha")).toBe(true);
+    expect(isShowing(alpha, "beta")).toBe(false);
+  });
+
+  it("does not show anything before the first attach", () => {
+    expect(isShowing(initialState, "alpha")).toBe(false);
+    // A shell with no project open names nothing, so there is nothing for the
+    // state to belong to — `null` is never "showing", even against itself.
+    expect(isShowing({ ...initialState, projectId: null }, null)).toBe(false);
+  });
+
+  /**
+   * The bug this tag exists for, written out as the sequence that produced it:
+   * runs arrive for alpha, the operator picks beta, and beta's fetches have
+   * not landed. The runs are still in the state — nothing has replaced them
+   * yet — and the surface must not draw them under beta's name.
+   */
+  it("keeps one project's runs out of another's surface mid-switch", () => {
+    const alpha = deskReducer(busy(), { type: "project", projectId: "alpha" });
+    const withRuns = deskReducer(alpha, {
+      type: "snapshot",
+      runs: [run()],
+    });
+    expect(withRuns.runs).toHaveLength(1);
+    expect(isShowing(withRuns, "alpha")).toBe(true);
+
+    const switching = deskReducer(withRuns, {
+      type: "project",
+      projectId: "beta",
+    });
+    expect(isShowing(switching, "beta")).toBe(true);
+    expect(switching.runs).toEqual([]);
+  });
+});
+
+/**
+ * Step 44. Two facts the state was carrying as one, and two surfaces that
+ * were guessing which they had.
+ */
+describe("what the surfaces are allowed to claim", () => {
+  it("starts out reading rather than empty", () => {
+    // `runs: []` is the initial state, so a list keyed on length announces
+    // "No runs yet." before the first request has been answered.
+    expect(initialState.load).toEqual({ status: "loading" });
+  });
+
+  it("is reading again the moment a different project is chosen", () => {
+    const ready = deskReducer(initialState, {
+      type: "load",
+      load: { status: "ready" },
+    });
+    const switched = deskReducer(ready, {
+      type: "project",
+      projectId: "beta",
+    });
+    // Otherwise the new project inherits the old one's "ready" and its empty
+    // run list reads as a fact about a project nobody has asked about yet.
+    expect(switched.load).toEqual({ status: "loading" });
+  });
+
+  it("carries the daemon's own words on a failure", () => {
+    const failed = deskReducer(initialState, {
+      type: "load",
+      load: { status: "failed", error: "connect ECONNREFUSED" },
+    });
+    expect(failed.load).toEqual({
+      status: "failed",
+      error: "connect ECONNREFUSED",
+    });
+  });
+
+  it("separates a log it has read from one it has not", () => {
+    const withRun = deskReducer(initialState, {
+      type: "snapshot",
+      runs: [run()],
+    });
+    // Selected, and its events never fetched: `selectedEvents` flattens that
+    // to `[]`, which is the same shape as a run that has genuinely said
+    // nothing. Only one of those is a fact about the run.
+    expect(selectedEvents(withRun)).toEqual([]);
+    expect(selectedEventsLoaded(withRun)).toBe(false);
+
+    const fetched = deskReducer(withRun, {
+      type: "run-detail",
+      detail: { run: run(), events: [], hasDiff: false },
+    });
+    expect(selectedEvents(fetched)).toEqual([]);
+    expect(selectedEventsLoaded(fetched)).toBe(true);
+  });
+
+  it("claims nothing about a log when no run is selected", () => {
+    expect(selectedEventsLoaded(initialState)).toBe(false);
   });
 });

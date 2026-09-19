@@ -23,9 +23,11 @@ export default defineConfig({
     proxy: {
       // The daemon registers every route twice — at the root and under
       // `/api` — precisely so this proxy is one line instead of a rewrite.
-      "/api": { target: `http://${DAEMON}`, changeOrigin: true },
-      // The socket is at `/ws`, not `/api/ws`. One spelling, chosen here.
-      "/ws": { target: `ws://${DAEMON}`, ws: true },
+      // `ws: true` because the event socket moved under this prefix in Step
+      // 32: it is `/api/projects/:id/ws` now, so one rule forwards both the
+      // HTTP calls and the upgrade. The separate `/ws` entry that used to sit
+      // here is gone with the route it proxied.
+      "/api": { target: `http://${DAEMON}`, changeOrigin: true, ws: true },
     },
   },
 

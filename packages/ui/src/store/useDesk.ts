@@ -5,27 +5,97 @@
  * step-by-step in {@link resync} because the ordering is the entire
  * correctness argument — see the header comment in `reducer.ts`.
  */
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import type { RunEvent, RunId } from "@cuesheet/core";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
+import type { ListedProject, RunEvent, RunId } from "@cuesheet/core";
 import {
   addStation,
   answerStandby,
   fetchDiff,
+  fetchProjects,
+  openProject,
   fetchRun,
   fetchRuns,
   fetchStations,
+  fetchUsage,
+  forgetProject,
   startRun,
   stopRun,
   type NewStation,
 } from "../api/client.js";
+import { bridge } from "../api/base.js";
 import { connectEvents } from "../api/socket.js";
+import { activeProject } from "../switcher.js";
+import { LOADING, READY } from "../surface.js";
 import { deskReducer, initialState, type DeskState } from "./reducer.js";
 
 /** How many runs the list pane holds. Plenty for a session; not unbounded. */
 const RUN_LIMIT = 50;
 
+/**
+ * How often the strip re-asks.
+ *
+ * Matched to the daemon's own usage TTL rather than chosen independently:
+ * polling faster would return the same cached answer, and polling slower would
+ * leave the strip behind a reading the daemon already has. The daemon drops
+ * its cache when a run finishes, which is the moment the number actually
+ * moves, so this interval is only catching drift between runs.
+ */
+const USAGE_POLL_MS = 30_000;
+
+/**
+ * Which project the Desk is showing, and how it got there.
+ *
+ * `loading` is a real state rather than a null check: the first paint happens
+ * before `GET /projects` answers, and rendering "no projects" for a frame and
+ * then a full Desk is worse than rendering nothing for that frame.
+ *
+ * Step 34 adds switching; Steps 40 and 41 give it a designed surface. What
+ * lives here is the mechanism — resolve a project, attach to it, and move to
+ * another one without disturbing what the first one is doing.
+ */
+export type ProjectState =
+  | { status: "loading" }
+  | { status: "none" }
+  /**
+   * The daemon could not be asked — Step 44.
+   *
+   * This used to be folded back into `loading`, on the argument that a daemon
+   * which is not up yet is not a first-run install and the socket's reconnect
+   * is what recovers. Half of that is right: it is certainly not "no
+   * projects". The other half is not true at this point in the app's life —
+   * the socket only attaches once a project is open, so with none open there
+   * is nothing reconnecting, and "Looking for your projects…" is a sentence
+   * the screen will go on saying until it is reloaded.
+   */
+  | { status: "failed"; error: string }
+  | { status: "open"; project: ListedProject };
+
 export interface DeskApi {
   state: DeskState;
+  project: ProjectState;
+  /** Every project the daemon knows, newest-opened first. */
+  projects: ListedProject[];
+  /** Open a folder as a project and show it. */
+  openFolder(root: string): Promise<void>;
+  /** Show a project the daemon already knows. See {@link switchTo}. */
+  switchTo(id: string): Promise<void>;
+  /** Drop a recent from the registry. Never touches the folder. */
+  forget(id: string): Promise<void>;
+  /**
+   * Go back to the launch surface without closing anything on the daemon.
+   *
+   * Step 40 named the gap this fills: with openable recents the launch surface
+   * became unreachable, because boot reopens the project you were last in. A
+   * way back is the other half of a switcher.
+   */
+  closeProject(): void;
   start(prompt: string, cuesheet?: string): Promise<void>;
   stop(runId: RunId): Promise<void>;
   select(runId: RunId): Promise<void>;
@@ -33,10 +103,67 @@ export interface DeskApi {
   create(draft: NewStation): Promise<void>;
   diff(runId: RunId): Promise<string | null>;
   dismissError(): void;
+  /** Ask the daemon for the project list again. See {@link ProjectState}. */
+  retry(): void;
+  /**
+   * Read the open project again — the run list, the Stations, the log.
+   *
+   * What the **try again** button on a failed surface does. The socket is not
+   * touched: a resync that failed because one fetch threw does not imply a
+   * dead connection, and tearing down a live socket to recover from an HTTP
+   * error would drop the events arriving over it.
+   */
+  reload(): void;
 }
 
 export function useDesk(): DeskApi {
   const [state, dispatch] = useReducer(deskReducer, initialState);
+  const [project, setProject] = useState<ProjectState>({ status: "loading" });
+  /** Everything the daemon knows, for the switcher. Refreshed on every switch. */
+  const [projects, setProjects] = useState<ListedProject[]>([]);
+  /** Bumped by {@link DeskApi.retry}, which is the whole of its mechanism. */
+  const [attempt, setAttempt] = useState(0);
+
+  /**
+   * The project every call below is scoped to.
+   *
+   * `GET /projects` answers most-recently-opened first, so the head of the
+   * list is the one to reopen — the same answer the registry's `lastOpened`
+   * gives, without a second route to keep in step with it.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProjects()
+      .then((listed) => {
+        if (cancelled) return;
+        setProjects(listed);
+        const usable = listed.find((p) => p.status === "ok");
+        setProject(
+          usable ? { status: "open", project: usable } : { status: "none" },
+        );
+      })
+      .catch((cause: unknown) => {
+        // Not "no projects": claiming a first-run state here would tell
+        // somebody to pick a folder they have already picked. But not
+        // "loading" either — nothing is loading, and the launch surface now
+        // has a state that says so and a button that tries again.
+        if (!cancelled)
+          setProject({
+            status: "failed",
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  const retry = useCallback(() => {
+    setProject({ status: "loading" });
+    setAttempt((n) => n + 1);
+  }, []);
+
+  const projectId = project.status === "open" ? project.project.id : null;
 
   /**
    * Events that arrived while a resync was in flight.
@@ -46,6 +173,24 @@ export function useDesk(): DeskApi {
    */
   const buffer = useRef<RunEvent[]>([]);
   const resyncing = useRef(false);
+
+  /**
+   * Which project's resync is allowed to finish.
+   *
+   * Step 34, and the one real bug switching introduced. A resync is several
+   * awaits long and nothing could cancel it: switch from A to B while A's
+   * fetches are in flight and A's socket closes, B's opens and starts its own
+   * resync — then A's settles and dispatches `snapshot` with **A's runs**,
+   * clears `resyncing`, and flushes the buffer array it captured into B. The
+   * Desk lands on B showing A's runs, with B's live events discarded into a
+   * buffer nobody will read.
+   *
+   * Every resync takes a token on the way in and checks it before each group
+   * of dispatches. The socket effect bumps the epoch on teardown too, so a
+   * stale resync is invalidated at the moment of the switch rather than when
+   * the next one happens to start.
+   */
+  const epoch = useRef(0);
 
   /**
    * The current selection, readable from inside `resync` without making it
@@ -82,62 +227,112 @@ export function useDesk(): DeskApi {
     });
   }, []);
 
-  const resync = useCallback(async () => {
-    // 1. Start buffering. The socket is already attached by the time `onOpen`
-    //    calls this, so from here nothing can be missed.
-    resyncing.current = true;
-    buffer.current = [];
-    try {
-      // 2. Fetch the authoritative list and the Station config.
-      const [runs, stations] = await Promise.all([
-        fetchRuns(RUN_LIMIT),
-        fetchStations(),
-      ]);
-      // 3. Replace. Anything the UI believed that the daemon does not is now
-      //    gone, which is the point of a resync.
-      dispatch({ type: "snapshot", runs });
-      dispatch({ type: "stations", stations });
-      dispatch({ type: "error", message: null });
-
-      // 3b. Fetch the log for whichever run is now selected.
-      //
-      //     `snapshot` selects the newest run when nothing survived, but it
-      //     cannot invent that run's events — they were never on this
-      //     session's socket. Without this the Desk opens on the newest run
-      //     and shows "No events." until you click it.
-      const target =
-        selected.current !== null &&
-        runs.some((candidate) => candidate.id === selected.current)
-          ? selected.current
-          : (runs[0]?.id ?? null);
-      if (target !== null) {
-        // Before the flush, deliberately: `run-detail` replaces one run's
-        // events, so a buffered live event flushed afterwards lands on top
-        // rather than being overwritten by a log fetched a moment earlier.
-        dispatch({ type: "run-detail", detail: await fetchRun(target) });
-      }
-    } catch (error) {
-      fail(error);
-    } finally {
-      // 4. Flush what arrived during the fetch, in arrival order, on top of
-      //    the snapshot. Events carry no id, so order is the only defense
-      //    against double-counting — never sort, never dedupe.
-      const pending = buffer.current;
+  const resync = useCallback(
+    async (id: string) => {
+      // 0. Claim this resync. Anything that bumps the epoch after this line —
+      //    a switch, a teardown — makes everything below a no-op.
+      const token = (epoch.current += 1);
+      const current = (): boolean => epoch.current === token;
+      // 1. Start buffering. The socket is already attached by the time `onOpen`
+      //    calls this, so from here nothing can be missed.
+      resyncing.current = true;
       buffer.current = [];
-      resyncing.current = false;
-      for (const event of pending) dispatch({ type: "event", event });
-    }
-  }, [fail]);
+      try {
+        // 2. Fetch the authoritative list and the Station config.
+        const [runs, stations] = await Promise.all([
+          fetchRuns(id, RUN_LIMIT),
+          fetchStations(id),
+        ]);
+        // Usage is fetched but *not* awaited alongside those two. It is a
+        // global route with nothing project-scoped about it, and a vendor CLI
+        // that is slow to answer must not hold up the tiles and the run list.
+        void fetchUsage()
+          .then((usage) => {
+            if (current()) dispatch({ type: "usage", usage: usage.harnesses });
+          })
+          .catch(() => {
+            // A strip that cannot be read is a strip that is not drawn. It is
+            // never worth the error banner that belongs to the work.
+          });
+        // 3. Replace. Anything the UI believed that the daemon does not is now
+        //    gone, which is the point of a resync — but only if this is still
+        //    the project the Desk is on. `snapshot` replaces wholesale, so a
+        //    late one from the project you left is the most destructive thing
+        //    that could land here.
+        if (!current()) return;
+        dispatch({ type: "snapshot", runs });
+        dispatch({ type: "stations", stations });
+        dispatch({ type: "error", message: null });
+        // Both fetches landed, so an empty list is now a fact about the
+        // project rather than a gap in what this client knows. Step 44: that
+        // is the difference between "No runs yet." and "Reading this
+        // project's runs…", and until this dispatch existed the surfaces
+        // could not tell them apart.
+        dispatch({ type: "load", load: READY });
+
+        // 3b. Fetch the log for whichever run is now selected.
+        //
+        //     `snapshot` selects the newest run when nothing survived, but it
+        //     cannot invent that run's events — they were never on this
+        //     session's socket. Without this the Desk opens on the newest run
+        //     and shows "No events." until you click it.
+        const target =
+          selected.current !== null &&
+          runs.some((candidate) => candidate.id === selected.current)
+            ? selected.current
+            : (runs[0]?.id ?? null);
+        if (target !== null) {
+          const detail = await fetchRun(id, target);
+          if (!current()) return;
+          // Before the flush, deliberately: `run-detail` replaces one run's
+          // events, so a buffered live event flushed afterwards lands on top
+          // rather than being overwritten by a log fetched a moment earlier.
+          dispatch({ type: "run-detail", detail });
+        }
+      } catch (error) {
+        // A failure belonging to a project the Desk has already left is not
+        // one to show over the project it is on now.
+        if (current()) {
+          fail(error);
+          // And the surfaces are told as well as the banner. The banner says
+          // something went wrong; this says the panes below it are empty
+          // because of it, rather than because the project is.
+          dispatch({
+            type: "load",
+            load: {
+              status: "failed",
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+      } finally {
+        // 4. Flush what arrived during the fetch, in arrival order, on top of
+        //    the snapshot. Events carry no id, so order is the only defense
+        //    against double-counting — never sort, never dedupe.
+        //
+        //    A superseded resync flushes nothing and clears nothing: `buffer`
+        //    and `resyncing` now belong to the resync that replaced it, and
+        //    taking them would strand the new project's live events.
+        if (current()) {
+          const pending = buffer.current;
+          buffer.current = [];
+          resyncing.current = false;
+          for (const event of pending) dispatch({ type: "event", event });
+        }
+      }
+    },
+    [fail],
+  );
 
   /** Pull the real record for a run we only know as a placeholder. */
-  const adopt = useCallback((runId: RunId) => {
+  const adopt = useCallback((id: string, runId: RunId) => {
     if (known.current.has(runId) || fetching.current.has(runId)) return;
     fetching.current.add(runId);
     // Marked known immediately: the effect that syncs `known` from state
     // does not run until the next render, and a second event arriving in
     // this same tick would otherwise fire a duplicate fetch.
     known.current.add(runId);
-    void fetchRun(runId)
+    void fetchRun(id, runId)
       .then((detail) => dispatch({ type: "run-detail", detail }))
       .catch(() => {
         // The run may not be on disk yet; the next event tries again.
@@ -146,62 +341,119 @@ export function useDesk(): DeskApi {
       .finally(() => fetching.current.delete(runId));
   }, []);
 
+  // The strip's own clock. Separate from the resync because usage is global:
+  // it keeps ticking across a project switch, and it does not need a socket.
   useEffect(() => {
-    const socket = connectEvents({
+    let live = true;
+    const poll = (): void => {
+      void fetchUsage()
+        .then((usage) => {
+          if (live) dispatch({ type: "usage", usage: usage.harnesses });
+        })
+        .catch(() => undefined);
+    };
+    poll();
+    const timer = setInterval(poll, USAGE_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    // No project, no socket. Connecting to a project-scoped path without one
+    // would fail every reconnect on a schedule.
+    //
+    // The reset still has to happen: going back to the launch surface leaves a
+    // Desk full of the project just left, and the next project to be opened
+    // would paint over it for a frame. `projectId: null` is the state saying
+    // it belongs to nothing, which is what `isShowing` asks about.
+    if (projectId === null) {
+      dispatch({ type: "project", projectId: null });
+      return;
+    }
+    // Everything the Desk holds describes the project it was on. Cleared
+    // before the socket opens, so the switch never renders one project's
+    // tiles, standbys or run list under another's name. See the `project`
+    // action in `reducer.ts` for why the standby is the one that would do
+    // damage rather than merely mislead.
+    dispatch({ type: "project", projectId });
+    // These two are caches of state, and the effects that keep them in step
+    // do not run until the next render — so after a reset they describe the
+    // project just left for one tick. Not a correctness bug on its own: run
+    // ids come from one process-wide factory, so two projects cannot mint the
+    // same one and a stale entry can never match. Cleared because a cache of
+    // something that no longer exists has no reason to survive.
+    known.current = new Set();
+    fetching.current = new Set();
+    const socket = connectEvents(projectId, {
       onEvent(event) {
         if (resyncing.current) buffer.current.push(event);
         else {
           dispatch({ type: "event", event });
-          adopt(event.runId);
+          adopt(projectId, event.runId);
         }
       },
       onOpen() {
         dispatch({ type: "connection", status: "open" });
-        void resync();
+        void resync(projectId);
       },
       onClose() {
         dispatch({ type: "connection", status: "closed" });
       },
     });
-    return () => socket.close();
-  }, [resync, adopt]);
+    return () => {
+      // Bumping the epoch here rather than only in the next `resync` is what
+      // makes a teardown cancel in-flight work immediately. Switching away and
+      // arriving nowhere — unmount, or a project that fails to resolve — would
+      // otherwise leave the old resync free to land whenever it settled.
+      epoch.current += 1;
+      socket.close();
+    };
+  }, [projectId, resync, adopt]);
 
   const start = useCallback(
     async (prompt: string, cuesheet?: string) => {
+      if (projectId === null) return;
       try {
-        await startRun(prompt, cuesheet);
+        await startRun(projectId, prompt, cuesheet);
         // No optimistic insert: the `status` event that follows carries the
         // real run id, and guessing one would leave a ghost row behind.
       } catch (error) {
         fail(error);
       }
     },
-    [fail],
+    [projectId, fail],
   );
 
   const stop = useCallback(
     async (runId: RunId) => {
+      if (projectId === null) return;
       try {
-        await stopRun(runId);
+        await stopRun(projectId, runId);
       } catch (error) {
         fail(error);
       }
     },
-    [fail],
+    [projectId, fail],
   );
 
   const select = useCallback(
     async (runId: RunId) => {
+      if (projectId === null) return;
       dispatch({ type: "select", runId });
       try {
         // Always re-fetch: a run opened from the list may predate this
         // session entirely, so its events were never on the socket.
-        dispatch({ type: "run-detail", detail: await fetchRun(runId) });
+        dispatch({
+          type: "run-detail",
+          detail: await fetchRun(projectId, runId),
+        });
       } catch (error) {
         fail(error);
       }
     },
-    [fail],
+    [projectId, fail],
   );
 
   const answer = useCallback(
@@ -215,22 +467,190 @@ export function useDesk(): DeskApi {
     [fail],
   );
 
-  const create = useCallback(async (draft: NewStation) => {
-    // Deliberately *not* caught: the Add a Station panel shows the daemon's
-    // own message — "a station named opus is already configured" — next to
-    // the field that caused it, which a global error banner cannot do.
-    const { stations } = await addStation(draft);
-    dispatch({ type: "stations", stations });
+  const create = useCallback(
+    async (draft: NewStation) => {
+      if (projectId === null) throw new Error("No project is open.");
+      // Deliberately *not* caught: the Add a Station panel shows the daemon's
+      // own message — "a station named opus is already configured" — next to
+      // the field that caused it, which a global error banner cannot do.
+      const { stations } = await addStation(projectId, draft);
+      dispatch({ type: "stations", stations });
+    },
+    [projectId],
+  );
+
+  const diff = useCallback(
+    async (runId: RunId) =>
+      projectId === null ? null : fetchDiff(projectId, runId),
+    [projectId],
+  );
+
+  /**
+   * Open a folder and switch to it.
+   *
+   * The minimum that makes the app usable after the route cutover: without it a
+   * fresh install shows the "no project" placeholder with no way out, because
+   * nothing in the shell could create one. Step 40 replaces this with recents,
+   * a missing-folder state and a real picker; Step 34 makes switching between
+   * already-open projects a first-class action rather than a side effect of
+   * opening one.
+   */
+  const openFolder = useCallback(
+    async (root: string) => {
+      try {
+        const opened = await openProject(root);
+        // Listed rather than raw: the Desk renders `status`, and a folder the
+        // daemon just resolved is by definition present.
+        setProject({ status: "open", project: { ...opened, status: "ok" } });
+        setProjects(await fetchProjects());
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [fail],
+  );
+
+  /**
+   * Show a project the daemon already knows — Step 34's whole subject.
+   *
+   * **A switch is a client action and nothing else.** Everything that makes
+   * the project you are leaving keep working is already true of the daemon:
+   * its queue, run store and event bus belong to its runtime, not to your
+   * socket, and dropping a socket unsubscribes a listener rather than
+   * stopping anything. So this changes which project this client is attached
+   * to, and deliberately tells the daemon nothing about "the current project"
+   * — Phase 8 decided the daemon has no such notion, and two windows on two
+   * projects is what that decision is for.
+   *
+   * **It reuses `POST /projects` rather than adding a route**, because
+   * `registry.open` is idempotent by resolved root and updating recency is
+   * exactly what it does. That is also what makes "reopen the project you were
+   * last in" survive a restart: the daemon and the Desk both read the head of
+   * the same recency-ordered list, so there is no second source to keep in
+   * step. A project whose folder has gone is refused by the same call, with
+   * the registry's own message.
+   */
+  const switchTo = useCallback(
+    async (id: string) => {
+      if (id === projectId) return;
+      const target = projects.find((candidate) => candidate.id === id);
+      if (!target) return;
+      try {
+        // Before the state change, so a folder that has since disappeared
+        // fails here and leaves the Desk where it is, rather than switching to
+        // a project whose every request is about to 404.
+        const opened = await openProject(target.root);
+        setProject({ status: "open", project: { ...opened, status: "ok" } });
+        setProjects(await fetchProjects());
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [projectId, projects, fail],
+  );
+
+  /**
+   * Drop a recent from the list. The folder is untouched.
+   *
+   * Refreshes from the daemon rather than filtering locally: the registry is
+   * the authority for what is remembered, and a list that diverged from it
+   * would come back on the next launch and look like the delete had failed.
+   */
+  const forget = useCallback(
+    async (id: string) => {
+      try {
+        await forgetProject(id);
+        setProjects(await fetchProjects());
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [fail],
+  );
+
+  /**
+   * Leave the project open on the daemon and go back to the list.
+   *
+   * The gap Step 40 named and could not close: with recents that open, the
+   * launch surface became unreachable, because boot reopens the project you
+   * were last in. This is the way back — and it is *only* a client action, the
+   * same claim Step 34 made about switching. Runs in the project being left
+   * keep running, their events keep reaching their store, and reopening it
+   * replays them.
+   *
+   * The registry is untouched on purpose: closing is not forgetting, and a
+   * project that fell out of recents because somebody wanted a look at the
+   * list would be a surprising way to lose it.
+   */
+  const closeProject = useCallback(() => {
+    setProject({ status: "none" });
   }, []);
 
-  const diff = useCallback(async (runId: RunId) => fetchDiff(runId), []);
+  /**
+   * Tell the shell what is open, so the window title and the tray follow.
+   *
+   * One-way and unacknowledged. Nothing in the Desk reads this back, and the
+   * daemon is told nothing at all — Phase 8 decided it has no notion of a
+   * current project, and two windows on two projects is what that decision is
+   * for. In a browser `setActiveProject` is simply absent.
+   */
+  useEffect(() => {
+    // `loading` deliberately says nothing rather than `null`: the first paint
+    // happens before `GET /projects` answers, and a title that flashed
+    // "Cuesheet" before settling on the project is a worse first second than
+    // one that arrives a beat late.
+    if (project.status === "loading") return;
+    bridge()?.setActiveProject?.(
+      activeProject(project.status === "open" ? project.project : null),
+    );
+  }, [project]);
 
   const dismissError = useCallback(() => {
     dispatch({ type: "error", message: null });
   }, []);
 
+  const reload = useCallback(() => {
+    if (projectId === null) return;
+    dispatch({ type: "load", load: LOADING });
+    void resync(projectId);
+  }, [projectId, resync]);
+
   return useMemo(
-    () => ({ state, start, stop, select, answer, create, diff, dismissError }),
-    [state, start, stop, select, answer, create, diff, dismissError],
+    () => ({
+      state,
+      project,
+      projects,
+      openFolder,
+      switchTo,
+      forget,
+      closeProject,
+      start,
+      stop,
+      select,
+      answer,
+      create,
+      diff,
+      dismissError,
+      retry,
+      reload,
+    }),
+    [
+      state,
+      project,
+      projects,
+      openFolder,
+      switchTo,
+      forget,
+      closeProject,
+      start,
+      stop,
+      select,
+      answer,
+      create,
+      diff,
+      dismissError,
+      retry,
+      reload,
+    ],
   );
 }

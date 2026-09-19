@@ -1,5 +1,5 @@
 /**
- * The `/ws` connection, with reconnect.
+ * One project's event connection, with reconnect.
  *
  * Framework-free and dependency-free so it can be reasoned about on its own:
  * React's job is to start it and stop it, not to own the retry timer.
@@ -29,7 +29,10 @@ export interface SocketController {
   close(): void;
 }
 
-export function connectEvents(handlers: SocketHandlers): SocketController {
+export function connectEvents(
+  projectId: string,
+  handlers: SocketHandlers,
+): SocketController {
   let socket: WebSocket | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let attempt = 0;
@@ -37,7 +40,7 @@ export function connectEvents(handlers: SocketHandlers): SocketController {
 
   function open(): void {
     if (disposed) return;
-    socket = new WebSocket(socketUrl());
+    socket = new WebSocket(socketUrl(projectId));
 
     socket.addEventListener("open", () => {
       if (disposed) return;

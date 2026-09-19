@@ -22,6 +22,7 @@
  */
 import type {
   Cost,
+  HarnessUsage,
   Run,
   RunEvent,
   RunId,
@@ -30,6 +31,7 @@ import type {
 } from "@cuesheet/core";
 import { isTerminalStatus } from "@cuesheet/core/types";
 import type { RunDetail, StationsResponse } from "../api/client.js";
+import { LOADING, type Load } from "../surface.js";
 
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
@@ -53,9 +55,32 @@ export interface StationActivity {
 }
 
 export interface DeskState {
+  /**
+   * Which project every other field here describes, or `null` before the
+   * first attach.
+   *
+   * Step 41, and it is the state's own answer to "a second project's runs are
+   * never visible from the first." Without it the only defence was call-site
+   * discipline: `switchTo` sets the new project on the client, React paints,
+   * and the socket effect dispatches the reset *after* that paint — one frame
+   * of the new project's name over the old project's runs. Tagging the state
+   * lets the surface ask whether what it holds belongs to what it is naming,
+   * which is a question a test can put to the reducer and a `.tsx` gate
+   * cannot.
+   */
+  projectId: string | null;
   connection: ConnectionStatus;
   /** `null` until the first `/stations` fetch lands. */
   stations: StationsResponse | null;
+  /**
+   * Plan usage, `null` until the first `/usage` fetch lands.
+   *
+   * Kept across a project switch rather than cleared with everything else: a
+   * plan window belongs to a vendor, not to a repository, so it is the one
+   * thing on this Desk that is still true about the project you just moved to.
+   * Blanking it would make the strip flicker on every switch for no reason.
+   */
+  usage: HarnessUsage[] | null;
   /** Newest first, matching `GET /runs`. */
   runs: Run[];
   /** The run the log pane is showing. */
@@ -67,28 +92,76 @@ export interface DeskState {
   standbys: Standby[];
   /** Last thing that went wrong, shown in the header. */
   error: string | null;
+  /**
+   * How the last read of this project went — Step 44.
+   *
+   * Separate from `error`, which is the banner and holds the last thing that
+   * went wrong *anywhere*, a failed `stop` included. This is narrower and is
+   * about one question: does what the surfaces are drawing rest on an answer
+   * from the daemon, or on the absence of one.
+   *
+   * Without it, `runs: []` and `stations: null` each mean two things at once
+   * — in flight, or fetched and failed — and the surfaces were resolving that
+   * ambiguity by guessing. They guessed "in flight" for stations, which never
+   * resolves, and "empty" for runs, which is a claim about the project made
+   * before the project was asked. See `surface.ts`.
+   */
+  load: Load;
 }
 
 export const initialState: DeskState = {
+  projectId: null,
   connection: "connecting",
   stations: null,
+  usage: null,
   runs: [],
   selectedRunId: null,
   events: {},
   stationActivity: {},
   standbys: [],
   error: null,
+  load: LOADING,
 };
 
 export type DeskAction =
   | { type: "connection"; status: ConnectionStatus }
   | { type: "stations"; stations: StationsResponse }
+  | { type: "usage"; usage: HarnessUsage[] }
   /** Replaces the run list wholesale. The reconnect path depends on this. */
   | { type: "snapshot"; runs: Run[] }
   /** A full `GET /runs/:id`, which replaces that run's events. */
   | { type: "run-detail"; detail: RunDetail }
   | { type: "event"; event: RunEvent }
   | { type: "select"; runId: RunId | null }
+  /**
+   * The Desk is now looking at a different project. Everything goes.
+   *
+   * Step 34. A switch is not a reconnect: `snapshot` replaces the run list and
+   * rebuilds tiles from it, which is the right answer for a resync against the
+   * *same* project, but it only lands when the fetch does. Until then every
+   * field here still describes the project you just left — station tiles
+   * working, a standby offering its two answers, a selected run — under the
+   * new project's name. Clearing on the way in rather than correcting on the way
+   * out means the wrong thing is never rendered at all.
+   *
+   * `standbys` is the one that would do damage rather than merely mislead: a
+   * standby id is addressable daemon-wide, so answering a carried-over one from
+   * the new project's Desk would succeed, against a run in the old one.
+   *
+   * `projectId` is carried on the action rather than left to the caller to
+   * set afterwards: the reset and the new identity are the same fact, and
+   * splitting them across two dispatches reintroduces exactly the window this
+   * is here to close.
+   */
+  | { type: "project"; projectId: string | null }
+  /**
+   * The resync's own outcome, which is not the same fact as `error`.
+   *
+   * Dispatched only by the resync, never by a command: a `stop` that fails
+   * belongs in the banner and says nothing at all about whether the run list
+   * on screen is trustworthy.
+   */
+  | { type: "load"; load: Load }
   | { type: "error"; message: string | null };
 
 const ZERO_COST: Cost = { tokensIn: 0, tokensOut: 0 };
@@ -98,8 +171,14 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
     case "connection":
       return { ...state, connection: action.status };
 
+    case "load":
+      return { ...state, load: action.load };
+
     case "stations":
       return { ...state, stations: action.stations };
+
+    case "usage":
+      return { ...state, usage: action.usage };
 
     case "snapshot": {
       const runs = action.runs;
@@ -168,6 +247,24 @@ export function deskReducer(state: DeskState, action: DeskAction): DeskState {
 
     case "select":
       return { ...state, selectedRunId: action.runId };
+
+    case "project":
+      // Deliberately the whole of `initialState`, including `connection` and
+      // `error`. The socket is torn down and rebuilt by the same effect that
+      // dispatches this, so "connecting" is the truth for the moment in
+      // between; and a failure that belonged to the project you left is not
+      // one to keep showing over the one you arrived at.
+      //
+      // `usage` is the one exception, and it is an exception for the same
+      // reason `GET /usage` is not a project route: a plan window belongs to a
+      // vendor. It is the only thing on this Desk that is still true about the
+      // project being arrived at, so blanking it would make the strip flicker
+      // on every switch and tell the operator nothing they did not know.
+      return {
+        ...initialState,
+        projectId: action.projectId,
+        usage: state.usage,
+      };
 
     case "error":
       return { ...state, error: action.message };
@@ -511,6 +608,23 @@ function addCost(
 
 // ── Selectors ───────────────────────────────────────────────────────────────
 
+/**
+ * Whether what this state holds belongs to the project being named on screen.
+ *
+ * Step 41's third done-when, as one question. A surface renders runs, tiles
+ * and standbys only while this is true; the frame around them — the switcher
+ * above all — renders either way, because a shell that disappears during the
+ * switch window is a shell you cannot switch again from.
+ *
+ * False is not an error state, it is the half-second between choosing a
+ * project and its resync landing. The honest thing to draw there is the new
+ * project's name over nothing, not the new project's name over the old
+ * project's work.
+ */
+export function isShowing(state: DeskState, projectId: string | null): boolean {
+  return projectId !== null && state.projectId === projectId;
+}
+
 export function selectedRun(state: DeskState): Run | null {
   if (state.selectedRunId === null) return null;
   return state.runs.find((run) => run.id === state.selectedRunId) ?? null;
@@ -519,6 +633,20 @@ export function selectedRun(state: DeskState): Run | null {
 export function selectedEvents(state: DeskState): RunEvent[] {
   if (state.selectedRunId === null) return [];
   return state.events[state.selectedRunId] ?? [];
+}
+
+/**
+ * Whether this session has actually read the selected run's log.
+ *
+ * `[]` and "never asked" are different facts and {@link selectedEvents}
+ * flattens them, on purpose — a caller mapping over events does not care. A
+ * caller *explaining an empty pane* cares a great deal: "Nothing on the wire
+ * yet" is true of a run that has just started and false of one whose log has
+ * not been fetched, and the pane was saying it either way. Step 44.
+ */
+export function selectedEventsLoaded(state: DeskState): boolean {
+  if (state.selectedRunId === null) return false;
+  return state.events[state.selectedRunId] !== undefined;
 }
 
 /** The run the tiles are animating, if any. */

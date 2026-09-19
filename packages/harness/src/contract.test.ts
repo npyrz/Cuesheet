@@ -3,7 +3,7 @@ import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Station } from "@cuesheet/core";
+import { BUILTIN_HARNESS_IDS, type Station } from "@cuesheet/core";
 import { exerciseHarness, harnessContractViolations } from "./contract.js";
 import { createMockHarness, MOCK_OUTPUT_FILE, mockHarness } from "./mock.js";
 import { claudeCodeHarness } from "./claude-code.js";
@@ -174,7 +174,79 @@ describe("the registry", () => {
     expect(probe.error).toMatch(/No harness named "nope"/);
   });
 
-  it("ships mock and claude-code", () => {
-    expect(defaultHarnessRegistry().ids()).toEqual(["mock", "claude-code"]);
+  it("ships mock, claude-code, codex and ollama", () => {
+    expect(defaultHarnessRegistry().ids()).toEqual([
+      "mock",
+      "claude-code",
+      "codex",
+      "ollama",
+    ]);
+  });
+
+  /**
+   * Step 35. `BUILTIN_HARNESS_IDS` has listed `ollama` since Step 5, and until
+   * the harness existed `GET /stations` had to report it as a harness nobody
+   * registered. Asserted against the constant rather than against a literal,
+   * so adding a fourth planned id without shipping it fails here rather than
+   * in a Desk that silently omits it.
+   */
+  it("registers every built-in id the vocabulary promises", () => {
+    const shipped = new Set(defaultHarnessRegistry().ids());
+    for (const id of BUILTIN_HARNESS_IDS) {
+      expect(shipped.has(id), `${id} is promised but not registered`).toBe(
+        true,
+      );
+    }
+  });
+
+  /**
+   * Step 42. The Desk prints these to an operator deciding what a seat may do,
+   * so they are asserted against the harnesses rather than taken on trust from
+   * a table in the UI.
+   */
+  it("has every shipped harness say what it does with a seat", () => {
+    for (const harness of defaultHarnessRegistry().list()) {
+      expect(
+        harness.confinement,
+        `${harness.id} declares no confinement`,
+      ).toBeTypeOf("function");
+    }
+  });
+
+  it("has codex confine every read-only seat and only those", () => {
+    // The mapping the subprocess is actually launched with — `sandboxFor` is
+    // what builds the `--sandbox` flag, and `confinement()` is declared from
+    // it rather than restated, so this is really asserting the two cannot
+    // drift apart.
+    const codex = defaultHarnessRegistry().get("codex");
+    expect(codex?.confinement?.("reviewer")).toBe("read-only");
+    expect(codex?.confinement?.("caller")).toBe("read-only");
+    expect(codex?.confinement?.("worker")).toBe("read-only");
+    expect(codex?.confinement?.("engineer")).toBe("workspace-write");
+  });
+
+  it("has claude-code say plainly that it confines no seat", () => {
+    // Not an oversight and not an absence: Claude Code takes no role-based
+    // sandbox flag, so on that harness the leash and the daemon are the whole
+    // boundary. A Desk that printed "a reviewer cannot write" for it would be
+    // wrong, which is why this claim is declared rather than inferred.
+    const claude = defaultHarnessRegistry().get("claude-code");
+    for (const role of ["engineer", "reviewer", "caller"] as const) {
+      expect(claude?.confinement?.(role)).toBe("none");
+    }
+  });
+
+  it("ships two real harnesses from different vendors", () => {
+    // Not bookkeeping. `distinct_vendors = 2` is an equality check over
+    // `vendor`, so a stock build with one real vendor cannot satisfy the
+    // README's own headline Gate. This is the assertion that fails if someone
+    // unregisters `codex` or copies a vendor string between harnesses.
+    const vendors = new Set(
+      defaultHarnessRegistry()
+        .list()
+        .filter((h) => h.id !== "mock")
+        .map((h) => h.vendor),
+    );
+    expect(vendors.size).toBeGreaterThanOrEqual(2);
   });
 });

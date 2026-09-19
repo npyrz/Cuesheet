@@ -4,8 +4,8 @@ import {
   elapsed,
   isMac,
   isPaletteChord,
-  modifierKey,
   money,
+  shortcutHint,
   shortPath,
   statusDot,
   tokens,
@@ -129,22 +129,51 @@ describe("statusDot", () => {
 });
 
 describe("the modifier key", () => {
-  it("is ⌘ on a Mac and Ctrl everywhere else", () => {
-    // The cross-platform checklist item, settled here rather than in Step 24.
-    expect(modifierKey("darwin")).toBe("⌘");
-    expect(modifierKey("MacIntel")).toBe("⌘");
-    expect(modifierKey("win32")).toBe("Ctrl");
-    expect(modifierKey("Win32")).toBe("Ctrl");
-    expect(modifierKey("Linux x86_64")).toBe("Ctrl");
-  });
-
   it("treats an undetectable platform as not-Mac, so the hint reads Ctrl", () => {
-    // Checked through `isMac` rather than `modifierKey(undefined)`: passing
-    // `undefined` triggers the default parameter, which runs real detection
-    // — and this test process *has* a `navigator`, so it would assert the
-    // host's platform rather than the fallback.
+    // Checked through `isMac` rather than `shortcutHint(key, undefined)`:
+    // passing `undefined` triggers the default parameter, which runs real
+    // detection — and this test process *has* a `navigator`, so it would
+    // assert the host's platform rather than the fallback.
     expect(isMac(undefined)).toBe(false);
     expect(isMac("")).toBe(false);
+  });
+});
+
+describe("the shortcut hint", () => {
+  it("sets a Mac shortcut solid and joins every other one with a plus", () => {
+    // The checklist row Step 44 re-opened. `modifierKey` was right and every
+    // call site built `{modifierKey()}K` out of it, which is `⌘K` on a Mac
+    // and `CtrlK` everywhere else — not a shortcut anybody writes.
+    expect(shortcutHint("K", "darwin")).toBe("⌘K");
+    expect(shortcutHint("K", "MacIntel")).toBe("⌘K");
+    expect(shortcutHint("K", "win32")).toBe("Ctrl+K");
+    expect(shortcutHint("K", "Win32")).toBe("Ctrl+K");
+    expect(shortcutHint("K", "Linux x86_64")).toBe("Ctrl+K");
+  });
+
+  it("spells out keys that have names", () => {
+    expect(shortcutHint("Enter", "win32")).toBe("Ctrl+Enter");
+  });
+
+  it("asks the shell what platform this is before guessing", () => {
+    // The preload has exposed `process.platform` since Step 21 and nothing
+    // read it: the default argument went straight to `navigator.platform`,
+    // which is deprecated and, under Electron, describes the Chromium build
+    // rather than the OS. A Mac shell reporting "darwin" is the case that
+    // proves the bridge is consulted at all — the fallback would answer
+    // "Ctrl" here, which is this test process's own honest answer.
+    const global = globalThis as { cuesheet?: unknown };
+    const had = "cuesheet" in global;
+    const before = global.cuesheet;
+    try {
+      global.cuesheet = { platform: "darwin" };
+      expect(shortcutHint("K")).toBe("⌘K");
+      global.cuesheet = { platform: "win32" };
+      expect(shortcutHint("K")).toBe("Ctrl+K");
+    } finally {
+      if (had) global.cuesheet = before;
+      else delete global.cuesheet;
+    }
   });
 });
 

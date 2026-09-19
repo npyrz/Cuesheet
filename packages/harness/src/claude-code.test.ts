@@ -21,6 +21,7 @@ import { checkPath, type Station } from "@cuesheet/core";
 import {
   buildArgs,
   claudeCodeHarness,
+  createClaudeCodeHarness,
   createStreamState,
   observedStation,
   mapRateLimit,
@@ -29,7 +30,7 @@ import {
 } from "./claude-code.js";
 import { exerciseHarness } from "./contract.js";
 import { run } from "./spawn.js";
-import type { HarnessEvent } from "./types.js";
+import type { HarnessEvent, UsageWindow } from "./types.js";
 
 const FIXTURE = fileURLToPath(
   new URL("./fixtures/claude-code-stream.jsonl", import.meta.url),
@@ -165,8 +166,25 @@ describe("mapping a captured stream", () => {
     expect(state.total()).toEqual({
       tokensIn: 17 + 25303 + 24950,
       tokensOut: 317,
+      // The same three numbers, now also reported split. `tokensIn` is still
+      // the sum — the breakdown is *of* it, not additional to it, which is the
+      // one thing a ledger reading both must not get wrong.
+      cacheWrite: 25303,
+      cacheRead: 24950,
       usd: 0.055307,
     });
+  });
+
+  it("keeps the breakdown inside the total, never beside it", () => {
+    // Stated as arithmetic rather than as a comment, because the opposite
+    // convention is one file away: `codex`'s cache figure is a subset of its
+    // input too, but its *stream* says so, whereas this API reports the three
+    // side by side and the summing happens here.
+    const { state } = mapAll();
+    const cost = state.total();
+    expect((cost.cacheRead ?? 0) + (cost.cacheWrite ?? 0)).toBeLessThan(
+      cost.tokensIn,
+    );
   });
 
   it("counts cache tokens as input, because they are billed", () => {
@@ -275,19 +293,116 @@ describe("mapping a captured stream", () => {
 });
 
 describe("mapRateLimit", () => {
-  it("parses the window M2 will need", () => {
-    const info = lines.find(
+  const rateLimit = () =>
+    lines.find(
       (line) => (line as { type?: string }).type === "rate_limit_event",
     );
-    expect(mapRateLimit(info)).toMatchObject({
-      window: "five_hour",
-      used: 0,
-    });
-    expect(mapRateLimit(info)?.resetsAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+  it("reports a status as `not-blocked`, never as 0% used", () => {
+    // The captured line says `"status":"allowed"`. That is "you have not been
+    // cut off", not "you have consumed nothing", and the difference is the
+    // whole reason `UsageWindow` is a union: there is no `used` field on this
+    // variant to put a fabricated zero in.
+    const [plan] = mapRateLimit(rateLimit());
+    expect(plan).toMatchObject({ window: "five_hour", state: "not-blocked" });
+    expect(plan).not.toHaveProperty("used");
+    expect((plan as { resetsAt?: string }).resetsAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T/,
+    );
   });
 
-  it("is null for anything else", () => {
-    expect(mapRateLimit({ type: "result" })).toBeNull();
+  it("yields the overage window too, because the line carries one", () => {
+    // Six fields arrive and the first version of this mapper read three.
+    // `overageStatus` is a second limit with its own clock — the one that
+    // decides whether hitting the first costs money or stops you.
+    const windows = mapRateLimit(rateLimit());
+    expect(windows.map((w) => w.window)).toEqual([
+      "five_hour",
+      "five_hour overage",
+    ]);
+    expect(windows[1]).toMatchObject({ state: "not-blocked" });
+  });
+
+  it("refuses to guess at a status no capture has explained", () => {
+    // The tempting mapping is "not allowed means the cap is reached", drawn as
+    // a full bar. That is a measurement invented from a string nobody has
+    // seen, and it is this step's own failure mode pointed the other way.
+    const [plan] = mapRateLimit({
+      rate_limit_info: { rateLimitType: "weekly", status: "warning" },
+    });
+    expect(plan).toMatchObject({ window: "weekly", state: "unknown" });
+    expect(plan).not.toHaveProperty("used");
+    expect((plan as { reason?: string }).reason).toContain("warning");
+  });
+
+  it("says unknown when the stream reports no status at all", () => {
+    const [plan] = mapRateLimit({
+      rate_limit_info: { rateLimitType: "weekly" },
+    });
+    expect(plan).toMatchObject({ window: "weekly", state: "unknown" });
+  });
+
+  it("is empty for anything else, so a caller can spread it", () => {
+    expect(mapRateLimit({ type: "result" })).toEqual([]);
+  });
+
+  it("treats `isUsingOverage` as a measurement, because it is one", () => {
+    // The one field in this line that is not a status vocabulary. Overage
+    // *begins* where the plan allowance ends, so a runtime reporting it is in
+    // overage has reported the plan window spent — `used: 1` as a definition
+    // rather than an interpretation.
+    //
+    // It is also the only route by which any shipped harness reaches
+    // `state: "measured"`, and therefore the only way Step 38's pre-run check
+    // can refuse a run on real data instead of a test double.
+    const [plan] = mapRateLimit({
+      rate_limit_info: {
+        rateLimitType: "five_hour",
+        status: "allowed",
+        isUsingOverage: true,
+        overageStatus: "allowed",
+      },
+    });
+    expect(plan).toMatchObject({
+      window: "five_hour",
+      state: "measured",
+      used: 1,
+    });
+  });
+
+  it("does not call a plan in good standing a measurement", () => {
+    // The captured line carries `isUsingOverage: false`, and `false` must not
+    // become a number in either direction.
+    const [plan] = mapRateLimit(rateLimit());
+    expect(plan).toMatchObject({ state: "not-blocked" });
+  });
+});
+
+describe("usage()", () => {
+  it("is empty before any run has overheard a limit", async () => {
+    // Not a bug and not a zero: the CLI reports limits only from inside a run,
+    // so a harness that has not run has genuinely nothing to report. The
+    // daemon turns this into an explicit `unknown` row.
+    expect(await createClaudeCodeHarness().usage()).toEqual([]);
+  });
+
+  it("answers with what the stream said, stamped with when it said it", () => {
+    // Driving the mapper directly rather than spawning the CLI: the wiring
+    // under test is state → `usage()`, and the stream half is already covered
+    // by the captured fixture above.
+    const observed: UsageWindow[][] = [];
+    const state = createStreamState(
+      station(),
+      () => undefined,
+      (windows) => observed.push(windows),
+    );
+    for (const line of lines) mapStreamEvent(line, state);
+
+    expect(observed).toHaveLength(1);
+    const [plan] = observed[0] as UsageWindow[];
+    expect(plan).toMatchObject({ window: "five_hour", state: "not-blocked" });
+    // The answer is always historical, and has to be able to say how old.
+    expect((plan as { seenAt?: string }).seenAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
@@ -398,5 +513,28 @@ describe("observedStation", () => {
     );
     expect(observed.id).toBe(station().id);
     expect(observed.deny).toEqual(["**/*.env"]);
+  });
+});
+
+describe("the worker seat, observed", () => {
+  it("reports a worker's write as a denial, even inside its own leash", () => {
+    // The captured stream's Station allows `**`, so nothing here is a leash
+    // violation. What is violated is the seat, and the harness can only say
+    // so after the fact: the CLI's Write tool has already run by the time the
+    // line arrives. A report, not a prevention — the same honest limit this
+    // file's header states for leashes.
+    const { events } = mapAll({ role: "worker" });
+    const denials = events.filter((event) => event.t === "denial");
+    expect(denials).toContainEqual(
+      expect.objectContaining({
+        t: "denial",
+        reason: expect.stringContaining("never writes"),
+      }),
+    );
+  });
+
+  it("says nothing about an engineer writing the same file", () => {
+    const { events } = mapAll();
+    expect(events.filter((event) => event.t === "denial")).toEqual([]);
   });
 });

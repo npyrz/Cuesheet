@@ -136,6 +136,25 @@ async function boot(runtime = twoVendorRuntime()): Promise<DaemonHandle> {
   return daemon;
 }
 
+/**
+ * Where this file's single project's routes hang off.
+ *
+ * One project per test here, bootstrapped from the `cuesheet.toml` written
+ * into `cwd` — so "the project" is unambiguous, which it deliberately is not
+ * in the HTTP API itself.
+ */
+function projectBase(): string {
+  if (!daemon) throw new Error("no daemon is running");
+  const runtime = daemon.defaultProject;
+  if (!runtime) throw new Error("the daemon bootstrapped no project");
+  return `${daemon.url}/projects/${runtime.project.id}`;
+}
+
+async function bootProject(runtime = twoVendorRuntime()): Promise<string> {
+  await boot(runtime);
+  return projectBase();
+}
+
 async function runShip(url: string): Promise<string> {
   const response = await fetch(`${url}/runs`, {
     method: "POST",
@@ -172,7 +191,7 @@ async function answerStandby(
         (event: RunEvent) => event.t === "standby",
       );
       if (standby !== undefined && standby.t === "standby") {
-        await fetch(`${url}/standbys/${standby.standbyId}`, {
+        await fetch(`${daemon!.url}/standbys/${standby.standbyId}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ answer }),
@@ -190,7 +209,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2',
     );
-    const { url } = await boot();
+    const url = await bootProject();
     const stored = await waitForRun(url, await runShip(url));
 
     expect(stored.run.status).toBe("done");
@@ -213,7 +232,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2\nblocking = ["correctness"]',
     );
-    const { url } = await boot(twoVendorRuntime("fail"));
+    const url = await bootProject(twoVendorRuntime("fail"));
     const runId = await runShip(url);
 
     const ask = await answerStandby(url, runId, "no");
@@ -233,7 +252,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2\nblocking = ["correctness"]',
     );
-    const { url } = await boot(twoVendorRuntime("fail"));
+    const url = await bootProject(twoVendorRuntime("fail"));
     const runId = await runShip(url);
 
     await answerStandby(url, runId, "go");
@@ -253,7 +272,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2',
     );
-    const { url } = await boot(oneVendorRuntime());
+    const url = await bootProject(oneVendorRuntime());
     const runId = await runShip(url);
 
     const ask = await answerStandby(url, runId, "no");
@@ -268,7 +287,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2',
     );
-    const { url } = await boot(twoVendorRuntime("silent"));
+    const url = await bootProject(twoVendorRuntime("silent"));
     const runId = await runShip(url);
 
     const ask = await answerStandby(url, runId, "no");
@@ -283,7 +302,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2\nblocking = ["security"]',
     );
-    const { url } = await boot(twoVendorRuntime("blocking"));
+    const url = await bootProject(twoVendorRuntime("blocking"));
     const runId = await runShip(url);
 
     const ask = await answerStandby(url, runId, "no");
@@ -295,7 +314,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2',
     );
-    const { url } = await boot();
+    const url = await bootProject();
     const stored = await waitForRun(url, await runShip(url));
 
     const verdicts = stored.events.filter(
@@ -312,7 +331,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2',
     );
-    const { url } = await boot();
+    const url = await bootProject();
     const stored = await waitForRun(url, await runShip(url));
 
     const briefLine = stored.events.find(
@@ -337,7 +356,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "2-of-2"\ndistinct_vendors = 9\nskip_if_diff_under = 10000',
     );
-    const { url } = await boot(twoVendorRuntime("silent"));
+    const url = await bootProject(twoVendorRuntime("silent"));
     const stored = await waitForRun(url, await runShip(url));
 
     // Nothing could have satisfied that gate. The diff was small, so it never
@@ -349,7 +368,7 @@ describe("a gated cuesheet", () => {
   it("fails the run when a cue names a gate that is not configured", async () => {
     // "The check did not run" must never look like "the check passed".
     await writeConfig('[gate.other]\nrequire = "1-of-1"');
-    const { url } = await boot();
+    const url = await bootProject();
     const stored = await waitForRun(url, await runShip(url));
 
     expect(stored.run.status).toBe("failed");
@@ -382,7 +401,7 @@ describe("a gated cuesheet", () => {
     await writeConfig(
       '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2',
     );
-    const { url } = await boot(
+    const url = await bootProject(
       harnessRuntime({
         registry: createHarnessRegistry([
           { ...createMockHarness({ standby: false }), id: "mock" },

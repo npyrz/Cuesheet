@@ -103,30 +103,53 @@ export function statusDot(status: RunStatus | "idle" | "working"): string {
   }
 }
 
-/**
- * The modifier key, spelled the way this machine spells it.
- *
- * The cross-platform checklist puts `⌘` vs `Ctrl` in Step 24's Windows pass,
- * but the palette hint is the only place it appears in Phase 4 and branching
- * on the platform is one line today. Left until packaging, it becomes a
- * scavenger hunt through finished components.
- *
- * `navigator.platform` is deprecated but is the only signal available in both
- * a browser and an Electron renderer without a preload round trip; the
- * bridge's `platform` is preferred when it is there.
- */
-export function modifierKey(
-  platform: string | undefined = detectPlatform(),
-): string {
-  return isMac(platform) ? "⌘" : "Ctrl";
-}
-
 export function isMac(platform: string | undefined): boolean {
   if (platform === undefined) return false;
   return /^darwin$/i.test(platform) || /mac/i.test(platform);
 }
 
+/**
+ * A shortcut, spelled the way this platform spells shortcuts.
+ *
+ * The cross-platform checklist puts `⌘` vs `Ctrl` in Step 24's Windows pass.
+ * Phase 4 settled it early anyway, because branching on the platform is one
+ * line now and a scavenger hunt through finished components later.
+ *
+ * Step 44 re-opened the row and replaced what Phase 4 wrote, which was a
+ * `modifierKey()` returning `⌘` or `Ctrl`. It was correct and the thing built
+ * out of it was not: every call site wrote `{modifierKey()}K`, which is `⌘K`
+ * on a Mac — right, because macOS sets its shortcuts solid — and `CtrlK`
+ * everywhere else, which is not a shortcut anybody writes. Windows and Linux
+ * join with a `+`.
+ *
+ * So this returns the whole shortcut rather than the modifier, because a
+ * convention is what produced `CtrlK` in two files independently. It takes the
+ * key's display name, so `Esc` and `Enter` read as themselves.
+ */
+export function shortcutHint(
+  key: string,
+  platform: string | undefined = detectPlatform(),
+): string {
+  return isMac(platform) ? `⌘${key}` : `Ctrl+${key}`;
+}
+
+/**
+ * What this machine calls itself.
+ *
+ * The shell's `process.platform` first: the preload has exposed it since Step
+ * 21 for exactly this, and it is the only answer here that is not an
+ * inference. `navigator.platform` is deprecated and under Electron describes
+ * the Chromium build rather than the OS, so it stays as the browser fallback
+ * — a browser has no bridge to ask.
+ *
+ * Read off `globalThis` rather than by importing the bridge: this module is
+ * pure and node tests import it with no DOM, and a display helper that drags
+ * the daemon's URL module in behind it stops being cheap.
+ */
 function detectPlatform(): string | undefined {
+  const shell = (globalThis as { cuesheet?: { platform?: string } }).cuesheet
+    ?.platform;
+  if (shell !== undefined && shell !== "") return shell;
   if (typeof navigator === "undefined") return undefined;
   return navigator.platform || navigator.userAgent;
 }

@@ -18,7 +18,12 @@
  * Note this file imports no test framework. A contract that only runs under
  * one runner is a contract only this repo can use.
  */
-import { ROLES, type Cost, type Station } from "@cuesheet/core";
+import {
+  ROLES,
+  type Confinement,
+  type Cost,
+  type Station,
+} from "@cuesheet/core";
 import { createMeter } from "./meter.js";
 import { createWorkspace } from "./workspace.js";
 import type {
@@ -29,6 +34,13 @@ import type {
   Workspace,
 } from "./types.js";
 import type { StandbyAnswer } from "@cuesheet/core";
+
+/** Every answer `confinement()` may give. Absent is a fourth, and is allowed. */
+const CONFINEMENTS: readonly Confinement[] = [
+  "read-only",
+  "workspace-write",
+  "none",
+];
 
 // ── Structural ──────────────────────────────────────────────────────────────
 
@@ -77,6 +89,25 @@ export function harnessContractViolations(candidate: unknown): string[] {
   for (const method of ["probe", "usage", "writeConnectors", "run"] as const) {
     if (typeof h[method] !== "function") {
       problems.push(`\`${method}()\` must be a function.`);
+    }
+  }
+  // Optional, and absent is a valid answer meaning "does not say" — so this
+  // checks the shape only when something is there. A harness that declares a
+  // confinement the Desk cannot read is worse than one that declares none: the
+  // Desk would print the word to an operator deciding what a seat may do.
+  if (h.confinement !== undefined) {
+    if (typeof h.confinement !== "function") {
+      problems.push("`confinement()` must be a function when present.");
+    } else {
+      for (const role of ROLES) {
+        const declared: unknown = h.confinement(role);
+        if (!CONFINEMENTS.includes(declared as Confinement)) {
+          problems.push(
+            `\`confinement("${role}")\` returned "${String(declared)}"; ` +
+              `expected one of ${CONFINEMENTS.join(", ")}.`,
+          );
+        }
+      }
     }
   }
   return problems;
