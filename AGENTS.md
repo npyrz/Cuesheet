@@ -50,16 +50,16 @@ Dependency direction is strict: `core` ← `harness` ← `daemon` ← `ui` / `cl
 
 | Package | Owns |
 |---|---|
-| `core` | Domain types, zod config schema + loader, leash checks, gate/verdict evaluation, project registry, cross-platform path helpers |
+| `core` | Domain types, zod config schema + loader, leash checks, gate/verdict evaluation, project registry, Commons fact format, cross-platform path helpers |
 | `harness` | The `Harness` interface, the registry, and the built-in harnesses (`mock`, `Codex`, `codex`) |
-| `daemon` | `cuesheetd` — routes, per-project runtimes, run queue, run store, event bus, standbys |
+| `daemon` | `cuesheetd` — routes, per-project runtimes, run queue/store, event bus, standbys, Commons store and projections |
 | `ui` | The Desk (React + Vite). One build, three consumers: browser, Electron, later the phone |
 | `desktop` | Electron main + preload. **CJS, bundled by esbuild** — the only package that is not ESM |
 | `cli` | `export {}`. The README documents commands that do not exist yet |
 
 ### The `Harness` interface is the central seam
 
-Defined in `packages/harness/src/types.ts`: `id`, `vendor`, `roles`, `probe()`, `usage()`, `contextFiles`, `writeConnectors()`, `run()`. Everything deferred in the plan — Commons, limits, local models — was deferred behind a method that already exists on it. `contract.ts` exercises any harness against the contract structurally and behaviourally.
+Defined in `packages/harness/src/types.ts`: `id`, `vendor`, `roles`, `probe()`, `usage()`, `contextFiles`, `writeConnectors()`, `run()`. The deferred features arrived through those seams: limits consume `usage()`, local models implement the same runner, and Commons projections now consume `contextFiles`. `contract.ts` exercises any harness against the contract structurally and behaviourally.
 
 **`vendor` is load-bearing, not metadata.** A Gate's `distinct_vendors = 2` is an equality check over it, so a test asserts the default registry always ships at least two distinct non-`mock` vendors.
 

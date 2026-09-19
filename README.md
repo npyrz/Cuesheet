@@ -7,14 +7,14 @@
 A desktop app that turns Claude Code, Codex, Ollama and whatever comes next into one crew you actually manage — models, harnesses, roles, memory, limits, and permissions on a single desk. Then hands you the whole thing on your phone.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#what-actually-works-right-now)
+[![Development](https://img.shields.io/badge/development-beta-blue.svg)](#what-actually-works-right-now)
 [![Platform](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-desktop-black.svg)](#requirements)
 
 </div>
 
 ---
 
-> **Project status: alpha, and not yet downloadable.** The Desk runs, the daemon runs, and `claude-code` and `codex` both do real work through them — on macOS **and** Windows, from a checkout or from an installer you build yourself. Installers are real on both platforms, but nothing is signed and nothing has been published, so there is still no download link. Gates work with two real vendors: `claude-code` writes, `codex` reviews, and a blocking finding holds the run. `ollama` works, worker-only: it lists the models you have actually pulled, costs $0, and refuses a reviewer seat outright rather than approving things a 0.6B model has no business approving. Limits are done end to end: the strip draws — honestly, which today mostly means sentences rather than bars, because the vendors report less than you would hope — a run that cannot finish is refused before it starts, there is a cache-aware ledger, and `when_capped` routes around a capped Station without reseating anybody. The Commons store and its `CLAUDE.md` / `AGENTS.md` projections work; its approval inbox, MCP recall and sync do not yet. The phone does not exist. One daemon now serves many projects, an alpha install upgrades into that without losing a run record, and you can switch between them mid-run — from a menu or the keyboard, with the window title following — without stopping anything. This README is still the design spec and the contract: it describes what Cuesheet is being built to be, not what you can use today. [What actually works right now](#what-actually-works-right-now) is the honest list, and the [Roadmap](#roadmap) is the rest.
+> **Development track: beta. Latest release: [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha).** Alpha shipped; current source is now building toward `v0.5.0-beta`, not claiming to be that release already. The Desk runs, the daemon runs, and `claude-code` and `codex` both do real work through them on macOS and Windows. Gates work with two real vendors, `ollama` works worker-only, limits and fallback routing are live, and one daemon serves many isolated projects. The Commons store and its byte-stable `CLAUDE.md` / `AGENTS.md` projections work; approval, MCP recall and sync remain. The public installers are still the unsigned alpha builds, so macOS quarantine and Windows SmartScreen caveats apply. [What actually works right now](#what-actually-works-right-now) is the honest list; the [build plan](PLAN-STEP.MD) separates completed beta-track work from the remaining beta release bar.
 
 ### What actually works right now
 
@@ -40,7 +40,7 @@ Everything below this line is either built or building. Nothing here needs `cues
 | ◐ **The Commons** | The git-backed fact store and byte-stable `CLAUDE.md` / `AGENTS.md` projections are built. Approval, MCP recall and cross-machine sync are not. |
 | 📋 **Not built yet** | Phone pairing, the Caller, On-Call. One more that is easy to miss because this README describes it as if it exists: **the `cuesheet` CLI** is an empty package. The next phases are in [PLAN-STEP.MD](PLAN-STEP.MD). |
 
-**Concretely, today:** clone it, `npm install`, `npm run build`, `npm run dev -w packages/desktop`. Two harnesses, and a gate between them if you have both CLIs installed. The config format can still change under you — but run records are no longer discarded on upgrade, which is a promise the alpha-to-projects migration now keeps rather than states.
+**Concretely, today:** download the unsigned alpha, or clone current beta-track source and run `npm install`, `npm run build`, `npm run dev -w packages/desktop`. Two harnesses, and a gate between them if you have both CLIs installed. The config format can still change under you — the freeze and general migration framework are part of the remaining beta bar — but run records are no longer discarded on upgrade, which is a promise the alpha-to-projects migration now keeps rather than states.
 
 ---
 

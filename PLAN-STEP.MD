@@ -67,6 +67,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
+**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 48 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
 ---
@@ -74,6 +76,8 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 ## Release stages
 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
+
+**Current state:** development is on the beta track in Phase 12; the latest release remains `v0.1.0-alpha`. “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
@@ -96,7 +100,7 @@ The sequencing is the plan's, not the README's. That table numbers features (M2,
 - [x] Installers uploaded on tag — `release.yml` proved by `workflow_dispatch` first, then by the tag: five installers built on runners, attached to a draft, and **`v0.1.0-alpha` published**
 - [x] Install caveats (quarantine, SmartScreen) documented, not hidden — in the README and repeated in every release's own notes
 
-**Alpha → beta** — none of this is in this plan; each maps to a README milestone
+**Alpha → beta** — Phases 7–13 close this bar; checked items are already in current source
 - [x] **M5 · Gates** — reviewer role, verdict parsing, gate evaluation, Holds. *The second opinion is the thesis; without it this is a nicer terminal.*
   - [x] **`codex` harness.** Written, once the blocker turned out to be an environment fact rather than a design one — the CLI was simply not installed. `brew install --cask codex`, an existing ChatGPT credential already in `~/.codex`, three captured streams, and the mapper was written against what arrived instead of what was remembered. See Phase 7.
 
@@ -114,10 +118,10 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 
 **Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
 - [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. The launch surface, the missing-folder state and the keyboard route to the switcher were explicitly *not* ticked by that phase and were built in Steps 40–41; Phase 11 still says "the Desk rebuilt" because the project view, the run surface and the design system are Steps 42–44
-- [ ] **M4 · Commons** — git-backed store, `CLAUDE.md`/`AGENTS.md` projection, approval inbox. *The durable layer the README argues for.* **Now Phase 12** — moved behind Projects because its own scoping question is unanswerable until a project is a thing, which is a dependency rather than a demotion
-- [ ] **M2 · Limits** — usage windows, pre-run warnings, ledger. *Users hit caps in week one; this is not a polish item.* **Now Phase 10.**
+- [ ] **M4 · Commons** — in progress: the git-backed store and `CLAUDE.md`/`AGENTS.md` projections are done; approval, MCP recall and sync remain in Steps 48–50. *The durable layer the README argues for.* **Phase 12** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
+- [x] **M2 · Limits** — usage windows, pre-run warnings, ledger and seat-preserving fallback routing. *Users hit caps in week one; this is not a polish item.* **Phase 10, done.**
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
-- [ ] **The Desk rebuilt** around all of the above — **now Phase 11.** The current one was built to prove a daemon could stream a run into a browser, and has no level above the run
+- [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **now Step 52**
 - [ ] Config migrations, and an upgrade that never discards run history — **now Steps 33 and 53**
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
