@@ -14,32 +14,36 @@ import {
 } from "./config.js";
 import type { HostEnv } from "./paths.js";
 
-/**
- * The done-when for this step is "the exact TOML block from the README's
- * Configuration section parses". So the test reads it out of the README rather
- * than copying it — a copy is exact for exactly as long as nobody edits the
- * README, which is not a property worth testing.
- */
-function readmeConfigBlock(): string {
-  const readme = readFileSync(
-    path.resolve(fileURLToPath(import.meta.url), "../../../..", "README.md"),
+/** Read a fenced TOML example from its real documentation source. */
+function documentedConfigBlock(file: string, heading: string): string {
+  const markdown = readFileSync(
+    path.resolve(fileURLToPath(import.meta.url), "../../../..", file),
     "utf8",
   );
-  const section = readme.slice(readme.indexOf("\n## Configuration"));
+  const marker = `\n## ${heading}`;
+  const section = markdown.slice(markdown.indexOf(marker));
   const match = /```toml\n([\s\S]*?)```/.exec(section);
-  if (!match?.[1]) throw new Error("no toml block under ## Configuration");
+  if (!match?.[1])
+    throw new Error(`no toml block under ## ${heading} in ${file}`);
   return match[1];
 }
 
-describe("the README's config example", () => {
-  const loaded = parseConfig(readmeConfigBlock(), "README.md");
+describe("the reference config example", () => {
+  // The full schema example moved out of the landing-page README so the README
+  // can stay readable. Reading the reference directly keeps the original
+  // contract: the documented example and the parser cannot drift apart.
+  const loaded = parseConfig(
+    documentedConfigBlock("docs/REFERENCE.md", "Configuration"),
+    "docs/REFERENCE.md",
+  );
 
   it("parses to a typed object", () => {
     expect(loaded.config.desk.name).toBe("api-team");
     expect(loaded.config.station.map((s) => s.id)).toEqual([
       "opus",
-      "codex",
-      "qwen",
+      "codex-review",
+      "backup-engineer",
+      "local-worker",
     ]);
 
     const opus = loaded.config.station[0];
@@ -49,7 +53,7 @@ describe("the README's config example", () => {
       model: "opus",
       workspace: "~/code/api",
       paths: ["src/**", "tests/**"],
-      deny: ["**/*.env", "infra/**"],
+      deny: ["**/*.env", "infra/**", ".git/**"],
     });
   });
 
@@ -58,7 +62,7 @@ describe("the README's config example", () => {
     expect(ship?.cues).toHaveLength(4);
     expect(ship?.cues.map(isGateRef)).toEqual([false, false, true, false]);
     expect(ship?.cues[1]).toMatchObject({
-      station: "codex",
+      station: "codex-review",
       action: "review",
       mode: "adversarial",
     });
@@ -89,7 +93,7 @@ describe("the README's config example", () => {
     expect(loaded.config.limits).toMatchObject({
       warn_at: 0.85,
       block_at: 0.97,
-      when_capped: { codex: "qwen" },
+      when_capped: { opus: "backup-engineer" },
     });
   });
 
@@ -123,6 +127,21 @@ cues = [{ station = "opus", action = "implement" }, { gate = "nope" }]
     expect(
       warnings.some((w) => w.message.includes('unknown gate "nope"')),
     ).toBe(true);
+  });
+});
+
+describe("the README's compact config example", () => {
+  it("parses without warnings about missing Stations or Gates", () => {
+    const loaded = parseConfig(
+      documentedConfigBlock("README.md", "Configuration"),
+      "README.md",
+    );
+    expect(loaded.config.cuesheet["ship"]?.cues).toHaveLength(3);
+    expect(
+      loaded.warnings.filter(({ table }) =>
+        ["station", "cuesheet", "gate"].includes(table ?? ""),
+      ),
+    ).toEqual([]);
   });
 });
 
