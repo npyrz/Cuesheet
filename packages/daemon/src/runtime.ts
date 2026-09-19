@@ -10,6 +10,7 @@
  */
 import {
   defaultHarnessRegistry,
+  type ContextFile,
   type HarnessRegistry,
 } from "@cuesheet/harness";
 import { createHarnessExecutor } from "./harness-executor.js";
@@ -36,6 +37,7 @@ export interface HarnessRuntime {
   harnessConfinement: HarnessConfinement;
   knownHarnesses: KnownHarnesses;
   usageSources: () => readonly UsageSource[];
+  contextFiles: () => readonly ContextFile[];
 }
 
 /**
@@ -82,5 +84,10 @@ export function harnessRuntime(
     // satisfies `UsageSource` structurally — the cache deliberately asks for
     // less than the interface offers.
     usageSources: () => registry.list(),
+    // The projector consumes the interface rather than knowing that Claude
+    // reads CLAUDE.md and Codex reads AGENTS.md. A third-party harness gets the
+    // same projection simply by declaring another target.
+    contextFiles: () =>
+      registry.list().flatMap((harness) => harness.contextFiles),
   };
 }

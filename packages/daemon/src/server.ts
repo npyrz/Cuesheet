@@ -12,6 +12,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import { stat } from "node:fs/promises";
+import type { ContextFile } from "@cuesheet/harness";
 import {
   addStation,
   buildLedger,
@@ -71,6 +72,10 @@ import {
   type CommonsStore,
 } from "./commons.js";
 import { isRunId } from "./ids.js";
+import {
+  createCommonsProjector,
+  type CommonsProjector,
+} from "./projections.js";
 import {
   currentLock,
   findRunningDaemon,
@@ -151,6 +156,8 @@ export interface StartDaemonOptions {
   usageSources?: () => readonly UsageSource[];
   /** The Commons. Defaults to `~/.cuesheet/commons` under `env`'s homedir. */
   commons?: CommonsStore;
+  /** Context targets declared by the registered harnesses. */
+  contextFiles?: () => readonly ContextFile[];
   replayLimit?: number;
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
@@ -260,6 +267,12 @@ export async function startDaemon(
     if (event.t === "done") usage.clear();
   });
   const registry = options.projectRegistry ?? createProjectRegistry({ env });
+  const projector = createCommonsProjector({
+    store: commons,
+    registry,
+    env,
+    contextFiles: options.contextFiles ?? (() => []),
+  });
 
   const runtimes = createProjectRuntimes({
     registry,
@@ -305,6 +318,19 @@ export async function startDaemon(
 
   const app = Fastify({ logger: options.logger ?? false });
 
+  // Files can change while Cuesheet is not running. Regenerating at boot is
+  // the cheap reconciliation point that makes the store the source of truth
+  // without introducing a filesystem watcher. A malformed marker must not
+  // make the whole daemon unavailable; the next explicit Commons write still
+  // reports the projection failure to its caller.
+  try {
+    await projector.regenerate();
+  } catch (error) {
+    app.log.error(
+      `Could not regenerate Commons projections: ${errorText(error)}`,
+    );
+  }
+
   // Logged here rather than inside `bootstrapProject`, which runs before there
   // is a logger to log to — and the migration has to finish before any runtime
   // is built, so it cannot simply be moved down.
@@ -343,6 +369,7 @@ export async function startDaemon(
     knownHarnesses,
     usage,
     commons,
+    projector,
     env,
     registry,
     runtimes,
@@ -562,6 +589,7 @@ interface RouteDeps {
   knownHarnesses: KnownHarnesses;
   usage: UsageCache;
   commons: CommonsStore;
+  projector: CommonsProjector;
   env: HostEnv;
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
@@ -592,6 +620,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     knownHarnesses,
     usage,
     commons,
+    projector,
     env,
     registry,
     runtimes,
@@ -683,6 +712,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         ...(typeof station === "string" && { station }),
         ...(typeof run === "string" && { run }),
       });
+      await projector.regenerate();
       // The whole write, not a bare 201: a fact written but *not* recorded in
       // history is a different outcome from one that was, and a client that
       // cannot tell them apart will imply a history that is not there.
@@ -704,6 +734,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     if (removed === null) {
       return reply.code(404).send({ error: "No such fact." });
     }
+    await projector.regenerate();
     return removed;
   });
 
@@ -733,6 +764,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         resolveUserPath(expandHome(root, env), process.cwd()),
         { ...(name !== undefined && { name }) },
       );
+      await projector.regenerate();
       return reply.code(201).send({ project });
     } catch (error) {
       // A folder that is not there is the mistake a person actually makes, and

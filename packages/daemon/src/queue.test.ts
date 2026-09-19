@@ -61,6 +61,14 @@ async function waitForActive(h: Harness, runId: string): Promise<void> {
   }
 }
 
+async function waitForStarted(started: readonly string[]): Promise<void> {
+  const deadline = Date.now() + 4_000;
+  while (started.length === 0) {
+    if (Date.now() > deadline) throw new Error("executor never started");
+    await new Promise((r) => setTimeout(r, 1));
+  }
+}
+
 async function waitForStandby(h: Harness): Promise<Standby> {
   const deadline = Date.now() + 4_000;
   for (;;) {
@@ -540,6 +548,11 @@ describe("shutdown", () => {
       workspace: "/ws",
     });
     await waitForActive(h, active.id);
+    // `activeRunId` changes immediately before the executor is invoked. Under
+    // parallel load, releasing and shutting down in that narrow gap can abort
+    // the active run before its first line, making this assertion test the
+    // scheduler rather than the queue. Wait for the side effect we assert.
+    await waitForStarted(started);
 
     release();
     await h.queue.shutdown();

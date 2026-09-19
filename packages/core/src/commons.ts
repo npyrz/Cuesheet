@@ -48,7 +48,8 @@ export interface Fact {
   /** Free-form labels. The projection groups on these later. */
   tags: string[];
   /**
-   * Which projects this fact belongs to. Empty means every project.
+   * Which projects this fact belongs to. Empty means the user-level crew layer
+   * that is true everywhere and is rendered once per machine.
    *
    * Step 47 projects on this. It is stored here rather than derived, because
    * "true everywhere" and "true of the one project open when it was written"

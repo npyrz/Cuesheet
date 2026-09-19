@@ -82,6 +82,20 @@ export type {
 } from "./commons.js";
 
 export {
+  createCommonsProjector,
+  mergeProjection,
+  renderProjection,
+  ProjectionError,
+  PROJECTION_BEGIN,
+  PROJECTION_END,
+} from "./projections.js";
+export type {
+  CommonsProjector,
+  CommonsProjectionOptions,
+  ProjectionReport,
+} from "./projections.js";
+
+export {
   createUsageCache,
   DEFAULT_USAGE_TTL_MS,
   DEFAULT_USAGE_TIMEOUT_MS,
