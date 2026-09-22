@@ -8,6 +8,7 @@
  */
 import type {
   Confinement,
+  Fact,
   HarnessProbe,
   HarnessUsage,
   Ledger,
@@ -19,6 +20,7 @@ import type {
   RunEvent,
   RunId,
   Station,
+  PendingMemory,
 } from "@cuesheet/core";
 import { apiUrl } from "./base.js";
 
@@ -204,6 +206,43 @@ export interface UsageResponse {
  */
 export async function fetchUsage(): Promise<UsageResponse> {
   return request("/usage");
+}
+
+export async function fetchMemoryInbox(): Promise<PendingMemory[]> {
+  const { pending } = await request<{ pending: PendingMemory[] }>(
+    "/commons/inbox",
+  );
+  return pending;
+}
+
+export interface MemoryApproval {
+  id: string;
+  title: string;
+  body: string;
+  tags: string[];
+  projects: string[];
+}
+
+export interface CommonsMutation {
+  fact: Fact;
+  committed: boolean;
+  reason?: string;
+}
+
+export async function approveMemory(
+  pendingId: string,
+  edits: MemoryApproval,
+): Promise<CommonsMutation> {
+  return request(`/commons/inbox/${encodeURIComponent(pendingId)}/approve`, {
+    method: "POST",
+    body: JSON.stringify(edits),
+  });
+}
+
+export async function discardMemory(pendingId: string): Promise<void> {
+  await request(`/commons/inbox/${encodeURIComponent(pendingId)}`, {
+    method: "DELETE",
+  });
 }
 
 /**

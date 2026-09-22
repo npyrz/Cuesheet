@@ -153,12 +153,11 @@ describe("addStation", () => {
     expect(loaded.config.station.map((s) => s.id)).toEqual(["opus"]);
   });
 
-  it("preserves deferred tables verbatim — the user's Commons is not eaten", async () => {
-    // This used to use `[gate.*]` as its example of a table written ahead of
-    // its implementation. Gates are implemented now, so the example moved to
-    // one that still is not; the guarantee under test never changed, and it
-    // is the reason `addStation` appends to the file's *text* instead of
-    // re-emitting a parsed config.
+  it("preserves unimplemented Commons settings verbatim", async () => {
+    // The approval policy is live now, while store and projection tuning are
+    // still written ahead of their implementations. The guarantee under test
+    // never changed: `addStation` appends to the file's *text* instead of
+    // re-emitting a parsed config and eating keys it does not own.
     const dir = await scratch();
     const target = join(dir, "cuesheet.toml");
     const original = [
@@ -177,7 +176,8 @@ describe("addStation", () => {
     expect(text).toContain(
       "# the commons, written ahead of the implementation",
     );
-    expect(parseConfig(text, target).deferred["commons"]).toEqual({
+    expect(parseConfig(text, target).config.commons).toMatchObject({
+      approval: "inbox",
       store: "~/.cuesheet/commons",
       project_to: ["CLAUDE.md", "AGENTS.md"],
     });

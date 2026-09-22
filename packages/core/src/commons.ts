@@ -62,6 +62,23 @@ export interface Fact {
 }
 
 /**
+ * An agent-written fact before a human has accepted it into the Commons.
+ *
+ * `id` identifies the inbox item, never the eventual fact file. `suggestedId`
+ * is deliberately separate so two captures about the same subject cannot
+ * overwrite one another while they are still waiting for review.
+ */
+export interface PendingMemory {
+  id: string;
+  suggestedId: string | null;
+  title: string;
+  tags: string[];
+  projects: string[];
+  provenance: FactProvenance;
+  body: string;
+}
+
+/**
  * A fact id is a filename **and** a URL segment.
  *
  * Same discipline as `RUN_ID_PATTERN` in the daemon, and for the same reason

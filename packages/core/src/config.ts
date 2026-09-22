@@ -6,10 +6,10 @@
  * inferred rather than hand-written.
  *
  * The README ships a full config example covering Gates, the Caller, limits,
- * On-Call, the Commons, and remote devices. None of those are implemented yet.
- * They are still *parsed* — collected, warned about, and carried through
- * untouched — so the README's example loads on day one and a user who writes
- * ahead of us does not lose their file the first time we round-trip it.
+ * On-Call, the Commons, and remote devices. Some remain deferred. They are
+ * still *parsed* — collected, warned about, and carried through untouched —
+ * so the README's example loads on day one and a user who writes ahead of us
+ * does not lose their file the first time we round-trip it.
  */
 import { readFile } from "node:fs/promises";
 import { parse as parseToml } from "smol-toml";
@@ -139,6 +139,20 @@ export const LimitsSchema = z
   })
   .loose();
 
+/**
+ * `[commons]` — only the approval policy is live in Step 48.
+ *
+ * `.loose()` keeps the already-documented store, sync, projection and MCP
+ * settings intact while their later steps remain unimplemented. The default
+ * is the safety boundary: an agent capture waits for a person unless somebody
+ * has explicitly chosen `auto` in this project.
+ */
+export const CommonsSchema = z
+  .object({
+    approval: z.enum(["inbox", "auto"]).default("inbox"),
+  })
+  .loose();
+
 export const ConfigSchema = z.object({
   desk: DeskSchema.default({}),
   station: z.array(StationSchema).default([]),
@@ -149,6 +163,7 @@ export const ConfigSchema = z.object({
   // hands back the literal empty object, which on a `.loose()` schema does not
   // typecheck and would not carry `warn_at` even if it did.
   limits: LimitsSchema.prefault({}),
+  commons: CommonsSchema.prefault({}),
 });
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -161,6 +176,7 @@ export type CueStep = z.infer<typeof CueStepSchema>;
 export type Cuesheet = z.infer<typeof CuesheetSchema>;
 export type Gate = z.infer<typeof GateSchema>;
 export type Limits = z.infer<typeof LimitsSchema>;
+export type CommonsConfig = z.infer<typeof CommonsSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function isGateRef(step: CueStep): step is GateRef {
@@ -177,7 +193,6 @@ export const DEFERRED_TABLES: Readonly<Record<string, string>> = {
   caller: "The Caller is M6, post-1.0.",
   oncall: "On-Call is M7, post-1.0.",
   trigger: "Triggers arrive with On-Call (M7).",
-  commons: "The Commons is M4.",
   remote: "Phone pairing and tailnet serving are M3.",
 };
 
@@ -275,6 +290,7 @@ export function parseConfig(
     "gate",
     "cuesheet",
     "limits",
+    "commons",
   ]);
 
   for (const key of Object.keys(table)) {
@@ -310,6 +326,18 @@ export function parseConfig(
 function lint(config: Config): ConfigWarning[] {
   const warnings: ConfigWarning[] = [];
   const seen = new Set<string>();
+
+  const deferredCommons = Object.keys(config.commons).filter(
+    (key) => key !== "approval",
+  );
+  if (deferredCommons.length > 0) {
+    warnings.push({
+      table: "commons",
+      message:
+        `[commons].approval is active; ${deferredCommons.join(", ")} ` +
+        `${deferredCommons.length === 1 ? "is" : "are"} preserved but not implemented yet.`,
+    });
+  }
 
   for (const station of config.station) {
     if (seen.has(station.id)) {

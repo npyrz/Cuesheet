@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type HostEnv,
   commonsDir,
+  commonsInboxDir,
   configDir,
   configFile,
   daemonLockFile,
@@ -30,6 +31,7 @@ describe("well-known directories", () => {
     expect(runsDir(mac)).toBe("/Users/noah/.cuesheet/runs");
     expect(logsDir(mac)).toBe("/Users/noah/.cuesheet/logs");
     expect(commonsDir(mac)).toBe("/Users/noah/.cuesheet/commons");
+    expect(commonsInboxDir(mac)).toBe("/Users/noah/.cuesheet/commons-inbox");
     expect(daemonLockFile(mac)).toBe("/Users/noah/.cuesheet/daemon.json");
   });
 
@@ -37,6 +39,9 @@ describe("well-known directories", () => {
     expect(configDir(win)).toBe("C:\\Users\\noah\\.cuesheet");
     expect(configFile(win)).toBe("C:\\Users\\noah\\.cuesheet\\cuesheet.toml");
     expect(runsDir(win)).toBe("C:\\Users\\noah\\.cuesheet\\runs");
+    expect(commonsInboxDir(win)).toBe(
+      "C:\\Users\\noah\\.cuesheet\\commons-inbox",
+    );
     expect(daemonLockFile(win)).toBe("C:\\Users\\noah\\.cuesheet\\daemon.json");
   });
 });

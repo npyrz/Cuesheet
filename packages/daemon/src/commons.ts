@@ -73,6 +73,8 @@ export interface WriteFactInput {
   projects?: string[];
   station?: string;
   run?: string;
+  /** Preserve an agent capture time when an inbox item is approved later. */
+  at?: string;
 }
 
 /** What a mutation did, including whether history recorded it. */
@@ -306,7 +308,7 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
       const provenance: FactProvenance = {
         ...(input.station !== undefined && { station: input.station }),
         ...(input.run !== undefined && { run: input.run }),
-        at: now().toISOString(),
+        at: input.at ?? now().toISOString(),
       };
       const fact: Fact = {
         id,

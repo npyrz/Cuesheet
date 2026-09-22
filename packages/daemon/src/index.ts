@@ -81,6 +81,13 @@ export type {
   WriteFactInput,
 } from "./commons.js";
 
+export { createCommonsInbox, CommonsInboxError } from "./commons-inbox.js";
+export type {
+  CommonsInbox,
+  CommonsInboxOptions,
+  CaptureMemoryInput,
+} from "./commons-inbox.js";
+
 export {
   createCommonsProjector,
   mergeProjection,

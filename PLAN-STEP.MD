@@ -61,7 +61,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
-| 12 · The Commons | 46–50 | 🔵 beta | ◐ **Steps 46–47 done** — facts are committed files and project/user projections keep both harnesses on one byte-stable body without clobbering handwritten context |
+| 12 · The Commons | 46–50 | 🔵 beta | ◐ **Steps 46–48 done** — facts are committed files, projections are byte-stable, and agent captures wait in a human approval inbox by default |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
@@ -118,7 +118,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 
 **Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
 - [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. The launch surface, the missing-folder state and the keyboard route to the switcher were explicitly *not* ticked by that phase and were built in Steps 40–41; Phase 11 still says "the Desk rebuilt" because the project view, the run surface and the design system are Steps 42–44
-- [ ] **M4 · Commons** — in progress: the git-backed store and `CLAUDE.md`/`AGENTS.md` projections are done; approval, MCP recall and sync remain in Steps 48–50. *The durable layer the README argues for.* **Phase 12** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
+- [ ] **M4 · Commons** — in progress: the git-backed store, `CLAUDE.md`/`AGENTS.md` projections and approval inbox are done; MCP recall and sync remain in Steps 49–50. *The durable layer the README argues for.* **Phase 12** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
 - [x] **M2 · Limits** — usage windows, pre-run warnings, ledger and seat-preserving fallback routing. *Users hit caps in week one; this is not a polish item.* **Phase 10, done.**
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
@@ -1511,9 +1511,9 @@ A test that pointed `gitBin` at a file that does not exist found it, which is ex
 
 The non-obvious half is the *first* commit, since `.gitattributes` is staged in the same `git add -A` as the first fact — so it is fair to ask whether it governs its own commit. **It does**, checked rather than assumed: `git ls-files --eol` reports `i/lf` for a fact whose working copy is `w/mixed`, and the committed blob has no carriage returns. Git reads attributes from the working tree at stage time, not from `HEAD`. The test asserts the committed bytes rather than the file's presence, because "the rule is written down" and "the rule was applied" are different claims.
 
-**Two smaller decisions that will matter later.** `rev-parse --git-dir` rather than looking for a `.git` directory, so a commons the operator turned into a worktree or a submodule is not re-initialised underneath them. And a file somebody hand-edited into something unparseable is *skipped* by `list()` rather than failing it — Step 48's inbox is where a malformed fact gets shown to a human, and it is unreachable if listing throws.
+**Two smaller decisions that will matter later.** `rev-parse --git-dir` rather than looking for a `.git` directory, so a commons the operator turned into a worktree or a submodule is not re-initialised underneath them. And a file somebody hand-edited into something unparseable is *skipped* by `list()` rather than failing it — one damaged operator-owned file cannot make every healthy fact disappear. Step 48 settled the inbox as a boundary for new captures, not a repair UI for files already in the approved repository; malformed approved files remain a manual repair in the plain-text store.
 
-**`history()` reports a reason rather than collapsing into an empty list.** A repository with no commits, a missing `git` and a broken one are three different things, and the store distinguishes "cannot" from "nothing" everywhere else — `committed` plus `reason` on every write is that same discipline. Step 48's inbox has to be able to say *history is unavailable* rather than *nothing has happened*.
+**`history()` reports a reason rather than collapsing into an empty list.** A repository with no commits, a missing `git` and a broken one are three different things, and the store distinguishes "cannot" from "nothing" everywhere else — `committed` plus `reason` on every write is that same discipline. Step 48 carries the same distinction on approval: the Desk says when a fact was accepted but its Git history could not be recorded.
 
 **One bug worth recording because nothing would have caught it.** `remove` reached its sibling through `this.get(...)` inside a returned object literal. That works while the method is called as a method and breaks the moment anyone destructures the store or hands `remove` to a callback — and every test called it the one way that works. The reader is now a hoisted closure like every other helper in that scope, with a test that destructures the store deliberately.
 
@@ -1562,13 +1562,25 @@ This is the question Phase 8 existed to make answerable, and the answer is a lay
 
 **Everything outside the marker pair is treated as somebody else's data.** It is preserved byte for byte. A missing pair is appended; an incomplete or duplicate pair refuses rather than guessing which handwritten bytes belong to Cuesheet. Context paths are also confined to their declared project or user root, because `contextFiles` is an extension seam and an extension seam must not become an arbitrary filesystem write.
 
-### Step 48 — The approval inbox
+### Step 48 — The approval inbox ✅
 
 Captured memories land in an inbox, not in the store. Approve, edit, or discard from the Desk.
 
 The README is blunt about why and the reasoning should not be softened during implementation: *"without a gate, agent-written memory drifts, duplicates, and quietly poisons every future session."* `approval = "auto"` exists in the config for people who want it; it is not the default.
 
-**Done when:** a run that writes a memory shows it as pending, and nothing reaches `CLAUDE.md` until a human says so.
+**Done when:** a run that writes a memory shows it as pending ✅, and nothing reaches `CLAUDE.md` until a human says so ✅.
+
+#### What the work settled
+
+**Pending is a storage boundary, not a status flag on a fact.** Captures live in `~/.cuesheet/commons-inbox`, beside rather than inside the Git-backed Commons. The distinction matters because the approved store commits with `git add -A`: an `inbox/` directory under that repository would be swept into history by the next approved mutation even if the projector ignored it. Projections read only `CommonsStore`, so pending bytes have no route into `CLAUDE.md` or `AGENTS.md`.
+
+**Capture is project-scoped; review is global.** `POST /projects/:id/commons/captures` reads that project's live `[commons].approval` policy and tags the draft for that project. `GET /commons/inbox` and its approve/discard routes are global because there is one inbox, just as there is one Commons; every item carries its project IDs and provenance. This keeps the daemon free of an "active project" while giving every client the same approval boundary.
+
+**`inbox` is the schema default and `auto` is a named opt-out.** `[commons]` is now a live config table for `approval = "inbox" | "auto"`; absence runs through the schema to `inbox`. Auto approval uses the same committed-store and projection path as an explicit approval, but is reachable only from a project that wrote `approval = "auto"`. Other already-documented Commons keys remain preserved and inert until their own steps.
+
+**Approval is the promotion transaction.** The Desk opens each captured title, body, fact id, tags and project scope as editable fields. Approval refuses to overwrite an existing fact silently, writes the edited fact with the original Station, Run and capture time, regenerates projections, and only then removes the pending file. A failed write or projection leaves the item retryable. Discard removes only the pending item.
+
+**The hook exists before the MCP tool.** The project capture route is the HTTP seam Step 49's `memory_write` connector will call. That keeps Step 48 testable end to end without pretending MCP recall is built: a capture can be posted with Run and Station provenance today, appears in the Desk, and cannot reach a context file until the approve route succeeds.
 
 ### Step 49 — MCP recall
 

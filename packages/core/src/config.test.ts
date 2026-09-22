@@ -97,6 +97,18 @@ describe("the reference config example", () => {
     });
   });
 
+  it("defaults Commons captures to the approval inbox", () => {
+    expect(loaded.deferred["commons"]).toBeUndefined();
+    expect(loaded.config.commons.approval).toBe("inbox");
+    expect(
+      loaded.warnings.some(
+        ({ table, message }) =>
+          table === "commons" &&
+          message.includes("preserved but not implemented"),
+      ),
+    ).toBe(true);
+  });
+
   it("parses the gate the ship cuesheet references", () => {
     // This used to assert the opposite — that the gate cue was flagged as not
     // yet executable. Gates run now, so the README's example is live, and the
@@ -162,6 +174,16 @@ cues = [{ station = "opus", action = "patch", require_failing_test = true }]
 });
 
 describe("validation", () => {
+  it("requires an explicit valid Commons approval policy", () => {
+    expect(parseConfig("").config.commons.approval).toBe("inbox");
+    expect(
+      parseConfig('[commons]\napproval = "auto"').config.commons.approval,
+    ).toBe("auto");
+    expect(() => parseConfig('[commons]\napproval = "always"')).toThrow(
+      /commons\.approval/,
+    );
+  });
+
   it("rejects an unknown role, naming the field", () => {
     const bad = `
 [[station]]

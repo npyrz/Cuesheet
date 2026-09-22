@@ -61,6 +61,18 @@ export function commonsDir(env: HostEnv = hostEnv()): string {
   return pathFor(env).join(configDir(env), "commons");
 }
 
+/**
+ * Captured memories waiting for a person.
+ *
+ * A sibling of the Git-backed Commons rather than a directory inside it. The
+ * Commons commits with `git add -A`; putting pending captures underneath that
+ * repository would record unapproved memory in history on the next approved
+ * write even though projections correctly ignored it.
+ */
+export function commonsInboxDir(env: HostEnv = hostEnv()): string {
+  return pathFor(env).join(configDir(env), "commons-inbox");
+}
+
 /** Where the daemon advertises `{ pid, port, version, startedAt }`. */
 export function daemonLockFile(env: HostEnv = hostEnv()): string {
   return pathFor(env).join(configDir(env), "daemon.json");

@@ -17,6 +17,7 @@ import {
   addStation,
   buildLedger,
   isFactId,
+  slugify,
   cappedHarnesses,
   checkLimits,
   chooseFallback,
@@ -71,6 +72,11 @@ import {
   CommonsError,
   type CommonsStore,
 } from "./commons.js";
+import {
+  createCommonsInbox,
+  CommonsInboxError,
+  type CommonsInbox,
+} from "./commons-inbox.js";
 import { isRunId } from "./ids.js";
 import {
   createCommonsProjector,
@@ -156,6 +162,8 @@ export interface StartDaemonOptions {
   usageSources?: () => readonly UsageSource[];
   /** The Commons. Defaults to `~/.cuesheet/commons` under `env`'s homedir. */
   commons?: CommonsStore;
+  /** Pending agent captures. Defaults outside the Git-backed Commons store. */
+  commonsInbox?: CommonsInbox;
   /** Context targets declared by the registered harnesses. */
   contextFiles?: () => readonly ContextFile[];
   replayLimit?: number;
@@ -255,6 +263,7 @@ export async function startDaemon(
     sources: options.usageSources ?? (() => []),
   });
   const commons = options.commons ?? createCommonsStore({ env });
+  const commonsInbox = options.commonsInbox ?? createCommonsInbox({ env });
 
   // A finished run is the one moment plan usage actually moves — `claude-code`
   // learns its limits only from inside a run, so its answer changes exactly
@@ -369,6 +378,7 @@ export async function startDaemon(
     knownHarnesses,
     usage,
     commons,
+    commonsInbox,
     projector,
     env,
     registry,
@@ -589,6 +599,7 @@ interface RouteDeps {
   knownHarnesses: KnownHarnesses;
   usage: UsageCache;
   commons: CommonsStore;
+  commonsInbox: CommonsInbox;
   projector: CommonsProjector;
   env: HostEnv;
   registry: ProjectRegistry;
@@ -620,6 +631,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     knownHarnesses,
     usage,
     commons,
+    commonsInbox,
     projector,
     env,
     registry,
@@ -650,6 +662,92 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
    * own `projects` field rather than on the route.
    */
   app.get("/commons", async () => ({ facts: await commons.list() }));
+
+  /**
+   * Pending captures are global because there is one inbox. Each item carries
+   * its project ids, so the Desk can filter without inventing daemon-side
+   * "current project" state.
+   */
+  app.get("/commons/inbox", async () => ({
+    pending: await commonsInbox.list(),
+  }));
+
+  app.post("/commons/inbox/:id/approve", async (request, reply) => {
+    const pendingId = (request.params as { id: string }).id;
+    if (!isFactId(pendingId)) {
+      return reply.code(400).send({ error: "Malformed pending memory id." });
+    }
+    const edits = objectBody(request.body);
+    if (edits === null) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+
+    try {
+      const approved = await commonsInbox.resolve(pendingId, async (memory) => {
+        const title = stringEdit(edits, "title", memory.title);
+        const text = stringEdit(edits, "body", memory.body, false);
+        const tags = stringArrayEdit(edits, "tags", memory.tags);
+        const projects = stringArrayEdit(edits, "projects", memory.projects);
+        const requestedId = edits["id"];
+        const factId =
+          requestedId === undefined
+            ? (memory.suggestedId ?? slugify(title))
+            : typeof requestedId === "string"
+              ? requestedId
+              : null;
+        if (!isFactId(factId)) {
+          throw new CommonsInboxError(
+            "`id` must be lowercase letters, digits and single hyphens.",
+          );
+        }
+        if ((await commons.get(factId)) !== null) {
+          throw new CommonsConflictError(
+            `A Commons fact named "${factId}" already exists. Edit the id before approving.`,
+          );
+        }
+        const written = await commons.write({
+          id: factId,
+          title,
+          body: text,
+          tags,
+          projects,
+          ...(memory.provenance.station !== undefined && {
+            station: memory.provenance.station,
+          }),
+          ...(memory.provenance.run !== undefined && {
+            run: memory.provenance.run,
+          }),
+          at: memory.provenance.at,
+        });
+        await projector.regenerate();
+        return written;
+      });
+      if (approved === null) {
+        return reply.code(404).send({ error: "No such pending memory." });
+      }
+      return approved;
+    } catch (error) {
+      if (error instanceof CommonsConflictError) {
+        return reply.code(409).send({ error: error.message });
+      }
+      if (error instanceof CommonsInboxError || error instanceof CommonsError) {
+        return reply.code(400).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.delete("/commons/inbox/:id", async (request, reply) => {
+    const id = (request.params as { id: string }).id;
+    if (!isFactId(id)) {
+      return reply.code(400).send({ error: "Malformed pending memory id." });
+    }
+    const discarded = await commonsInbox.discard(id);
+    if (discarded === null) {
+      return reply.code(404).send({ error: "No such pending memory." });
+    }
+    return { discarded };
+  });
 
   app.get("/commons/history", async (request) => {
     const limit = parseLimit(
@@ -821,6 +919,80 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
     return runtime;
   }
+
+  /**
+   * Capture is project-scoped because the policy and the default fact scope
+   * both belong to the project that ran the agent. It is the hook Step 49's
+   * `memory_write` connector will call; keeping it HTTP-first means the Desk,
+   * CLI and any future harness all cross the same approval boundary.
+   */
+  app.post("/projects/:id/commons/captures", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const body = objectBody(request.body);
+    if (body === null) {
+      return reply.code(400).send({ error: "Body must be a JSON object." });
+    }
+    const title = body["title"];
+    const text = body["body"];
+    const station = body["station"];
+    const run = body["run"];
+    if (typeof title !== "string" || title.trim() === "") {
+      return reply.code(400).send({ error: "`title` is required." });
+    }
+    if (typeof text !== "string") {
+      return reply.code(400).send({ error: "`body` is required." });
+    }
+    if (typeof station !== "string" || station.trim() === "") {
+      return reply.code(400).send({ error: "`station` is required." });
+    }
+    if (typeof run !== "string" || run.trim() === "") {
+      return reply.code(400).send({ error: "`run` is required." });
+    }
+    if (!isRunId(run)) {
+      return reply.code(400).send({ error: "`run` is not a run id." });
+    }
+    if ((await runtime.store.get(run)) === null) {
+      return reply.code(404).send({ error: "The source run does not exist." });
+    }
+    if (
+      !runtime
+        .config()
+        .config.station.some((candidate) => candidate.id === station)
+    ) {
+      return reply.code(400).send({
+        error: `Station "${station}" is not configured for this project.`,
+      });
+    }
+    if (body["tags"] !== undefined && !stringArray(body["tags"])) {
+      return reply.code(400).send({ error: "`tags` must be strings." });
+    }
+    const projectId = runtime.project.id;
+    const input = {
+      title,
+      body: text,
+      tags: stringArray(body["tags"]) ? body["tags"] : [],
+      projects: [projectId],
+      station,
+      run,
+    };
+
+    if (runtime.config().config.commons.approval === "auto") {
+      try {
+        const written = await commons.write(input);
+        await projector.regenerate();
+        return reply.code(201).send({ status: "approved", ...written });
+      } catch (error) {
+        if (error instanceof CommonsError) {
+          return reply.code(400).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+
+    const memory = await commonsInbox.capture(input);
+    return reply.code(202).send({ status: "pending", memory });
+  });
 
   // ── Stations, per project ────────────────────────────────────────────────
 
@@ -1222,6 +1394,54 @@ function resolveWorkspace(loaded: LoadedConfig, stationIds: string[]): string {
     if (station?.workspace) return station.workspace;
   }
   return loaded.config.station.find((s) => s.workspace)?.workspace ?? "";
+}
+
+class CommonsConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CommonsConflictError";
+  }
+}
+
+function objectBody(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+function stringEdit(
+  edits: Record<string, unknown>,
+  key: string,
+  fallback: string,
+  nonempty = true,
+): string {
+  const value = edits[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || (nonempty && value.trim() === "")) {
+    throw new CommonsInboxError(
+      `\`${key}\` must be a${nonempty ? " non-empty" : ""} string.`,
+    );
+  }
+  return value;
+}
+
+function stringArrayEdit(
+  edits: Record<string, unknown>,
+  key: string,
+  fallback: string[],
+): string[] {
+  const value = edits[key];
+  if (value === undefined) return fallback;
+  if (!stringArray(value)) {
+    throw new CommonsInboxError(`\`${key}\` must be strings.`);
+  }
+  return value;
 }
 
 /**

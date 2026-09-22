@@ -132,10 +132,11 @@ adding a file to the repository.
 
 ### Complete schema example
 
-The Stations, Gate, cuesheet, and limits below are live. The later Caller,
-On-Call, trigger, Commons, and remote tables are included to document the
-preserved schema only; the parser retains them with warnings, but their product
-features are not implemented yet.
+The Stations, Gate, cuesheet, limits, and Commons approval policy below are
+live. The later Caller, On-Call, trigger, and remote tables are included to
+document the preserved schema only; the parser retains them with warnings, but
+their product features are not implemented yet. Other Commons keys are kept
+for later steps; only `approval` is read today.
 
 ```toml
 [desk]
@@ -194,7 +195,7 @@ warn_at     = 0.85
 block_at    = 0.97
 when_capped = { opus = "backup-engineer" }
 
-# Deferred tables below: parsed and preserved, not executed today.
+# Deferred workflow tables below: parsed and preserved, not executed today.
 [caller]
 station  = "opus"
 budget   = 4000
@@ -227,6 +228,7 @@ distinct_vendors = 2
 blocking         = ["security", "correctness", "data-loss", "unreproduced"]
 merges           = false
 
+# Only approval is live; the other Commons keys are preserved for later steps.
 [commons]
 store      = "~/.cuesheet/commons"
 sync       = "git@github.com:you/commons.git"
@@ -250,10 +252,12 @@ that role. Cuesheet refuses unsafe reseating instead of silently changing what
 the step is allowed to do.
 
 The parser currently implements `[desk]`, `[[station]]`, `[gate.*]`,
-`[cuesheet.*]`, and `[limits]`. It preserves several planned top-level tables
-while warning that they are not active: `[caller]`, `[oncall]`, `[[trigger]]`,
-`[commons]`, and `[remote]`. Do not treat a successfully parsed deferred table
-as a working feature. Connector configuration is also not implemented.
+`[cuesheet.*]`, `[limits]`, and `[commons].approval`. It preserves several
+planned top-level tables while warning that they are not active: `[caller]`,
+`[oncall]`, `[[trigger]]`, and `[remote]`. Do not treat a successfully parsed
+deferred table as a working feature. Commons `store`, `sync`, `project_to`, and
+`mcp` settings are also preserved but not active; connector configuration is
+not implemented.
 
 ## Roles and leashes
 
@@ -388,6 +392,19 @@ Writes and removals are committed to the Commons Git repository. If Git is not
 available, the fact remains a file and the API reports why history could not be
 recorded.
 
+Agent-written captures do not enter that repository immediately. By default
+they are JSON drafts under `~/.cuesheet/commons-inbox`, outside the Git working
+tree and outside every projection. The Desk's **inbox** view shows provenance
+and lets a person edit the proposed fact id, title, body, tags, and project
+scope before approving it, or discard it. Approval writes and commits the fact,
+regenerates projections, and removes the draft only after those operations
+succeed. A failed approval remains pending and can be retried.
+
+`approval = "inbox"` is the default even when `[commons]` is absent. A project
+may explicitly opt into `approval = "auto"`; captures from that project then
+go directly through the committed fact and projection path. Auto approval is
+never inferred from an omitted setting.
+
 Facts with project IDs are projected into that project's context files. Facts
 with no project IDs are user-scoped. Built-in projections are:
 
@@ -408,11 +425,12 @@ Implemented today:
 - create, read, list, delete, and history routes;
 - provenance in fact files and commit messages;
 - project/user scoping; and
-- byte-stable `CLAUDE.md` and `AGENTS.md` projection.
+- byte-stable `CLAUDE.md` and `AGENTS.md` projection; and
+- a persistent approval inbox with edit, approve, discard, and explicit
+  per-project auto approval.
 
 Not implemented yet:
 
-- the approval inbox and capture hooks;
 - MCP search/write recall; and
 - cross-machine Git synchronization.
 
@@ -433,6 +451,9 @@ the browser Desk's normal surface through the Vite proxy.
 | `GET` | `/api/usage` | Cached usage from every registered harness. |
 | `GET` | `/api/commons` | List Commons facts. |
 | `POST` | `/api/commons` | Write a fact and regenerate projections. |
+| `GET` | `/api/commons/inbox` | List pending agent-captured memories. |
+| `POST` | `/api/commons/inbox/:id/approve` | Approve a pending memory, applying optional edits first. |
+| `DELETE` | `/api/commons/inbox/:id` | Discard a pending memory without touching projections. |
 | `GET` | `/api/commons/:id` | Read one fact. |
 | `DELETE` | `/api/commons/:id` | Remove one fact and regenerate projections. |
 | `GET` | `/api/commons/history?limit=50` | Read abbreviated Commons Git history. |
@@ -448,6 +469,7 @@ the browser Desk's normal surface through the Vite proxy.
 | `DELETE` | `/api/projects/:id` | Forget the entry; never delete the project or run records. |
 | `GET` | `/api/projects/:id/stations` | List configured Stations with probe and confinement information. |
 | `POST` | `/api/projects/:id/stations` | Add a Station and reload project configuration. |
+| `POST` | `/api/projects/:id/commons/captures` | Capture a run memory under the project's inbox/auto policy. |
 | `GET` | `/api/projects/:id/runs?limit=50` | List newest runs. |
 | `POST` | `/api/projects/:id/runs` | Queue `{ "prompt": "...", "cuesheet": "optional-name" }`. |
 | `GET` | `/api/projects/:id/runs/:runId` | Read run metadata and events, excluding the patch body. |
@@ -524,6 +546,7 @@ on Windows):
 ├── daemon.json
 ├── projects.json
 ├── commons/
+├── commons-inbox/
 └── projects/
     └── <project-id>/
         ├── cuesheet.toml
@@ -622,6 +645,13 @@ one can hold the run. An abstention never counts as approval.
 The write response includes `committed` and, when false, a reason. Install Git
 and make sure it is executable from Cuesheet's PATH. The store writes facts
 even when Git history is unavailable.
+
+### Why did an agent memory not appear in `CLAUDE.md`?
+
+Open the Desk's **inbox** view. Agent captures wait there by default and do not
+enter any context file until approved. You can edit the proposed fact before
+approving it or discard it. A project only skips this review when its config
+explicitly contains `[commons] approval = "auto"`.
 
 ### Why are my hand-written `CLAUDE.md` or `AGENTS.md` sections still there?
 

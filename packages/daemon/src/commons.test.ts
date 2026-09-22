@@ -12,6 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run, which } from "@cuesheet/harness";
 import { createCommonsStore, CommonsError } from "./commons.js";
+import { createCommonsInbox } from "./commons-inbox.js";
 import { startDaemon, type DaemonHandle } from "./server.js";
 
 let root: string;
@@ -259,7 +260,7 @@ describe("the Commons through the API", () => {
   });
 
   /** An isolated home *and* an explicit commons root. Never the developer's. */
-  async function boot(): Promise<string> {
+  async function boot(): Promise<{ url: string; home: string }> {
     const home = await realpath(
       await mkdtemp(path.join(tmpdir(), "cuesheet-commons-api-")),
     );
@@ -269,8 +270,15 @@ describe("the Commons through the API", () => {
       cwd: home,
       writeLockFile: false,
       commons: createCommonsStore({ root }),
+      commonsInbox: createCommonsInbox({
+        root: path.join(home, ".cuesheet", "commons-inbox"),
+      }),
+      contextFiles: () => [
+        { path: "CLAUDE.md", scope: "project" },
+        { path: "AGENTS.md", scope: "project" },
+      ],
     });
-    return daemon.url;
+    return { url: daemon.url, home };
   }
 
   const post = (url: string, body: unknown) =>
@@ -283,7 +291,7 @@ describe("the Commons through the API", () => {
   it("writes a fact, commits it, and git log explains where it came from", async () => {
     // Step 46's done-when, end to end and through HTTP, which is what "written
     // through the API" means.
-    const url = await boot();
+    const { url } = await boot();
     const response = await post(url, {
       title: "A worker never writes",
       body: "The facade refuses before the leash is consulted.",
@@ -322,7 +330,7 @@ describe("the Commons through the API", () => {
   it("400s a fact id that could escape the commons directory", async () => {
     // The path traversal, at the boundary where a user string arrives. Without
     // the check this deletes whatever the path resolves to.
-    const url = await boot();
+    const { url } = await boot();
     for (const bad of ["..%2f..%2fprojects", "not a slug", "UPPER"]) {
       expect((await fetch(`${url}/commons/${bad}`)).status).toBe(400);
       expect(
@@ -335,14 +343,14 @@ describe("the Commons through the API", () => {
   });
 
   it("404s a fact nobody wrote, and 400s a body that is not one", async () => {
-    const url = await boot();
+    const { url } = await boot();
     expect((await fetch(`${url}/commons/absent`)).status).toBe(404);
     expect((await post(url, { body: "no title" })).status).toBe(400);
     expect((await post(url, { title: "no body" })).status).toBe(400);
   });
 
   it("removes a fact and reports the removal", async () => {
-    const url = await boot();
+    const { url } = await boot();
     await post(url, { id: "temporary", title: "Temporary", body: "x" });
     const removed = await fetch(`${url}/commons/temporary`, {
       method: "DELETE",
@@ -352,7 +360,7 @@ describe("the Commons through the API", () => {
   });
 
   it("serves the history the store recorded", async () => {
-    const url = await boot();
+    const { url } = await boot();
     await post(url, { id: "first", title: "First", body: "x" });
     const { commits } = (await (
       await fetch(`${url}/commons/history`)
@@ -362,5 +370,171 @@ describe("the Commons through the API", () => {
     } else {
       expect(commits).toEqual([]);
     }
+  });
+
+  async function openProject(
+    url: string,
+    home: string,
+    config = "",
+  ): Promise<{ id: string; root: string }> {
+    const projectRoot = await mkdtemp(path.join(home, "project-"));
+    const station = [
+      "[[station]]",
+      'id = "codex"',
+      'harness = "mock"',
+      'role = "engineer"',
+      `workspace = '${projectRoot}'`,
+      'paths = ["**"]',
+      'deny = [".git/**"]',
+      "",
+    ].join("\n");
+    await writeFile(
+      path.join(projectRoot, "cuesheet.toml"),
+      `${station}${config}`,
+      "utf8",
+    );
+    const response = await fetch(`${url}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ root: projectRoot }),
+    });
+    const { project } = (await response.json()) as {
+      project: { id: string; root: string };
+    };
+    return project;
+  }
+
+  const capture = (
+    url: string,
+    projectId: string,
+    run: string,
+    over: Record<string, unknown> = {},
+  ) =>
+    fetch(`${url}/projects/${projectId}/commons/captures`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "The queue is per project",
+        body: "Switching projects never stops a run.",
+        station: "codex",
+        run,
+        ...over,
+      }),
+    });
+
+  async function sourceRun(url: string, projectId: string): Promise<string> {
+    const response = await fetch(`${url}/projects/${projectId}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Capture a memory." }),
+    });
+    expect(response.status).toBe(202);
+    return ((await response.json()) as { runId: string }).runId;
+  }
+
+  it("keeps captures pending and out of projections until approval", async () => {
+    const { url, home } = await boot();
+    const project = await openProject(url, home);
+    const runId = await sourceRun(url, project.id);
+
+    const captured = await capture(url, project.id, runId);
+    expect(captured.status).toBe(202);
+    const pending = (await captured.json()) as {
+      status: string;
+      memory: { id: string; suggestedId: string };
+    };
+    expect(pending.status).toBe("pending");
+    expect(pending.memory.suggestedId).toBe("the-queue-is-per-project");
+    expect((await store().list()).map(({ id }) => id)).toEqual([]);
+    await expect(
+      readFile(path.join(project.root, "CLAUDE.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    const inbox = (await (await fetch(`${url}/commons/inbox`)).json()) as {
+      pending: { id: string }[];
+    };
+    expect(inbox.pending.map(({ id }) => id)).toEqual([pending.memory.id]);
+
+    const approved = await fetch(
+      `${url}/commons/inbox/${pending.memory.id}/approve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: "queues-survive-switches",
+          title: "Queues survive project switches",
+          body: "A switch changes only the client subscription.",
+          tags: ["projects"],
+        }),
+      },
+    );
+    expect(approved.status).toBe(200);
+    expect((await store().get("queues-survive-switches"))?.provenance).toEqual({
+      station: "codex",
+      run: runId,
+      at: expect.any(String),
+    });
+    expect(
+      await readFile(path.join(project.root, "CLAUDE.md"), "utf8"),
+    ).toContain("A switch changes only the client subscription.");
+    expect(
+      (
+        (await (await fetch(`${url}/commons/inbox`)).json()) as {
+          pending: unknown[];
+        }
+      ).pending,
+    ).toEqual([]);
+  });
+
+  it("discards a capture without writing or projecting it", async () => {
+    const { url, home } = await boot();
+    const project = await openProject(url, home);
+    const response = await capture(
+      url,
+      project.id,
+      await sourceRun(url, project.id),
+    );
+    const { memory } = (await response.json()) as { memory: { id: string } };
+
+    expect(
+      (await fetch(`${url}/commons/inbox/${memory.id}`, { method: "DELETE" }))
+        .status,
+    ).toBe(200);
+    expect(await store().list()).toEqual([]);
+    await expect(
+      readFile(path.join(project.root, "AGENTS.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("honours explicit auto approval while keeping inbox as the default", async () => {
+    const { url, home } = await boot();
+    const project = await openProject(
+      url,
+      home,
+      '[commons]\napproval = "auto"\n',
+    );
+    const runId = await sourceRun(url, project.id);
+
+    const response = await capture(url, project.id, runId, {
+      title: "Auto is explicit",
+      body: "Only this project opted out of review.",
+    });
+    expect(response.status).toBe(201);
+    expect((await response.json()) as { status: string }).toMatchObject({
+      status: "approved",
+    });
+    expect(await store().get("auto-is-explicit")).toMatchObject({
+      body: "Only this project opted out of review.",
+    });
+    expect(
+      (
+        (await (await fetch(`${url}/commons/inbox`)).json()) as {
+          pending: unknown[];
+        }
+      ).pending,
+    ).toEqual([]);
+    expect(
+      await readFile(path.join(project.root, "AGENTS.md"), "utf8"),
+    ).toContain("Only this project opted out of review.");
   });
 });

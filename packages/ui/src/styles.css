@@ -448,6 +448,103 @@ textarea {
   font-size: var(--text-md);
 }
 
+/* ── Memory approval inbox ─────────────────────────────────────────────── */
+
+.memory-inbox {
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.memory-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.memory-outcome {
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
+}
+
+.memory-list {
+  display: grid;
+  gap: var(--space-7);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.memory-card {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-7);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.memory-card label {
+  display: grid;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.memory-card input,
+.memory-card textarea {
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.memory-card textarea {
+  resize: vertical;
+  line-height: var(--leading);
+}
+
+.memory-provenance,
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-7);
+}
+
+.memory-provenance {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.memory-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+.memory-help {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.memory-error {
+  margin: 0;
+  color: var(--bad);
+}
+
+@media (max-width: 620px) {
+  .memory-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Limits strip ────────────────────────────────────────────────────────── */
 
 .limits {

@@ -11,6 +11,7 @@ import { CommandPalette, type Command } from "./components/CommandPalette.js";
 import { LaunchSurface } from "./components/LaunchSurface.js";
 import { LedgerPanel } from "./components/LedgerPanel.js";
 import { LimitsStrip } from "./components/LimitsStrip.js";
+import { MemoryInbox } from "./components/MemoryInbox.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProjectView } from "./components/ProjectView.js";
 import { RunSurface } from "./components/RunSurface.js";
@@ -44,7 +45,7 @@ export function App(): React.JSX.Element {
    * the daemon has no notion of what a client is looking at, which is the same
    * decision Phase 8 made about the current project.
    */
-  const [view, setView] = useState<"project" | "runs">("project");
+  const [view, setView] = useState<"project" | "runs" | "inbox">("project");
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
   const [ledger, setLedger] = useState(false);
@@ -123,6 +124,11 @@ export function App(): React.JSX.Element {
         id: "view-runs",
         label: "Show the runs",
         run: () => setView("runs"),
+      },
+      {
+        id: "view-inbox",
+        label: "Open the memory inbox — approve, edit, or discard captures",
+        run: () => setView("inbox"),
       },
       // Switching, from inside the palette. The menu in the topbar is the
       // discoverable half; this is the half that works with a modal open, one
@@ -231,6 +237,14 @@ export function App(): React.JSX.Element {
           >
             runs
           </button>
+          <button
+            type="button"
+            className="view-tab"
+            aria-pressed={view === "inbox"}
+            onClick={() => setView("inbox")}
+          >
+            inbox
+          </button>
         </nav>
         <span className="conn" data-status={state.connection}>
           <span className="dot" aria-hidden="true" />
@@ -302,6 +316,8 @@ export function App(): React.JSX.Element {
             onOpenLedger={() => setLedger(true)}
             onRetry={desk.reload}
           />
+        ) : view === "inbox" ? (
+          <MemoryInbox />
         ) : (
           <>
             {warnings.map((warning, index) => (
