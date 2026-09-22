@@ -252,12 +252,14 @@ that role. Cuesheet refuses unsafe reseating instead of silently changing what
 the step is allowed to do.
 
 The parser currently implements `[desk]`, `[[station]]`, `[gate.*]`,
-`[cuesheet.*]`, `[limits]`, and `[commons].approval`. It preserves several
+`[cuesheet.*]`, `[limits]`, and `[commons].approval`. The Commons MCP endpoint
+and its Claude Code/Codex connector registration are automatic rather than
+controlled by this table. It preserves several
 planned top-level tables while warning that they are not active: `[caller]`,
 `[oncall]`, `[[trigger]]`, and `[remote]`. Do not treat a successfully parsed
 deferred table as a working feature. Commons `store`, `sync`, `project_to`, and
-`mcp` settings are also preserved but not active; connector configuration is
-not implemented.
+`mcp` settings are also preserved but do not yet override the built-in paths or
+automatic connector behavior.
 
 ## Roles and leashes
 
@@ -569,6 +571,7 @@ Current, verifiable properties:
 - Cuesheet shells out to CLIs authenticated by the user; it does not proxy or
   store their model API credentials.
 - Project registry, run records, and Commons facts are local files.
+- The Commons MCP server shares the daemon's loopback-only HTTP listener.
 - Commons sync is not implemented, and the product has no hosted relay,
   account, or telemetry path.
 - File-backed IDs are validated before they are used as path segments.

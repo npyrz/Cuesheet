@@ -28,6 +28,7 @@ import { parseVerdict, type Station } from "@cuesheet/core";
 import {
   buildArgs,
   codexHarness,
+  codexConnectorArgs,
   createCodexState,
   isTransportNoise,
   mapCodexEvent,
@@ -145,6 +146,23 @@ describe("buildArgs", () => {
     const args = buildArgs(station());
     expect(args.at(-1)).toBe("-");
     expect(args).not.toContain("--prompt");
+  });
+});
+
+describe("Commons connector registration", () => {
+  it("uses Codex's URL form rather than editing config.toml itself", () => {
+    expect(
+      codexConnectorArgs({
+        name: "cuesheet-commons",
+        url: "http://127.0.0.1:7373/mcp",
+      }),
+    ).toEqual([
+      "mcp",
+      "add",
+      "cuesheet-commons",
+      "--url",
+      "http://127.0.0.1:7373/mcp",
+    ]);
   });
 });
 

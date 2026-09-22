@@ -14,12 +14,14 @@ flowchart LR
     Git[Git history when available]
     Projector[Serialized projector]
     Context[Harness context files]
+    MCP[Streamable HTTP MCP recall]
 
     API --> Store
     Store --> Fact
     Store --> Git
     Store --> Projector
     Projector --> Context
+    Store --> MCP
 ```
 
 ## Fact scope
@@ -44,7 +46,8 @@ Current targets come from live `Harness.contextFiles` declarations rather than a
 - Claude Code: `<project>/CLAUDE.md` and `~/.claude/CLAUDE.md`;
 - Codex: `<project>/AGENTS.md` and `~/.codex/AGENTS.md`;
 - mock: `<project>/MOCK.md`;
-- Ollama: no always-loaded file.
+- Ollama: no always-loaded file, so the executor assembles approved user and
+  project facts into its brief.
 
 ## Safe, stable projection
 
@@ -77,22 +80,29 @@ Projection work is serialized so adjacent writes cannot finish out of order and 
 
 Regeneration currently happens after Commons mutations, at daemon boot, and when a new project is opened. Missing project roots are skipped rather than recreated.
 
-## What is still planned
+## Recall and capture
 
 ```mermaid
 flowchart LR
     Capture[Captured memory]
-    Inbox[Approval inbox - planned]
-    Store[Committed Commons fact - current]
-    Static[Static projection - current]
-    Recall[MCP recall - planned]
+    Inbox[Approval inbox]
+    Store[Committed Commons fact]
+    Static[Static projection]
+    Recall[MCP memory search and write]
     Sync[Remote git sync - planned]
 
-    Capture -.-> Inbox
-    Inbox -.-> Store
+    Capture --> Inbox
+    Inbox --> Store
     Store --> Static
-    Store -.-> Recall
+    Store --> Recall
     Store -.-> Sync
 ```
 
-The approval inbox, automatic capture flow, MCP `memory_search` and `memory_write`, and cross-machine git sync are not implemented. Today, writing through the Commons API commits directly and regenerates projections. The `writeConnectors()` harness method exists, but the MCP recall server that would use it does not.
+The daemon serves stateless Streamable HTTP MCP at `/mcp`. Claude Code and
+Codex register it through their own CLI configuration commands. `memory_search`
+can search a project's user-plus-project scope or, when the project is omitted,
+the global operator-owned store. `memory_write` requires project, Station, and
+Run provenance and enters the same `inbox` or `auto` approval path as the HTTP
+capture route.
+
+Cross-machine git sync is still planned.

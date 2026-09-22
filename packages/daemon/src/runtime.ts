@@ -10,6 +10,7 @@
  */
 import {
   defaultHarnessRegistry,
+  type Connector,
   type ContextFile,
   type HarnessRegistry,
 } from "@cuesheet/harness";
@@ -38,6 +39,7 @@ export interface HarnessRuntime {
   knownHarnesses: KnownHarnesses;
   usageSources: () => readonly UsageSource[];
   contextFiles: () => readonly ContextFile[];
+  writeConnectors: (connectors: readonly Connector[]) => Promise<void>;
 }
 
 /**
@@ -56,11 +58,13 @@ export function harnessRuntime(
   const registry = options.registry ?? defaultHarnessRegistry();
   return {
     registry,
-    executorFactory: ({ config, env, capped }) =>
+    executorFactory: ({ config, env, capped, projectId, memoryFacts }) =>
       createHarnessExecutor({
         registry,
         config,
         env,
+        projectId,
+        memoryFacts,
         ...(capped !== undefined && { capped }),
       }),
     prober: (harness) => registry.probe(harness),
@@ -89,5 +93,25 @@ export function harnessRuntime(
     // same projection simply by declaring another target.
     contextFiles: () =>
       registry.list().flatMap((harness) => harness.contextFiles),
+    // Registration stays on the harness side of the seam: the daemon knows
+    // the URL it serves, while only each CLI adapter knows how that runtime
+    // persists an MCP server without corrupting the operator's config.
+    async writeConnectors(connectors) {
+      const settled = await Promise.allSettled(
+        registry.list().map((harness) => harness.writeConnectors(connectors)),
+      );
+      const failures = settled.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (failures.length > 0) {
+        throw new Error(
+          `One or more harnesses could not register the MCP connector: ${failures
+            .map((failure) =>
+              failure instanceof Error ? failure.message : String(failure),
+            )
+            .join("; ")}`,
+        );
+      }
+    },
   };
 }

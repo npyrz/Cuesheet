@@ -230,12 +230,23 @@ export interface ContextFile {
 }
 
 /** An MCP connector to register with a runtime. */
-export interface Connector {
-  name: string;
-  command: string;
-  args?: readonly string[];
-  env?: Readonly<Record<string, string>>;
-}
+export type Connector =
+  | {
+      name: string;
+      /** A shared Streamable HTTP server, such as the daemon's `/mcp` route. */
+      url: string;
+      command?: never;
+      args?: never;
+      env?: never;
+    }
+  | {
+      name: string;
+      /** A process the client starts and speaks MCP to over stdio. */
+      command: string;
+      args?: readonly string[];
+      env?: Readonly<Record<string, string>>;
+      url?: never;
+    };
 
 // ── The interface ───────────────────────────────────────────────────────────
 

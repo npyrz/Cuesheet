@@ -52,7 +52,7 @@ Dependency direction is strict: `core` ← `harness` ← `daemon` ← `ui` / `cl
 |---|---|
 | `core` | Domain types, zod config schema + loader, leash checks, gate/verdict evaluation, project registry, Commons fact format, cross-platform path helpers |
 | `harness` | The `Harness` interface, the registry, and the built-in harnesses (`mock`, `Codex`, `codex`) |
-| `daemon` | `cuesheetd` — routes, per-project runtimes, run queue/store, event bus, standbys, Commons store and projections |
+| `daemon` | `cuesheetd` — routes, per-project runtimes, run queue/store, event bus, standbys, Commons store, projections and MCP recall |
 | `ui` | The Desk (React + Vite). One build, three consumers: browser, Electron, later the phone |
 | `desktop` | Electron main + preload. **CJS, bundled by esbuild** — the only package that is not ESM |
 | `cli` | `export {}`. The README documents commands that do not exist yet |

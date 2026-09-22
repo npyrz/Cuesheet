@@ -147,7 +147,15 @@ export function createProjectRuntimes(
       standbys,
       executor:
         options.executor ??
-        options.executorFactory?.({ config, env }) ??
+        options.executorFactory?.({
+          config,
+          env,
+          projectId: project.id,
+          // `startDaemon` replaces this with the real scoped Commons reader.
+          // Keeping a harmless default here preserves this module's boundary:
+          // project lifetimes do not own the global Commons store.
+          memoryFacts: async () => [],
+        }) ??
         noopExecutor,
     });
 

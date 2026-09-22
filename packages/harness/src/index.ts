@@ -66,6 +66,7 @@ export type { MockHarnessOptions } from "./mock.js";
 export {
   createClaudeCodeHarness,
   claudeCodeHarness,
+  claudeConnectorArgs,
   buildArgs,
   parseVersion,
   mapStreamEvent,
@@ -78,6 +79,7 @@ export type { ClaudeCodeOptions, StreamState } from "./claude-code.js";
 export {
   createCodexHarness,
   codexHarness,
+  codexConnectorArgs,
   buildArgs as buildCodexArgs,
   parseVersion as parseCodexVersion,
   mapCodexEvent,

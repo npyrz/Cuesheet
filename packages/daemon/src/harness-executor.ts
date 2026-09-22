@@ -37,6 +37,7 @@ import {
   type DiffStat,
   type GateParticipant,
   type GateReport,
+  type Fact,
   type HostEnv,
   type LoadedConfig,
   type RunEvent,
@@ -49,6 +50,7 @@ import {
 } from "@cuesheet/core";
 import type { ExecutionContext, RunExecutor } from "./executor.js";
 import { ZERO_COST } from "./executor.js";
+import { renderProjection } from "./projections.js";
 
 export interface HarnessExecutorOptions {
   registry: HarnessRegistry;
@@ -66,6 +68,10 @@ export interface HarnessExecutorOptions {
    * and `startDaemon` used as a library — from needing a usage cache.
    */
   capped?: () => Promise<readonly HarnessId[]>;
+  /** The runtime's project, used only to make MCP writes attributable. */
+  projectId?: string;
+  /** Facts visible to this project, for runtimes with no context-file support. */
+  memoryFacts?: () => Promise<Fact[]>;
 }
 
 export class NoStationError extends Error {
@@ -244,9 +250,16 @@ export function createHarnessExecutor(
         }
 
         const reviewing = station.role === "reviewer";
-        const brief = reviewing
+        let brief = reviewing
           ? await reviewBrief(ctx, stations, env)
           : ctx.run.prompt;
+        brief = await withCommonsContext(
+          brief,
+          harness,
+          station,
+          ctx.run.id,
+          options,
+        );
 
         const stepStarted = Date.now();
         const outcome = await runStation(ctx, harness, station, env, brief);
@@ -341,6 +354,45 @@ export function createHarnessExecutor(
       ...(status === "held" && error !== undefined && { error }),
     };
   };
+}
+
+async function withCommonsContext(
+  brief: string,
+  harness: Harness,
+  station: Station,
+  runId: string,
+  options: HarnessExecutorOptions,
+): Promise<string> {
+  let assembled = brief;
+
+  // Ollama is the concrete case: it is a completion endpoint with no MCP
+  // client and no context file of its own. The daemon assembles the same
+  // approved facts into its brief so "no tool loop" never means "no memory".
+  if (harness.contextFiles.length === 0 && options.memoryFacts) {
+    const facts = await options.memoryFacts();
+    if (facts.length > 0) {
+      assembled = `# Cuesheet Commons\n\n${renderProjection(facts)}\n\n${assembled}`;
+    }
+  }
+
+  // HTTP MCP configuration is shared across runs, so run identity cannot ride
+  // in connector environment variables. Put the three provenance fields in
+  // the model-visible brief instead; `memory_write` requires them and the
+  // approval inbox can therefore always answer where a capture came from.
+  // Prepended so a review brief still ends with its strict verdict format;
+  // putting connector metadata after that contract makes it less final.
+  if (
+    options.projectId !== undefined &&
+    (harness.id === "claude-code" || harness.id === "codex")
+  ) {
+    assembled =
+      `<Cuesheet memory context>\n` +
+      `For memory_search, normally use project ${options.projectId}. ` +
+      `For memory_write, use project ${options.projectId}, station ${station.id}, and run ${runId}.\n` +
+      `</Cuesheet memory context>\n\n${assembled}`;
+  }
+
+  return assembled;
 }
 
 /** A harness that ended a run badly, with the reason it gave. */

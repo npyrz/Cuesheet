@@ -157,10 +157,12 @@ export function createCodexHarness(options: CodexOptions = {}): Harness {
 
     contextFiles,
 
-    async writeConnectors(_connectors: readonly Connector[]): Promise<void> {
-      // Codex keeps MCP servers in `~/.codex/config.toml` under `[mcp_servers]`
-      // and has a `codex mcp` subcommand for managing them. Wiring that is M4;
-      // inert rather than absent, so the milestone is additive.
+    async writeConnectors(connectors: readonly Connector[]): Promise<void> {
+      const binPath = await which(bin);
+      if (binPath === null) return;
+      for (const connector of connectors) {
+        await configureCodexConnector(binPath, connector);
+      }
     },
 
     async run(ctx: RunContext): Promise<RunResult> {
@@ -231,6 +233,55 @@ export function createCodexHarness(options: CodexOptions = {}): Harness {
       return { status: "done", cost: state.total(), diff };
     },
   };
+}
+
+/** The argv observed from `codex mcp add --help` in Step 49. */
+export function codexConnectorArgs(connector: Connector): readonly string[] {
+  if ("url" in connector) {
+    return ["mcp", "add", connector.name, "--url", connector.url];
+  }
+  return [
+    "mcp",
+    "add",
+    ...Object.entries(connector.env ?? {}).flatMap(([key, value]) => [
+      "--env",
+      `${key}=${value}`,
+    ]),
+    connector.name,
+    "--",
+    connector.command,
+    ...(connector.args ?? []),
+  ];
+}
+
+async function configureCodexConnector(
+  binPath: string,
+  connector: Connector,
+): Promise<void> {
+  const current = await spawnRun(
+    binPath,
+    ["mcp", "get", connector.name, "--json"],
+    { timeoutMs: PROBE_TIMEOUT_MS },
+  );
+  const fingerprint =
+    "url" in connector
+      ? connector.url
+      : [connector.command, ...(connector.args ?? [])].join(" ");
+  if (current.code === 0 && current.stdout.includes(fingerprint)) return;
+
+  if (current.code === 0) {
+    await spawnRun(binPath, ["mcp", "remove", connector.name], {
+      timeoutMs: PROBE_TIMEOUT_MS,
+    });
+  }
+  const added = await spawnRun(binPath, codexConnectorArgs(connector), {
+    timeoutMs: PROBE_TIMEOUT_MS,
+  });
+  if (added.code !== 0) {
+    throw new Error(
+      `Codex could not register the ${connector.name} MCP server: ${added.stderr.trim() || added.stdout.trim()}`,
+    );
+  }
 }
 
 /** The default instance, registered by `defaultHarnesses()`. */

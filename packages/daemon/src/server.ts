@@ -13,6 +13,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import { stat } from "node:fs/promises";
 import type { ContextFile } from "@cuesheet/harness";
+import type { Connector } from "@cuesheet/harness";
 import {
   addStation,
   buildLedger,
@@ -37,6 +38,7 @@ import {
   runsDir,
   stationIdTaken,
   type HostEnv,
+  type Fact,
   type LoadedConfig,
   type Project,
   type ProjectRegistry,
@@ -82,6 +84,7 @@ import {
   createCommonsProjector,
   type CommonsProjector,
 } from "./projections.js";
+import { createCommonsMcpHandler, type MemoryWriteInput } from "./mcp.js";
 import {
   currentLock,
   findRunningDaemon,
@@ -166,6 +169,8 @@ export interface StartDaemonOptions {
   commonsInbox?: CommonsInbox;
   /** Context targets declared by the registered harnesses. */
   contextFiles?: () => readonly ContextFile[];
+  /** Register daemon-owned MCP servers in the installed harness runtimes. */
+  writeConnectors?: (connectors: readonly Connector[]) => Promise<void>;
   replayLimit?: number;
   /** Off in tests, so a test run never clobbers a real daemon's lockfile. */
   writeLockFile?: boolean;
@@ -182,6 +187,10 @@ export interface ExecutorFactoryDeps {
   /** Reads the currently loaded config. Call per run, never cache the result. */
   config: () => LoadedConfig;
   env: HostEnv;
+  /** The project this executor belongs to; there is no daemon-wide active one. */
+  projectId: string;
+  /** User facts plus facts tagged for this project, read at run time. */
+  memoryFacts: () => Promise<Fact[]>;
   /**
    * Which harnesses are at or past `block_at` right now.
    *
@@ -301,6 +310,12 @@ export async function startDaemon(
       executorFactory: (deps: ExecutorFactoryDeps) =>
         (options.executorFactory as (d: ExecutorFactoryDeps) => RunExecutor)({
           ...deps,
+          memoryFacts: async () =>
+            (await commons.list()).filter(
+              (fact) =>
+                fact.projects.length === 0 ||
+                fact.projects.includes(deps.projectId),
+            ),
           capped: async () =>
             cappedHarnesses(
               (await usage.get()).harnesses,
@@ -410,6 +425,19 @@ export async function startDaemon(
       throw new PortInUseError(requestedPort, host, existing);
     }
     throw error;
+  }
+
+  // The endpoint has to be listening before a CLI health-checks it during
+  // `mcp add`. Registration failures degrade recall rather than taking the
+  // daemon down; the ordinary context-file projections still work.
+  if (options.writeConnectors) {
+    try {
+      await options.writeConnectors([
+        { name: "cuesheet-commons", url: `http://${host}:${boundPort}/mcp` },
+      ]);
+    } catch (error) {
+      app.log.warn(`Could not register Commons MCP: ${errorText(error)}`);
+    }
   }
 
   if (writeLockFile) {
@@ -654,6 +682,51 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get("/usage", async () => usage.get());
 
   // ── The Commons ───────────────────────────────────────────────────────────
+
+  const mcp = createCommonsMcpHandler({
+    store: commons,
+    capture: captureMemory,
+  });
+
+  app.post("/mcp", async (request, reply) => {
+    // The official transport owns the raw response, including whether it is a
+    // JSON response or an SSE stream. Fastify must not serialize a second one.
+    reply.hijack();
+    try {
+      await mcp.handle(request.raw, reply.raw, request.body);
+    } catch (error) {
+      if (!reply.raw.headersSent) {
+        reply.raw.writeHead(500, { "content-type": "application/json" });
+        reply.raw.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: { code: -32603, message: errorText(error) },
+          }),
+        );
+      }
+    }
+  });
+  app.get("/mcp", async (_request, reply) =>
+    reply
+      .code(405)
+      .header("allow", "POST")
+      .send({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32000, message: "Method not allowed." },
+      }),
+  );
+  app.delete("/mcp", async (_request, reply) =>
+    reply
+      .code(405)
+      .header("allow", "POST")
+      .send({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32000, message: "Method not allowed." },
+      }),
+  );
 
   /**
    * **Global, like `/usage` and for a related reason.** The store is one
@@ -920,6 +993,54 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return runtime;
   }
 
+  async function captureMemory(input: MemoryWriteInput): Promise<unknown> {
+    if (!isProjectId(input.project)) {
+      throw new MemoryCaptureError(400, "`project` is not a project id.");
+    }
+    const runtime = await runtimes.get(input.project);
+    if (!runtime) throw new MemoryCaptureError(404, "No such project.");
+    if (!isRunId(input.run)) {
+      throw new MemoryCaptureError(400, "`run` is not a run id.");
+    }
+    if ((await runtime.store.get(input.run)) === null) {
+      throw new MemoryCaptureError(404, "The source run does not exist.");
+    }
+    if (
+      !runtime
+        .config()
+        .config.station.some((candidate) => candidate.id === input.station)
+    ) {
+      throw new MemoryCaptureError(
+        400,
+        `Station "${input.station}" is not configured for this project.`,
+      );
+    }
+
+    const write = {
+      title: input.title,
+      body: input.body,
+      tags: input.tags,
+      projects: [runtime.project.id],
+      station: input.station,
+      run: input.run,
+    };
+    if (runtime.config().config.commons.approval === "auto") {
+      try {
+        const written = await commons.write(write);
+        await projector.regenerate();
+        return { status: "approved", ...written };
+      } catch (error) {
+        if (error instanceof CommonsError) {
+          throw new MemoryCaptureError(400, error.message);
+        }
+        throw error;
+      }
+    }
+
+    const memory = await commonsInbox.capture(write);
+    return { status: "pending", memory };
+  }
+
   /**
    * Capture is project-scoped because the policy and the default fact scope
    * both belong to the project that ran the agent. It is the hook Step 49's
@@ -949,49 +1070,27 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     if (typeof run !== "string" || run.trim() === "") {
       return reply.code(400).send({ error: "`run` is required." });
     }
-    if (!isRunId(run)) {
-      return reply.code(400).send({ error: "`run` is not a run id." });
-    }
-    if ((await runtime.store.get(run)) === null) {
-      return reply.code(404).send({ error: "The source run does not exist." });
-    }
-    if (
-      !runtime
-        .config()
-        .config.station.some((candidate) => candidate.id === station)
-    ) {
-      return reply.code(400).send({
-        error: `Station "${station}" is not configured for this project.`,
-      });
-    }
     if (body["tags"] !== undefined && !stringArray(body["tags"])) {
       return reply.code(400).send({ error: "`tags` must be strings." });
     }
-    const projectId = runtime.project.id;
-    const input = {
-      title,
-      body: text,
-      tags: stringArray(body["tags"]) ? body["tags"] : [],
-      projects: [projectId],
-      station,
-      run,
-    };
-
-    if (runtime.config().config.commons.approval === "auto") {
-      try {
-        const written = await commons.write(input);
-        await projector.regenerate();
-        return reply.code(201).send({ status: "approved", ...written });
-      } catch (error) {
-        if (error instanceof CommonsError) {
-          return reply.code(400).send({ error: error.message });
-        }
-        throw error;
+    try {
+      const captured = (await captureMemory({
+        title,
+        body: text,
+        tags: stringArray(body["tags"]) ? body["tags"] : [],
+        project: runtime.project.id,
+        station,
+        run,
+      })) as { status: "approved" | "pending" };
+      return reply
+        .code(captured.status === "approved" ? 201 : 202)
+        .send(captured);
+    } catch (error) {
+      if (error instanceof MemoryCaptureError) {
+        return reply.code(error.status).send({ error: error.message });
       }
+      throw error;
     }
-
-    const memory = await commonsInbox.capture(input);
-    return reply.code(202).send({ status: "pending", memory });
   });
 
   // ── Stations, per project ────────────────────────────────────────────────
@@ -1400,6 +1499,16 @@ class CommonsConflictError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CommonsConflictError";
+  }
+}
+
+class MemoryCaptureError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "MemoryCaptureError";
   }
 }
 

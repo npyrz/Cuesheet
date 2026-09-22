@@ -21,6 +21,7 @@ import { checkPath, type Station } from "@cuesheet/core";
 import {
   buildArgs,
   claudeCodeHarness,
+  claudeConnectorArgs,
   createClaudeCodeHarness,
   createStreamState,
   observedStation,
@@ -97,6 +98,26 @@ describe("buildArgs", () => {
     // The prompt is text the user typed; on Windows a `.cmd` is routed through
     // `cmd.exe`, and argv is where quoting bugs become injection bugs.
     expect(buildArgs(station()).join(" ")).not.toContain("prompt");
+  });
+});
+
+describe("Commons connector registration", () => {
+  it("registers the daemon as a user-scoped HTTP MCP server", () => {
+    expect(
+      claudeConnectorArgs({
+        name: "cuesheet-commons",
+        url: "http://127.0.0.1:7373/mcp",
+      }),
+    ).toEqual([
+      "mcp",
+      "add",
+      "--scope",
+      "user",
+      "--transport",
+      "http",
+      "cuesheet-commons",
+      "http://127.0.0.1:7373/mcp",
+    ]);
   });
 });
 

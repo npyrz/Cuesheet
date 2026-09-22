@@ -148,8 +148,12 @@ export function createClaudeCodeHarness(
 
     contextFiles,
 
-    async writeConnectors(_connectors: readonly Connector[]): Promise<void> {
-      // MCP registration is M4. Deliberately inert rather than absent.
+    async writeConnectors(connectors: readonly Connector[]): Promise<void> {
+      const binPath = await which(bin);
+      if (binPath === null) return;
+      for (const connector of connectors) {
+        await configureClaudeConnector(binPath, connector);
+      }
     },
 
     async run(ctx: RunContext): Promise<RunResult> {
@@ -217,6 +221,73 @@ export function createClaudeCodeHarness(
       return { status: "done", cost: state.total(), diff };
     },
   };
+}
+
+/**
+ * Claude Code owns its config format, so use the CLI that owns it.
+ *
+ * `--scope user` is deliberate: the Cuesheet daemon is one machine-level
+ * service shared by every project. A project-local `.mcp.json` entry would be
+ * duplicated into every checkout and would ask for approval in every one.
+ */
+export function claudeConnectorArgs(connector: Connector): readonly string[] {
+  if ("url" in connector) {
+    return [
+      "mcp",
+      "add",
+      "--scope",
+      "user",
+      "--transport",
+      "http",
+      connector.name,
+      connector.url,
+    ];
+  }
+  return [
+    "mcp",
+    "add",
+    "--scope",
+    "user",
+    ...Object.entries(connector.env ?? {}).flatMap(([key, value]) => [
+      "--env",
+      `${key}=${value}`,
+    ]),
+    connector.name,
+    "--",
+    connector.command,
+    ...(connector.args ?? []),
+  ];
+}
+
+async function configureClaudeConnector(
+  binPath: string,
+  connector: Connector,
+): Promise<void> {
+  const current = await spawnRun(binPath, ["mcp", "get", connector.name], {
+    timeoutMs: PROBE_TIMEOUT_MS,
+  });
+  const fingerprint =
+    "url" in connector
+      ? connector.url
+      : [connector.command, ...(connector.args ?? [])].join(" ");
+  if (current.code === 0 && current.stdout.includes(fingerprint)) return;
+
+  if (current.code === 0) {
+    // No scope flag: Claude removes the matching entry from whichever scope
+    // owns it. That repairs an older local registration before writing the
+    // machine-level one rather than leaving two names that shadow each other.
+    await spawnRun(binPath, ["mcp", "remove", connector.name], {
+      timeoutMs: PROBE_TIMEOUT_MS,
+    });
+  }
+  const added = await spawnRun(binPath, claudeConnectorArgs(connector), {
+    timeoutMs: PROBE_TIMEOUT_MS,
+  });
+  if (added.code !== 0) {
+    throw new Error(
+      `Claude Code could not register the ${connector.name} MCP server: ${added.stderr.trim() || added.stdout.trim()}`,
+    );
+  }
 }
 
 /**

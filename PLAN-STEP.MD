@@ -61,13 +61,13 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
-| 12 · The Commons | 46–50 | 🔵 beta | ◐ **Steps 46–48 done** — facts are committed files, projections are byte-stable, and agent captures wait in a human approval inbox by default |
+| 12 · The Commons | 46–50 | 🔵 beta | ◐ **Steps 46–49 done** — facts are committed files, projections are byte-stable, captures wait for approval, and MCP recall reaches the long tail; sync remains |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 48 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 50 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -118,7 +118,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 
 **Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
 - [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. The launch surface, the missing-folder state and the keyboard route to the switcher were explicitly *not* ticked by that phase and were built in Steps 40–41; Phase 11 still says "the Desk rebuilt" because the project view, the run surface and the design system are Steps 42–44
-- [ ] **M4 · Commons** — in progress: the git-backed store, `CLAUDE.md`/`AGENTS.md` projections and approval inbox are done; MCP recall and sync remain in Steps 49–50. *The durable layer the README argues for.* **Phase 12** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
+- [ ] **M4 · Commons** — in progress: the git-backed store, projections, approval inbox and MCP recall are done; cross-machine sync remains in Step 50. *The durable layer the README argues for.* **Phase 12** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
 - [x] **M2 · Limits** — usage windows, pre-run warnings, ledger and seat-preserving fallback routing. *Users hit caps in week one; this is not a polish item.* **Phase 10, done.**
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
@@ -1580,15 +1580,29 @@ The README is blunt about why and the reasoning should not be softened during im
 
 **Approval is the promotion transaction.** The Desk opens each captured title, body, fact id, tags and project scope as editable fields. Approval refuses to overwrite an existing fact silently, writes the edited fact with the original Station, Run and capture time, regenerates projections, and only then removes the pending file. A failed write or projection leaves the item retryable. Discard removes only the pending item.
 
-**The hook exists before the MCP tool.** The project capture route is the HTTP seam Step 49's `memory_write` connector will call. That keeps Step 48 testable end to end without pretending MCP recall is built: a capture can be posted with Run and Station provenance today, appears in the Desk, and cannot reach a context file until the approve route succeeds.
+**The hook existed before the MCP tool.** The project capture route was the HTTP seam Step 49's `memory_write` connector then reused. That kept Step 48 testable end to end before recall existed, and now keeps both entry points behind the same policy: a capture posted with Run and Station provenance appears in the Desk and cannot reach a context file until the approve route succeeds.
 
-### Step 49 — MCP recall
+### Step 49 — MCP recall ✅
 
-An MCP server exposing `memory_search` / `memory_write`, registered through `writeConnectors()` — inert in all three harnesses today, for this.
+An MCP server exposing `memory_search` / `memory_write`, registered through `writeConnectors()` — live for Claude Code and Codex, and deliberately inert for mock and Ollama because neither has an MCP client to configure.
 
 Why both static files *and* a server: files cost nothing and are always loaded, including by the local models of Phase 9 that will never reliably decide to call a tool; the server carries the long tail that would blow a context budget if pasted into every session.
 
-**Done when:** a Station recalls a fact that is *not* in its projected file, and a local model that never calls the tool still sees the projected ones.
+**Done when:** a Station recalls a fact that is *not* in its projected file ✅, and a local model that never calls the tool still sees the projected ones ✅.
+
+#### What the work settled
+
+**The MCP server is another route on the daemon, not another process.** `/mcp` is a stateless Streamable HTTP endpoint built on the official SDK. The Commons, approval policy and project runtimes already live behind the daemon's one loopback port; a stdio sidecar would have needed a second way to find all three, and the packaged Electron app would have needed a second Node entry point solely to start it. Stateless is enough because both tools read durable state on every call and never need a hidden session.
+
+**Harnesses register the endpoint through the CLI that owns their config.** Claude Code gets a user-scoped HTTP server through `claude mcp add`; Codex gets the same endpoint through `codex mcp add --url`. `writeConnectors()` is finally live, and the daemon invokes it only after the port is listening so the CLIs' health checks have something to reach. Registration is idempotent, skips a CLI that is not installed, and degrades to the static projection if one runtime refuses the change rather than making Cuesheet itself unavailable.
+
+**`memory_write` crosses the Step 48 boundary instead of finding a back door around it.** It requires project, Station and Run provenance; Cuesheet adds those identifiers to the brief for the MCP-capable CLI harnesses, then the tool hands the capture to the same service as `POST /projects/:id/commons/captures`. The configured `inbox` or `auto` policy therefore decides both paths, and the tool cannot write an approved fact by accident.
+
+**Search is global only when the caller asks for the global Commons.** `memory_search` accepts a project id and then returns user facts plus facts tagged for that project. Omitting the id searches the operator-owned store across projects — the explicit route by which a Station can recall a fact absent from its current projection. The run brief tells a Station to pass its project normally, so cross-project recall is a deliberate query rather than the default.
+
+**Ollama gets the static half assembled into its brief.** It has neither an MCP client nor an always-loaded context file, and `contextFiles: []` has said so since Step 35. The executor now prepends the approved user and project facts for any runtime with no declared context file. That proves the second half of the done-when against the actual local-model shape instead of pretending a file exists that Ollama reads.
+
+The protocol test uses an MCP client, not a direct HTTP assertion: it negotiates the transport, lists both tools, recalls a fact absent from the project's generated file, and sends a write that appears in the approval inbox with its Run provenance. A second end-to-end run captures the exact brief handed to an Ollama-shaped harness and finds the projected fact there.
 
 ### Step 50 — Sync
 
