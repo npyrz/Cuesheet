@@ -71,7 +71,7 @@ The arrows mean “is depended on by.” The important boundary is that `core` h
 |---|---|
 | `core` | Domain and wire types, config schemas, roles, leashes, gates, limits, project registry, Commons fact format, paths |
 | `harness` | Harness interface, registry, process/workspace helpers, built-in `mock`, `claude-code`, `codex`, and `ollama` adapters |
-| `daemon` | API, project runtimes, queues, execution, event buses, run storage, usage cache, Commons storage, projection and MCP recall |
+| `daemon` | API, project runtimes, queues, execution, event buses, run storage, usage cache, Commons storage, projection, MCP recall, and Git sync |
 | `ui` | Responsive React Desk; project, run, limits, ledger, and first-run surfaces |
 | `desktop` | Electron lifecycle, daemon ownership/attachment, preload bridge, tray, notifications, native folder picker |
 | `cli` | Empty package today; a real client is planned for Phase 13 |
@@ -86,13 +86,12 @@ flowchart TB
     Current --> C1[Multi-project daemon and Desk]
     Current --> C2[Sequential cues and Gates]
     Current --> C3[Limits, ledger, fallback]
-    Current --> C4[Commons store, approval, projections, recall]
+    Current --> C4[Commons store, approval, projections, recall, sync]
 
-    Planned --> P1[Commons cross-machine sync]
-    Planned --> P2[Working CLI]
-    Planned --> P3[Phone pairing and remote access]
-    Planned --> P4[SQLite, migration framework, signing]
-    Planned --> P5[Caller, On-Call, fleet, ecosystem]
+    Planned --> P1[Working CLI]
+    Planned --> P2[Phone pairing and remote access]
+    Planned --> P3[SQLite, migration framework, signing]
+    Planned --> P4[Caller, On-Call, fleet, ecosystem]
 ```
 
 The UI is already responsive, but that is not the same as having a phone client. Likewise, the CLI package exists, but its command surface does not.

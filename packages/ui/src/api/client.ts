@@ -229,6 +229,37 @@ export interface CommonsMutation {
   reason?: string;
 }
 
+export interface CommonsSyncStatus {
+  configured: boolean;
+  remote?: string;
+  branch?: string;
+  merging: boolean;
+  conflicts: string[];
+}
+
+export interface CommonsSyncResult extends CommonsSyncStatus {
+  outcome: "up-to-date" | "pulled" | "pushed" | "conflict" | "resolved";
+}
+
+export async function fetchCommonsSync(): Promise<CommonsSyncStatus> {
+  return request("/commons/sync");
+}
+
+export async function configureCommonsSync(
+  remote: string,
+): Promise<CommonsSyncStatus> {
+  return request("/commons/sync", {
+    method: "PUT",
+    body: JSON.stringify({ remote }),
+  });
+}
+
+export async function runCommonsSync(
+  operation: "pull" | "push" | "continue",
+): Promise<CommonsSyncResult> {
+  return request(`/commons/sync/${operation}`, { method: "POST" });
+}
+
 export async function approveMemory(
   pendingId: string,
   edits: MemoryApproval,

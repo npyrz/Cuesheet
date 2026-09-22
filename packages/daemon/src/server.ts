@@ -72,6 +72,7 @@ import {
 import {
   createCommonsStore,
   CommonsError,
+  CommonsSyncError,
   type CommonsStore,
 } from "./commons.js";
 import {
@@ -829,6 +830,75 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // The whole shape, `reason` included: "history is unavailable" and
     // "nothing has happened yet" are different answers.
     return commons.history(limit);
+  });
+
+  /**
+   * Sync is global for the same reason the Commons itself is global. The
+   * remote lives in the repository's own `.git/config`; putting it in one
+   * project's `cuesheet.toml` would let whichever project loaded last redefine
+   * where every other project's memory is pushed.
+   */
+  app.get("/commons/sync", async (_request, reply) => {
+    try {
+      return await commons.syncStatus();
+    } catch (error) {
+      if (error instanceof CommonsSyncError) {
+        return reply.code(error.status).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.put("/commons/sync", async (request, reply) => {
+    const body = objectBody(request.body);
+    if (body === null || typeof body["remote"] !== "string") {
+      return reply.code(400).send({ error: "`remote` is required." });
+    }
+    try {
+      return await commons.configureSync(body["remote"]);
+    } catch (error) {
+      if (error instanceof CommonsSyncError) {
+        return reply.code(error.status).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/commons/sync/pull", async (_request, reply) => {
+    try {
+      const result = await commons.pull();
+      if (result.outcome !== "conflict") await projector.regenerate();
+      return result;
+    } catch (error) {
+      if (error instanceof CommonsSyncError) {
+        return reply.code(error.status).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/commons/sync/push", async (_request, reply) => {
+    try {
+      return await commons.push();
+    } catch (error) {
+      if (error instanceof CommonsSyncError) {
+        return reply.code(error.status).send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/commons/sync/continue", async (_request, reply) => {
+    try {
+      const result = await commons.continueSync();
+      if (result.outcome === "resolved") await projector.regenerate();
+      return result;
+    } catch (error) {
+      if (error instanceof CommonsSyncError) {
+        return reply.code(error.status).send({ error: error.message });
+      }
+      throw error;
+    }
   });
 
   app.get("/commons/:id", async (request, reply) => {

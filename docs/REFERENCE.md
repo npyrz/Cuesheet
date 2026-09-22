@@ -135,8 +135,8 @@ adding a file to the repository.
 The Stations, Gate, cuesheet, limits, and Commons approval policy below are
 live. The later Caller, On-Call, trigger, and remote tables are included to
 document the preserved schema only; the parser retains them with warnings, but
-their product features are not implemented yet. Other Commons keys are kept
-for later steps; only `approval` is read today.
+their product features are not implemented yet. Commons Git sync is configured
+globally from the Desk or HTTP API, not from a project configuration.
 
 ```toml
 [desk]
@@ -228,10 +228,10 @@ distinct_vendors = 2
 blocking         = ["security", "correctness", "data-loss", "unreproduced"]
 merges           = false
 
-# Only approval is live; the other Commons keys are preserved for later steps.
+# Only approval is project configuration. Store, projection, MCP, and sync
+# behavior are global and controlled by the daemon.
 [commons]
 store      = "~/.cuesheet/commons"
-sync       = "git@github.com:you/commons.git"
 project_to = ["CLAUDE.md", "AGENTS.md"]
 mcp        = true
 approval   = "inbox"
@@ -252,14 +252,14 @@ that role. Cuesheet refuses unsafe reseating instead of silently changing what
 the step is allowed to do.
 
 The parser currently implements `[desk]`, `[[station]]`, `[gate.*]`,
-`[cuesheet.*]`, `[limits]`, and `[commons].approval`. The Commons MCP endpoint
-and its Claude Code/Codex connector registration are automatic rather than
-controlled by this table. It preserves several
+`[cuesheet.*]`, `[limits]`, and `[commons].approval`. The Commons MCP endpoint,
+its Claude Code/Codex connector registration, and its Git remote are global
+rather than controlled by this table. It preserves several
 planned top-level tables while warning that they are not active: `[caller]`,
 `[oncall]`, `[[trigger]]`, and `[remote]`. Do not treat a successfully parsed
 deferred table as a working feature. Commons `store`, `sync`, `project_to`, and
-`mcp` settings are also preserved but do not yet override the built-in paths or
-automatic connector behavior.
+`mcp` settings from older examples are also preserved but do not override the
+built-in paths, repository remote, or automatic connector behavior.
 
 ## Roles and leashes
 
@@ -426,15 +426,20 @@ Implemented today:
 
 - create, read, list, delete, and history routes;
 - provenance in fact files and commit messages;
-- project/user scoping; and
-- byte-stable `CLAUDE.md` and `AGENTS.md` projection; and
+- project/user scoping;
+- byte-stable `CLAUDE.md` and `AGENTS.md` projection;
 - a persistent approval inbox with edit, approve, discard, and explicit
-  per-project auto approval.
+  per-project auto approval;
+- MCP `memory_search` / `memory_write`; and
+- pull/push sync through a Git `origin` the operator controls.
 
-Not implemented yet:
-
-- MCP search/write recall; and
-- cross-machine Git synchronization.
+Configure sync in the Desk's **Memory inbox** or with
+`PUT /api/commons/sync`. Pull uses Git's normal merge machinery. A textual conflict
+is left in the Commons working tree, returned as a list of paths, and shown in
+the Desk; Cuesheet never chooses one side. Edit those files, then use **continue
+after resolution** (or `POST /api/commons/sync/continue`) to record the merge.
+Successful pulls and resolutions regenerate projections. HTTPS credentials in
+a remote URL are redacted from API responses.
 
 Writing to a context file that has incomplete or duplicated Cuesheet markers is
 refused rather than risking damage to hand-written content.
@@ -459,6 +464,11 @@ the browser Desk's normal surface through the Vite proxy.
 | `GET` | `/api/commons/:id` | Read one fact. |
 | `DELETE` | `/api/commons/:id` | Remove one fact and regenerate projections. |
 | `GET` | `/api/commons/history?limit=50` | Read abbreviated Commons Git history. |
+| `GET` | `/api/commons/sync` | Read local remote, branch, merge, and conflict status without network access. |
+| `PUT` | `/api/commons/sync` | Add or replace `origin` with `{ "remote": "..." }`. |
+| `POST` | `/api/commons/sync/pull` | Fetch and merge, regenerating projections after a clean result. |
+| `POST` | `/api/commons/sync/push` | Push the current Commons branch. |
+| `POST` | `/api/commons/sync/continue` | Commit a human-resolved merge and regenerate projections. |
 | `POST` | `/api/standbys/:id` | Answer a standby with `{ "answer": "go" }` or `{ "answer": "no" }`. |
 
 ### Project routes
@@ -572,8 +582,8 @@ Current, verifiable properties:
   store their model API credentials.
 - Project registry, run records, and Commons facts are local files.
 - The Commons MCP server shares the daemon's loopback-only HTTP listener.
-- Commons sync is not implemented, and the product has no hosted relay,
-  account, or telemetry path.
+- Commons sync talks directly to the operator's configured Git remote. Cuesheet
+  has no hosted relay, account, or telemetry path, and Git owns authentication.
 - File-backed IDs are validated before they are used as path segments.
 - In-process workspace access resolves containment and symlinks before applying
   leash rules.
@@ -660,6 +670,13 @@ explicitly contains `[commons] approval = "auto"`.
 
 That is intentional. Cuesheet owns only its marked block. If marker pairs are
 damaged or duplicated, fix them manually before the next projection can run.
+
+### Commons sync stopped on a conflict
+
+This is deliberate. Open the paths listed in the Desk under **Cross-machine
+sync**, keep the correct parts of both sides, remove Git's conflict markers,
+and click **continue after resolution**. Normal Commons writes will not create
+new history while a merge remains unresolved.
 
 ### Can Cuesheet run fully offline?
 

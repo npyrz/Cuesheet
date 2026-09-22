@@ -2,7 +2,7 @@
 
 ## What exists now
 
-The Commons is one global directory at `~/.cuesheet/commons`. Each fact is a Markdown file with TOML frontmatter. The store can read, list, write, delete, and report history. Mutations try to commit through git with a Cuesheet-specific identity and report whether the commit succeeded.
+The Commons is one global directory at `~/.cuesheet/commons`. Each fact is a Markdown file with TOML frontmatter. The store can read, list, write, delete, report history, and synchronize through an operator-owned Git remote. Mutations try to commit through git with a Cuesheet-specific identity and report whether the commit succeeded.
 
 Git is optional at runtime. If it is unavailable, fact files are still written and the API reports that history was not recorded. The store remains readable with ordinary filesystem and git tools.
 
@@ -15,6 +15,7 @@ flowchart LR
     Projector[Serialized projector]
     Context[Harness context files]
     MCP[Streamable HTTP MCP recall]
+    Remote[Operator-owned Git remote]
 
     API --> Store
     Store --> Fact
@@ -22,6 +23,7 @@ flowchart LR
     Store --> Projector
     Projector --> Context
     Store --> MCP
+    Store <--> Remote
 ```
 
 ## Fact scope
@@ -78,7 +80,7 @@ Projection work is serialized so adjacent writes cannot finish out of order and 
 
 ## Lifecycle
 
-Regeneration currently happens after Commons mutations, at daemon boot, and when a new project is opened. Missing project roots are skipped rather than recreated.
+Regeneration currently happens after Commons mutations, successful pulls and conflict resolutions, at daemon boot, and when a new project is opened. Missing project roots are skipped rather than recreated.
 
 ## Recall and capture
 
@@ -89,13 +91,13 @@ flowchart LR
     Store[Committed Commons fact]
     Static[Static projection]
     Recall[MCP memory search and write]
-    Sync[Remote git sync - planned]
+    Sync[Operator-owned Git remote]
 
     Capture --> Inbox
     Inbox --> Store
     Store --> Static
     Store --> Recall
-    Store -.-> Sync
+    Store <--> Sync
 ```
 
 The daemon serves stateless Streamable HTTP MCP at `/mcp`. Claude Code and
@@ -105,4 +107,17 @@ the global operator-owned store. `memory_write` requires project, Station, and
 Run provenance and enters the same `inbox` or `auto` approval path as the HTTP
 capture route.
 
-Cross-machine git sync is still planned.
+Sync configuration lives in the Commons repository as its `origin`, not in a
+project's `cuesheet.toml`: one global store cannot safely take its destination
+from whichever project loaded last. The Desk and global HTTP routes expose
+configure, pull, push, and continue-after-resolution operations.
+
+Before network work, local edits are committed so no operator change is hidden
+inside a merge. Pull fetches and invokes Git's normal merge, including for two
+independently initialized Commons histories. A clean merge proceeds; a textual
+conflict remains in the working tree with both sides and is returned to the
+Desk. No `ours`, `theirs`, rebase, force push, or automatic abort is used.
+Regular fact mutations refuse to create history while unmerged paths remain.
+After a human edits the listed files, an explicit continuation stages and
+commits the resolution. Operations on one daemon are serialized so a fact
+commit cannot overlap a fetch or merge.

@@ -61,13 +61,13 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 9 · Local models (`ollama`) | 35–36 | 🔵 beta | ✅ **Done.** The harness ships, `worker`-only and refusing other seats before it asks the model; a real local run landed at `usd: 0` having touched zero files |
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
-| 12 · The Commons | 46–50 | 🔵 beta | ◐ **Steps 46–49 done** — facts are committed files, projections are byte-stable, captures wait for approval, and MCP recall reaches the long tail; sync remains |
+| 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 50 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 51 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -77,7 +77,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
 
-**Current state:** development is on the beta track in Phase 12; the latest release remains `v0.1.0-alpha`. “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
+**Current state:** development is on the beta track in Phase 13; the latest release remains `v0.1.0-alpha`. “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
@@ -118,7 +118,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 
 **Known limitation, still open:** a Gate reviews the *workspace diff*, so two Stations sharing a workspace are reviewed together. Per-Station attribution needs the Commons or per-cue diffs — carried into Phase 12's open questions rather than left here to be rediscovered.
 - [x] **Projects** — the app opens on one, switches between them, and remembers which you were in. Not a README milestone, which is itself the finding: it was assumed rather than specified. **Phase 8, done.** One daemon serves many; an alpha profile upgrades into it losing nothing; a switch disturbs no run. The launch surface, the missing-folder state and the keyboard route to the switcher were explicitly *not* ticked by that phase and were built in Steps 40–41; Phase 11 still says "the Desk rebuilt" because the project view, the run surface and the design system are Steps 42–44
-- [ ] **M4 · Commons** — in progress: the git-backed store, projections, approval inbox and MCP recall are done; cross-machine sync remains in Step 50. *The durable layer the README argues for.* **Phase 12** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
+- [x] **M4 · Commons** — the git-backed store, projections, approval inbox, MCP recall, and human-resolved cross-machine sync work. *The durable layer the README argues for.* **Phase 12, done** — moved behind Projects because its own scoping question was unanswerable until a project was a thing, which was a dependency rather than a demotion
 - [x] **M2 · Limits** — usage windows, pre-run warnings, ledger and seat-preserving fallback routing. *Users hit caps in week one; this is not a polish item.* **Phase 10, done.**
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
@@ -1604,13 +1604,57 @@ Why both static files *and* a server: files cost nothing and are always loaded, 
 
 The protocol test uses an MCP client, not a direct HTTP assertion: it negotiates the transport, lists both tools, recalls a fact absent from the project's generated file, and sends a write that appears in the approval inbox with its Run provenance. A second end-to-end run captures the exact brief handed to an Ollama-shaped harness and finds the projected fact there.
 
-### Step 50 — Sync
+### Step 50 — Sync ✅
 
 A git remote the operator controls. Push, pull, and a conflict that a human resolves rather than a merge strategy that silently picks.
 
-**Done when:** two checkouts of the same Commons converge, and a conflicting edit on both sides surfaces instead of vanishing.
+**Done when:** two checkouts of the same Commons converge ✅, and a conflicting edit on both sides surfaces instead of vanishing ✅.
 
-**Done when (phase):** a fact learned by `claude-code` on one machine is in `codex`'s context on another, with no vendor involved in moving it.
+**Done when (phase):** a fact learned by `claude-code` on one machine is in `codex`'s context on another, with no vendor involved in moving it ✅.
+
+#### What the work settled
+
+**The remote belongs to the repository, not to a project.** There is one
+Commons and the daemon has no active project, so reading `[commons].sync` from
+whichever project happened to load last would make one project redefine every
+other project's destination. `origin` lives in the Commons Git config and the
+global Desk/API surface configures it. Older `sync` config keys remain
+preserved but inert, like the other path overrides the built-in store does not
+yet honor.
+
+**Pull is a real merge and a conflict is product state.** Cuesheet fetches and
+merges without `ours`, `theirs`, rebase, force, or an automatic abort. A clean
+divergence gets an ordinary merge commit. An overlapping edit leaves Git's
+markers and both wordings in the fact file, returns the exact conflicted paths,
+and replaces pull/push in the Desk with **continue after resolution**. That
+continuation refuses obvious remaining markers, stages the operator's edits,
+and records the merge under the Cuesheet identity. It is the point at which a
+human's decision becomes history.
+
+**An unresolved merge stops new history rather than poisoning it.** The store
+checks for unmerged paths before its usual `git add -A`; a fact can still be
+edited to resolve the file, but a normal write cannot accidentally commit
+conflict markers as if it were a completed memory. Writes, removes, pulls,
+pushes, configuration, and continuation share one serialized operation queue,
+so a fact commit cannot cross a fetch or merge halfway through.
+
+**Fresh checkouts do not require a hidden clone path.** New Commons repositories
+choose `main` explicitly because Git's default differs by machine. Before sync,
+any local plain-file state is snapshotted; two independently initialized stores
+can then merge their identical attributes roots with unrelated-history support.
+This keeps the Step 46 promise — the folder works before a remote exists — while
+letting a second machine attach after the first already has history.
+
+**Projection happens only after coherent state.** A successful pull or completed
+resolution regenerates all context targets. A conflicted pull does not project
+a half-merged or temporarily unparsable fact. The phase test writes a
+user-scoped fact with `claude-code` provenance on one machine, pushes it to a
+bare remote, pulls it through a second daemon, and finds it in that machine's
+Codex `AGENTS.md`; no model vendor participates in transport.
+
+**The network boundary stays Git's.** Cuesheet adds no account, hosted relay, or
+credential store. The operator supplies any Git URL their installed Git can
+authenticate to, and HTTPS userinfo is redacted from API responses and errors.
 
 ### Open questions to settle in the work, not now
 

@@ -470,6 +470,54 @@ textarea {
   background: color-mix(in srgb, var(--ok) 8%, var(--panel));
 }
 
+.memory-sync {
+  display: grid;
+  gap: var(--space-5);
+  margin: var(--space-7) 0;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.memory-sync h2,
+.memory-sync p {
+  margin: 0;
+}
+
+.memory-sync h2 {
+  font-size: var(--text-md);
+}
+
+.memory-sync > div > p {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.memory-sync-configure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: var(--space-4);
+}
+
+.memory-sync-configure label {
+  display: grid;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.memory-sync-configure input {
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+}
+
 .memory-list {
   display: grid;
   gap: var(--space-7);
@@ -540,7 +588,8 @@ textarea {
 }
 
 @media (max-width: 620px) {
-  .memory-fields {
+  .memory-fields,
+  .memory-sync-configure {
     grid-template-columns: 1fr;
   }
 }

@@ -104,6 +104,16 @@ export interface CommonsStore {
    * to say "history is unavailable", not "nothing has happened".
    */
   history(limit?: number): Promise<CommonsHistory>;
+  /** Local Git state only; reading status never contacts the remote. */
+  syncStatus(): Promise<CommonsSyncStatus>;
+  /** Add or replace the operator-owned `origin` remote. */
+  configureSync(remote: string): Promise<CommonsSyncStatus>;
+  /** Fetch and merge. A textual conflict is left in the worktree for a human. */
+  pull(): Promise<CommonsSyncResult>;
+  /** Push the current Commons branch to `origin`. */
+  push(): Promise<CommonsSyncResult>;
+  /** Commit a merge after the operator has resolved every conflicted file. */
+  continueSync(): Promise<CommonsSyncResult>;
 }
 
 export interface CommonsHistory {
@@ -113,10 +123,33 @@ export interface CommonsHistory {
   reason?: string;
 }
 
+export interface CommonsSyncStatus {
+  configured: boolean;
+  /** Credentials in an HTTPS URL are never returned over the API. */
+  remote?: string;
+  branch?: string;
+  merging: boolean;
+  conflicts: string[];
+}
+
+export interface CommonsSyncResult extends CommonsSyncStatus {
+  outcome: "up-to-date" | "pulled" | "pushed" | "conflict" | "resolved";
+}
+
 export class CommonsError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CommonsError";
+  }
+}
+
+export class CommonsSyncError extends CommonsError {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message);
+    this.name = "CommonsSyncError";
   }
 }
 
@@ -134,6 +167,16 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
    * per keystroke in the approval inbox of Step 48.
    */
   let gitPath: string | null | undefined;
+  let operationTail: Promise<void> = Promise.resolve();
+
+  function exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const result = operationTail.then(operation, operation);
+    operationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
   async function git(): Promise<string | null> {
     if (gitPath === undefined) {
       gitPath = options.gitBin ?? (await which("git"));
@@ -197,6 +240,18 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
       };
     }
 
+    // `init.defaultBranch` differs between machines. A Commons created on a
+    // machine that says `master` and one that says `main` must still agree on
+    // which branch they exchange, so new stores choose one explicitly. An
+    // existing repository is never renamed.
+    const branch = await tryGit(["symbolic-ref", "HEAD", "refs/heads/main"]);
+    if (branch.code !== 0) {
+      return {
+        ok: false,
+        reason: `Could not select the Commons branch: ${branch.stderr.trim()}`,
+      };
+    }
+
     // Written by the store rather than left to the operator's global config.
     // A commons created on Windows otherwise commits CRLF markdown, and Step
     // 47's "re-running the projection twice produces no diff" would fail there
@@ -212,6 +267,14 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
   async function commit(message: string): Promise<CommonsWrite["reason"]> {
     const repo = await ensureRepo();
     if (!repo.ok) return repo.reason;
+
+    const conflicts = await conflictPaths();
+    if (conflicts.length > 0) {
+      return (
+        "Commons sync has unresolved files: " +
+        `${conflicts.join(", ")}. Resolve them before writing more history.`
+      );
+    }
 
     const staged = await tryGit(["add", "-A"]);
     if (staged.code !== 0) return `\`git add\` failed: ${staged.stderr.trim()}`;
@@ -263,6 +326,142 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
     return `${root}/${id}.md`;
   }
 
+  async function conflictPaths(): Promise<string[]> {
+    const result = await tryGit(["diff", "--name-only", "--diff-filter=U"]);
+    if (result.code !== 0) return [];
+    return result.stdout
+      .split("\n")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== "")
+      .sort();
+  }
+
+  async function mergeInProgress(): Promise<boolean> {
+    return (
+      (await tryGit(["rev-parse", "--verify", "-q", "MERGE_HEAD"])).code === 0
+    );
+  }
+
+  async function currentBranch(): Promise<string | undefined> {
+    const result = await tryGit(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    const branch = result.stdout.trim();
+    return result.code === 0 && branch !== "" ? branch : undefined;
+  }
+
+  async function remoteUrl(): Promise<string | undefined> {
+    const result = await tryGit(["remote", "get-url", "origin"]);
+    const remote = result.stdout.trim();
+    return result.code === 0 && remote !== "" ? remote : undefined;
+  }
+
+  async function readSyncStatus(): Promise<CommonsSyncStatus> {
+    const repo = await ensureRepo();
+    if (!repo.ok)
+      throw new CommonsSyncError(repo.reason ?? "Git is unavailable.");
+    const [remote, branch, conflicts, merging] = await Promise.all([
+      remoteUrl(),
+      currentBranch(),
+      conflictPaths(),
+      mergeInProgress(),
+    ]);
+    return {
+      configured: remote !== undefined,
+      ...(remote !== undefined && { remote: redactRemote(remote) }),
+      ...(branch !== undefined && { branch }),
+      merging,
+      conflicts,
+    };
+  }
+
+  async function requireRemote(): Promise<string> {
+    const remote = await remoteUrl();
+    if (remote === undefined) {
+      throw new CommonsSyncError(
+        "No Commons remote is configured. Add the Git remote first.",
+      );
+    }
+    return remote;
+  }
+
+  async function snapshotBeforeSync(): Promise<void> {
+    const reason = await commit("Record local Commons before sync");
+    if (reason !== undefined) throw new CommonsSyncError(reason, 409);
+  }
+
+  async function remoteBranches(): Promise<string[]> {
+    const refs = await tryGit([
+      "for-each-ref",
+      "--format=%(refname:short)",
+      "refs/remotes/origin",
+    ]);
+    if (refs.code !== 0) {
+      throw new CommonsSyncError(
+        `Could not inspect the Commons remote: ${safeGitError(refs)}`,
+      );
+    }
+    return (
+      refs.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        // Some Git versions render the symbolic remote HEAD as bare `origin`
+        // under `%(refname:short)`, others as `origin/HEAD`. Neither is a branch.
+        .filter((line) => line.startsWith("origin/") && line !== "origin/HEAD")
+        .map((line) => line.replace(/^origin\//, ""))
+    );
+  }
+
+  async function configuredUpstream(): Promise<string | undefined> {
+    const result = await tryGit([
+      "rev-parse",
+      "--abbrev-ref",
+      "--symbolic-full-name",
+      "@{upstream}",
+    ]);
+    const upstream = result.stdout.trim();
+    return result.code === 0 && upstream.startsWith("origin/")
+      ? upstream.slice("origin/".length)
+      : undefined;
+  }
+
+  async function remoteBranch(localBranch: string): Promise<string | null> {
+    const configured = await configuredUpstream();
+    if (configured !== undefined) return configured;
+
+    const direct = await tryGit([
+      "show-ref",
+      "--verify",
+      "--quiet",
+      `refs/remotes/origin/${localBranch}`,
+    ]);
+    if (direct.code === 0) return localBranch;
+
+    const branches = await remoteBranches();
+    if (branches.length === 0) return null;
+    if (branches.length === 1) return branches[0] ?? null;
+    throw new CommonsSyncError(
+      `The remote has several branches and none matches "${localBranch}".`,
+      409,
+    );
+  }
+
+  async function markerConflicts(paths: readonly string[]): Promise<string[]> {
+    const unresolved: string[] = [];
+    for (const name of paths) {
+      if (name.startsWith("/") || name.split("/").includes("..")) {
+        unresolved.push(name);
+        continue;
+      }
+      try {
+        const text = await readFile(`${root}/${name}`, "utf8");
+        if (/^(<<<<<<< |=======|>>>>>>> )/m.test(text)) unresolved.push(name);
+      } catch {
+        // Deleting one side is a legitimate human resolution. `git add -A`
+        // below records it, so a missing file is not itself unresolved.
+      }
+    }
+    return unresolved;
+  }
+
   return {
     root,
 
@@ -297,64 +496,68 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
     get: readFact,
 
     async write(input: WriteFactInput): Promise<CommonsWrite> {
-      const id = input.id ?? slugFor(input.title);
-      if (!isFactId(id)) {
-        throw new CommonsError(
-          `"${id}" is not a usable fact id. Lowercase letters, digits and ` +
-            `single hyphens only.`,
+      return exclusive(async () => {
+        const id = input.id ?? slugFor(input.title);
+        if (!isFactId(id)) {
+          throw new CommonsError(
+            `"${id}" is not a usable fact id. Lowercase letters, digits and ` +
+              `single hyphens only.`,
+          );
+        }
+
+        const provenance: FactProvenance = {
+          ...(input.station !== undefined && { station: input.station }),
+          ...(input.run !== undefined && { run: input.run }),
+          at: input.at ?? now().toISOString(),
+        };
+        const fact: Fact = {
+          id,
+          title: input.title,
+          tags: input.tags ?? [],
+          projects: input.projects ?? [],
+          provenance,
+          body: input.body,
+        };
+
+        await mkdir(root, { recursive: true });
+        await writeFile(fileFor(id), serializeFact(fact), "utf8");
+
+        // Both halves of the provenance, answering different questions. The
+        // frontmatter is what Step 47's projection and Step 48's inbox read; the
+        // subject line is what `git log --oneline` answers with, which is the
+        // literal thing this step has to be able to do.
+        const reason = await commit(
+          `${input.id === undefined ? "Add" : "Write"} ${id}\n\n` +
+            `${fact.title}\n\n` +
+            `Station: ${provenance.station ?? "(hand-written)"}\n` +
+            `Run: ${provenance.run ?? "(none)"}\n` +
+            `At: ${provenance.at}\n`,
         );
-      }
 
-      const provenance: FactProvenance = {
-        ...(input.station !== undefined && { station: input.station }),
-        ...(input.run !== undefined && { run: input.run }),
-        at: input.at ?? now().toISOString(),
-      };
-      const fact: Fact = {
-        id,
-        title: input.title,
-        tags: input.tags ?? [],
-        projects: input.projects ?? [],
-        provenance,
-        body: input.body,
-      };
-
-      await mkdir(root, { recursive: true });
-      await writeFile(fileFor(id), serializeFact(fact), "utf8");
-
-      // Both halves of the provenance, answering different questions. The
-      // frontmatter is what Step 47's projection and Step 48's inbox read; the
-      // subject line is what `git log --oneline` answers with, which is the
-      // literal thing this step has to be able to do.
-      const reason = await commit(
-        `${input.id === undefined ? "Add" : "Write"} ${id}\n\n` +
-          `${fact.title}\n\n` +
-          `Station: ${provenance.station ?? "(hand-written)"}\n` +
-          `Run: ${provenance.run ?? "(none)"}\n` +
-          `At: ${provenance.at}\n`,
-      );
-
-      return {
-        fact,
-        committed: reason === undefined,
-        ...(reason !== undefined && { reason }),
-      };
+        return {
+          fact,
+          committed: reason === undefined,
+          ...(reason !== undefined && { reason }),
+        };
+      });
     },
 
     async remove(id: string): Promise<CommonsWrite | null> {
-      if (!isFactId(id)) throw new CommonsError(`"${id}" is not a fact id.`);
-      const existing = await readFact(id);
-      if (existing === null) return null;
+      return exclusive(async () => {
+        if (!isFactId(id)) throw new CommonsError(`"${id}" is not a fact id.`);
+        const existing = await readFact(id);
+        if (existing === null) return null;
 
-      await rm(fileFor(id), { force: true });
-      const reason = await commit(
-        `Remove ${id}\n\n${existing.title}\n\nAt: ${now().toISOString()}\n`,
-      );
-      return {
-        fact: existing,
-        committed: reason === undefined,
-        ...(reason !== undefined && { reason }),
-      };
+        await rm(fileFor(id), { force: true });
+        const reason = await commit(
+          `Remove ${id}\n\n${existing.title}\n\nAt: ${now().toISOString()}\n`,
+        );
+        return {
+          fact: existing,
+          committed: reason === undefined,
+          ...(reason !== undefined && { reason }),
+        };
+      });
     },
 
     async history(limit = 50): Promise<CommonsHistory> {
@@ -381,6 +584,177 @@ export function createCommonsStore(options: CommonsOptions = {}): CommonsStore {
           .filter((line) => line !== ""),
       };
     },
+
+    async syncStatus(): Promise<CommonsSyncStatus> {
+      return exclusive(readSyncStatus);
+    },
+
+    async configureSync(remote: string): Promise<CommonsSyncStatus> {
+      return exclusive(async () => {
+        const value = remote.trim();
+        if (value === "" || /[\r\n]/.test(value)) {
+          throw new CommonsSyncError("`remote` must be a non-empty Git URL.");
+        }
+        const repo = await ensureRepo();
+        if (!repo.ok) {
+          throw new CommonsSyncError(repo.reason ?? "Git is unavailable.");
+        }
+        const existing = await remoteUrl();
+        const changed = await tryGit([
+          "remote",
+          existing === undefined ? "add" : "set-url",
+          "origin",
+          value,
+        ]);
+        if (changed.code !== 0) {
+          throw new CommonsSyncError(
+            `Could not configure the Commons remote: ${safeGitError(changed)}`,
+          );
+        }
+        return readSyncStatus();
+      });
+    },
+
+    async pull(): Promise<CommonsSyncResult> {
+      return exclusive(async () => {
+        await requireRemote();
+        const before = await readSyncStatus();
+        if (before.conflicts.length > 0 || before.merging) {
+          return { ...before, outcome: "conflict" };
+        }
+        await snapshotBeforeSync();
+        const fetch = await tryGit(["fetch", "--prune", "origin"]);
+        if (fetch.code !== 0) {
+          throw new CommonsSyncError(
+            `Could not fetch the Commons remote: ${safeGitError(fetch)}`,
+          );
+        }
+        const branch = await currentBranch();
+        if (branch === undefined) {
+          throw new CommonsSyncError("The Commons is not on a named branch.");
+        }
+        const upstream = await remoteBranch(branch);
+        if (upstream === null) {
+          return { ...(await readSyncStatus()), outcome: "up-to-date" };
+        }
+        // An older Commons may already be on `master` while a newly created
+        // remote uses `main`. Track the branch we actually merged so the next
+        // push updates it instead of silently creating a second remote line.
+        const tracking = await tryGit([
+          "branch",
+          `--set-upstream-to=origin/${upstream}`,
+          branch,
+        ]);
+        if (tracking.code !== 0) {
+          throw new CommonsSyncError(
+            `Could not track the Commons remote branch: ${safeGitError(tracking)}`,
+          );
+        }
+        const merged = await tryGit([
+          "-c",
+          `user.name=${COMMONS_AUTHOR_NAME}`,
+          "-c",
+          `user.email=${COMMONS_AUTHOR_EMAIL}`,
+          "merge",
+          "--no-edit",
+          "--allow-unrelated-histories",
+          `origin/${upstream}`,
+        ]);
+        const status = await readSyncStatus();
+        if (merged.code !== 0) {
+          if (status.conflicts.length > 0) {
+            return { ...status, outcome: "conflict" };
+          }
+          throw new CommonsSyncError(
+            `Could not merge the Commons remote: ${safeGitError(merged)}`,
+            409,
+          );
+        }
+        const unchanged = /already up[ -]to[ -]date/i.test(
+          `${merged.stdout} ${merged.stderr}`,
+        );
+        return { ...status, outcome: unchanged ? "up-to-date" : "pulled" };
+      });
+    },
+
+    async push(): Promise<CommonsSyncResult> {
+      return exclusive(async () => {
+        await requireRemote();
+        const status = await readSyncStatus();
+        if (status.conflicts.length > 0 || status.merging) {
+          return { ...status, outcome: "conflict" };
+        }
+        await snapshotBeforeSync();
+        const fetch = await tryGit(["fetch", "--prune", "origin"]);
+        if (fetch.code !== 0) {
+          throw new CommonsSyncError(
+            `Could not fetch the Commons remote: ${safeGitError(fetch)}`,
+          );
+        }
+        const branch = await currentBranch();
+        if (branch === undefined) {
+          throw new CommonsSyncError("The Commons is not on a named branch.");
+        }
+        const target = (await remoteBranch(branch)) ?? branch;
+        const pushed = await tryGit([
+          "push",
+          "--set-upstream",
+          "origin",
+          `HEAD:refs/heads/${target}`,
+        ]);
+        if (pushed.code !== 0) {
+          throw new CommonsSyncError(
+            "The Commons could not be pushed. Pull first if the remote has " +
+              `new work. ${safeGitError(pushed)}`,
+            409,
+          );
+        }
+        return { ...(await readSyncStatus()), outcome: "pushed" };
+      });
+    },
+
+    async continueSync(): Promise<CommonsSyncResult> {
+      return exclusive(async () => {
+        const status = await readSyncStatus();
+        if (!status.merging && status.conflicts.length === 0) {
+          return { ...status, outcome: "up-to-date" };
+        }
+        const markers = await markerConflicts(status.conflicts);
+        if (markers.length > 0) {
+          return { ...status, conflicts: markers, outcome: "conflict" };
+        }
+        const staged = await tryGit(["add", "-A"]);
+        if (staged.code !== 0) {
+          throw new CommonsSyncError(
+            `Could not stage the resolved Commons: ${safeGitError(staged)}`,
+          );
+        }
+        const remaining = await conflictPaths();
+        if (remaining.length > 0) {
+          return {
+            ...(await readSyncStatus()),
+            conflicts: remaining,
+            outcome: "conflict",
+          };
+        }
+        const committed = await tryGit([
+          "-c",
+          `user.name=${COMMONS_AUTHOR_NAME}`,
+          "-c",
+          `user.email=${COMMONS_AUTHOR_EMAIL}`,
+          "commit",
+          "--quiet",
+          "--no-edit",
+        ]);
+        if (committed.code !== 0) {
+          throw new CommonsSyncError(
+            `Could not record the resolved Commons: ${safeGitError(committed)}`,
+            409,
+          );
+        }
+        return { ...(await readSyncStatus()), outcome: "resolved" };
+      });
+    },
   };
 }
 
@@ -406,5 +780,15 @@ function isMissing(error: unknown): boolean {
     error !== null &&
     typeof error === "object" &&
     (error as { code?: string }).code === "ENOENT"
+  );
+}
+
+function redactRemote(remote: string): string {
+  return remote.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, "$1***@");
+}
+
+function safeGitError(result: { stdout: string; stderr: string }): string {
+  return redactRemote(
+    result.stderr.trim() || result.stdout.trim() || "Git failed.",
   );
 }

@@ -25,8 +25,8 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Safety and review | Roles, path leashes, two-vendor Gates, Holds, and stop/recovery behavior work |
 | Projects | One daemon serves multiple isolated projects with independent config, history, queues, and events |
 | Limits and cost | Usage reporting, pre-run refusal, role-safe fallback routing, and the project ledger work |
-| Commons | Git-backed facts, approval inbox, byte-stable projections, and MCP `memory_search` / `memory_write` work |
-| Still to build | Commons cross-machine sync, phone pairing, Caller, and On-Call |
+| Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
+| Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` CLI package is currently empty; use the Desk or HTTP API |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).

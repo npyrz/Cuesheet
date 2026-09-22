@@ -73,10 +73,17 @@ export { createStandbyRegistry, StandbyAbandonedError } from "./standby.js";
 export type { StandbyRegistry, OpenStandby } from "./standby.js";
 
 export { describeStations, unprobed, unknownRoles } from "./stations.js";
-export { createCommonsStore, CommonsError } from "./commons.js";
+export {
+  createCommonsStore,
+  CommonsError,
+  CommonsSyncError,
+} from "./commons.js";
 export type {
+  CommonsHistory,
   CommonsStore,
   CommonsOptions,
+  CommonsSyncResult,
+  CommonsSyncStatus,
   CommonsWrite,
   WriteFactInput,
 } from "./commons.js";

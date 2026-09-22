@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PendingMemory } from "@cuesheet/core";
 import {
   approveMemory,
+  configureCommonsSync,
   discardMemory,
+  fetchCommonsSync,
   fetchMemoryInbox,
+  runCommonsSync,
+  type CommonsSyncStatus,
 } from "../api/client.js";
 import { memoryApproval, memoryDraft, type MemoryDraft } from "../memory.js";
 
@@ -66,6 +70,7 @@ export function MemoryInbox(): React.JSX.Element {
           </button>
         </div>
       )}
+      <CommonsSync onOutcome={setOutcome} />
       {outcome !== null && <p className="memory-outcome">{outcome}</p>}
       {error === null && pending === null && (
         <div className="notice" data-kind="loading" role="status">
@@ -97,6 +102,164 @@ export function MemoryInbox(): React.JSX.Element {
         </ul>
       )}
     </main>
+  );
+}
+
+function CommonsSync({
+  onOutcome,
+}: {
+  onOutcome: (message: string) => void;
+}): React.JSX.Element {
+  const [status, setStatus] = useState<CommonsSyncStatus | null>(null);
+  const [remote, setRemote] = useState("");
+  const [editingRemote, setEditingRemote] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setError(null);
+    void fetchCommonsSync()
+      .then(setStatus)
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : String(cause)),
+      );
+  }, []);
+
+  useEffect(load, [load]);
+
+  const sync = (operation: "pull" | "push" | "continue"): void => {
+    setBusy(true);
+    setError(null);
+    void runCommonsSync(operation)
+      .then((result) => {
+        setStatus(result);
+        if (result.outcome === "conflict") {
+          const detail =
+            result.conflicts.length === 0
+              ? "a merge is still in progress"
+              : result.conflicts.join(", ");
+          onOutcome(
+            `Sync stopped for a human resolution: ${detail}. Edit the files in the Commons, then continue.`,
+          );
+        } else {
+          onOutcome(`Commons sync: ${result.outcome}.`);
+        }
+      })
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : String(cause)),
+      )
+      .finally(() => setBusy(false));
+  };
+
+  const conflicted =
+    status !== null && (status.merging || status.conflicts.length > 0);
+
+  return (
+    <section className="memory-sync" aria-labelledby="memory-sync-title">
+      <div>
+        <h2 id="memory-sync-title">Cross-machine sync</h2>
+        <p>
+          {status?.configured === true
+            ? `${status.remote ?? "origin"}${status.branch === undefined ? "" : ` · ${status.branch}`}`
+            : "Connect the Commons to a Git remote you control."}
+        </p>
+      </div>
+      {(status?.configured !== true || editingRemote) && (
+        <form
+          className="memory-sync-configure"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBusy(true);
+            setError(null);
+            void configureCommonsSync(remote)
+              .then((next) => {
+                setStatus(next);
+                setRemote("");
+                setEditingRemote(false);
+                onOutcome("Commons remote configured.");
+              })
+              .catch((cause: unknown) =>
+                setError(
+                  cause instanceof Error ? cause.message : String(cause),
+                ),
+              )
+              .finally(() => setBusy(false));
+          }}
+        >
+          <label>
+            Git remote
+            <input
+              type="text"
+              value={remote}
+              placeholder="git@host:you/commons.git"
+              disabled={busy}
+              onChange={(event) => setRemote(event.target.value)}
+            />
+          </label>
+          <button type="submit" disabled={busy || remote.trim() === ""}>
+            {status?.configured === true ? "save remote" : "connect"}
+          </button>
+          {status?.configured === true && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setRemote("");
+                setEditingRemote(false);
+              }}
+            >
+              cancel
+            </button>
+          )}
+        </form>
+      )}
+      {status?.configured === true && !editingRemote && (
+        <div className="memory-actions">
+          {conflicted ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => sync("continue")}
+            >
+              continue after resolution
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => sync("pull")}
+              >
+                pull
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => sync("push")}
+              >
+                push
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setEditingRemote(true)}
+              >
+                change remote
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {conflicted && (
+        <p className="memory-error">
+          {status.conflicts.length === 0
+            ? "A merge is still in progress."
+            : `Git left these files unresolved: ${status.conflicts.join(", ")}.`}{" "}
+          Neither side was chosen automatically.
+        </p>
+      )}
+      {error !== null && <p className="memory-error">{error}</p>}
+    </section>
   );
 }
 
