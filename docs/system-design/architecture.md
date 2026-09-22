@@ -2,7 +2,7 @@
 
 ## Design center
 
-The daemon is the product. The Desk, Electron shell, future CLI, and future phone are clients of the same HTTP and WebSocket API. Product behavior belongs behind that API; Electron is packaging and native integration, not a second backend.
+The daemon is the product. The Desk, Electron shell, terminal CLI, and future phone are clients of the same HTTP and WebSocket API. Product behavior belongs behind that API; Electron is packaging and native integration, not a second backend.
 
 The daemon currently binds to `127.0.0.1:7373`. It is intentionally unauthenticated while it is loopback-only. Network serving, pairing, revocation, and phone access are planned and must add an authentication boundary before widening exposure.
 
@@ -11,7 +11,7 @@ flowchart LR
     subgraph Clients
         Desk[React Desk]
         Shell[Electron shell]
-        FutureCLI[CLI - planned]
+        CLI[Terminal CLI]
         Phone[Phone - planned]
     end
 
@@ -74,7 +74,7 @@ The arrows mean “is depended on by.” The important boundary is that `core` h
 | `daemon` | API, project runtimes, queues, execution, event buses, run storage, usage cache, Commons storage, projection, MCP recall, and Git sync |
 | `ui` | Responsive React Desk; project, run, limits, ledger, and first-run surfaces |
 | `desktop` | Electron lifecycle, daemon ownership/attachment, preload bridge, tray, notifications, native folder picker |
-| `cli` | Empty package today; a real client is planned for Phase 13 |
+| `cli` | Terminal client for project registration, Station discovery, runs, and standbys |
 
 ## Current and planned boundary
 
@@ -88,10 +88,11 @@ flowchart TB
     Current --> C3[Limits, ledger, fallback]
     Current --> C4[Commons store, approval, projections, recall, sync]
 
-    Planned --> P1[Working CLI]
-    Planned --> P2[Phone pairing and remote access]
-    Planned --> P3[SQLite, migration framework, signing]
-    Planned --> P4[Caller, On-Call, fleet, ecosystem]
+    Current --> C5[Terminal client]
+
+    Planned --> P1[Phone pairing and remote access]
+    Planned --> P2[SQLite, migration framework, signing]
+    Planned --> P3[Caller, On-Call, fleet, ecosystem]
 ```
 
-The UI is already responsive, but that is not the same as having a phone client. Likewise, the CLI package exists, but its command surface does not.
+The UI is already responsive, but that is not the same as having a phone client.

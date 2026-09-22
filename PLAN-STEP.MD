@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ⬜ |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Step 51 done** — the source checkout has a working terminal client; storage, migrations, signing, docs, and error reporting remain |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 51 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 52 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -126,7 +126,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [ ] Config migrations, and an upgrade that never discards run history — **now Steps 33 and 53**
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
 - [ ] Crash and error reporting you can actually act on — local only, no telemetry — **now Step 56**
-- [ ] A `cuesheet` CLI that does what the README already prints — **now Step 51**
+- [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
 - [ ] The files the README links to and the repository does not contain — **now Step 55**
 
 **Beta → 1.0**
@@ -690,7 +690,7 @@ The run was then answered **no** at the standby and landed `held`, with the verd
 - **A reviewer's sandbox comes from its role, not from its prompt.** The README says a reviewer "cannot write to the workspace". `--sandbox read-only` is what makes that true of the subprocess. `caller` gets the same treatment ahead of M6 — a Caller that could edit is not a Caller.
 - **`probe()` may answer the auth question honestly when the CLI is cheap about it.** `claude-code` reports `authed: true` optimistically, because Claude Code has no free auth query and a throwaway prompt would cost tokens on every poll of `/stations`. `codex login status` costs nothing, so this harness asks. Two harnesses answering the same field with different confidence is fine; pretending otherwise would mean making the good case worse.
 - **Another vendor's noise is not this run's output.** Codex logs `rmcp::transport` errors to stderr on every run when a configured MCP server is not listening — a fact about the operator's `~/.codex/config.toml`, not about the run. Filtered narrowly, on the module path rather than on the word `ERROR`, so a real failure still reaches the log.
-- **The CLI is now the thing blocking the README's own example.** `cuesheet run --engineer opus --review codex` is printed in the README and `packages/cli` is one line: `export {}`. Gates were the reason that snippet did not work; they are not any more.
+- **The CLI became the thing blocking the README's old example.** `cuesheet run --engineer opus --review codex` appeared in an earlier README while `packages/cli` was one line: `export {}`. Gates were the reason that snippet did not work; they were not any more. Step 51 later replaced the example with the configured cuesheet command the daemon actually accepts.
 
 ---
 
@@ -1671,13 +1671,42 @@ authenticate to, and HTTPS userinfo is redacted from API responses and errors.
 
 Most of this phase is already written down as unticked boxes in [Exit criteria](#exit-criteria); what it adds is step shape, ordering, and the dependency chains that two adjacent checkboxes hide. The 1.0-only items — the security review, leash fuzzing, Linux, M3 · Pocket — stay in that list rather than moving here.
 
-### Step 51 — The CLI that the README already documents
+### Step 51 — The CLI that the README already documents ✅
 
-`packages/cli/src/index.ts` is one line: `export {}`. The README prints `cuesheet run --engineer opus --review codex` and a Quickstart built around `npx cuesheetd`, and a note admitting the flags are "the shape it is heading for" rather than something you can type.
+`packages/cli/src/index.ts` was one line: `export {}`. The original plan
+described a README example, `cuesheet run --engineer opus --review codex`,
+which had already been removed from the current README. The live daemon
+accepts a named cuesheet from a project's configuration, so the CLI and the
+updated README use `cuesheet run --cuesheet ship "prompt"` instead. The
+Quickstart's `npx cuesheetd` remains the daemon entry point.
 
 This is the largest honesty debt in the repo. Phase 7 removed the reason it was empty — Gates were the blocker and are not any more — and Phase 8 gives the commands a project to run against.
 
-**Done when:** every command printed in the README runs, or the README stops printing it. No third option.
+**Done when:** every command printed in the README runs ✅.
+
+#### What the work settled
+
+**The CLI is a daemon client.** The workspace package now installs a real
+`cuesheet` binary with a shebang and executable mode on POSIX, as `cuesheetd`
+does. It discovers the daemon through its lockfile, probes health before
+issuing a command, and sends project and run operations to the same routes as
+the Desk. It has no private run path or second configuration parser.
+
+**A command selects a project from where it runs.** The CLI resolves the
+current directory and chooses the deepest registered project containing it,
+including when invoked in a subdirectory. `--project ID` is explicit for
+scripts or a terminal elsewhere. A missing or unregistered project produces
+an actionable error; it never silently runs against the most recently opened
+project, because the daemon has no active project.
+
+**The run syntax follows the implemented execution model.** Named cuesheets
+already carry Station order and Gate placement, so the old `--engineer` /
+`--review` proposal would have introduced a second way to define a workflow.
+`run --cuesheet NAME "prompt"` queues the configured workflow and prints its
+id; a bare run uses the first Station. `stations`, `runs`, `show`, `stop`,
+and `answer` provide the corresponding read and control paths. The end-to-end
+test registers an isolated project through the CLI, resolves it from a nested
+directory, queues a named cuesheet, and reads the resulting daemon record.
 
 ### Step 52 — SQLite behind `RunStore`
 

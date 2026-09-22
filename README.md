@@ -27,7 +27,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Limits and cost | Usage reporting, pre-run refusal, role-safe fallback routing, and the project ledger work |
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
 | Still to build | Phone pairing, Caller, and On-Call |
-| CLI | The `cuesheet` CLI package is currently empty; use the Desk or HTTP API |
+| CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).
 
@@ -77,6 +77,26 @@ npm run dev -w packages/ui
 
 Then open `http://localhost:5173`.
 
+### Use the terminal client
+
+From the built source checkout, start `npx cuesheetd` in one terminal. In
+another, register a project and copy the id it prints:
+
+```bash
+npx cuesheet project add /path/to/your/project
+npx cuesheet stations --project PROJECT_ID
+npx cuesheet run --project PROJECT_ID --cuesheet ship "Add a regression test"
+npx cuesheet runs --project PROJECT_ID
+npx cuesheet show RUN_ID --project PROJECT_ID
+```
+
+The named cuesheet must exist in that project's `cuesheet.toml`; omit
+`--cuesheet ship` to use its first configured Station. `run` queues work and
+prints its id. From inside a registered project, including a subdirectory, the
+`--project` option is optional. `cuesheet stop RUN_ID` stops a run, and
+`cuesheet answer STANDBY_ID go|no` answers a waiting Gate. The terminal client
+uses the running daemon; it does not start a second one.
+
 ### Install the alpha release
 
 [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha) provides a Windows x64 NSIS installer plus macOS DMG and ZIP builds for Apple Silicon and Intel.
@@ -125,7 +145,7 @@ The engineer produces a diff, the reviewer evaluates it independently, and the G
 
 ## Architecture
 
-The daemon is the product. The desktop shell, browser Desk, future phone client, and future CLI are all clients of the same project-scoped HTTP and WebSocket API. Anything the app can do must be possible through that API.
+The daemon is the product. The desktop shell, browser Desk, terminal client, and future phone client all use the same project-scoped HTTP and WebSocket API. Anything the app can do must be possible through that API.
 
 Dependency direction stays one-way:
 
@@ -140,7 +160,7 @@ core <- harness <- daemon <- ui / cli / desktop
 | `packages/daemon` | API, project runtimes, queues, events, run store, Commons |
 | `packages/ui` | Shared React Desk |
 | `packages/desktop` | Electron host for the Desk and embedded daemon |
-| `packages/cli` | Reserved for the future CLI; currently empty |
+| `packages/cli` | Terminal client for projects, Stations, runs, and standbys |
 
 See [System design](docs/system-design/README.md) for diagrams and subsystem walkthroughs. Detailed concepts, configuration, harness notes, security, roadmap, and FAQ material live in the [reference](docs/REFERENCE.md).
 

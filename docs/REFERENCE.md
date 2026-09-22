@@ -500,8 +500,13 @@ curl -X POST http://127.0.0.1:7373/api/projects/PROJECT_ID/runs \
   -d '{"prompt":"add a focused regression test","cuesheet":"ship"}'
 ```
 
-The user-facing `cuesheet` command is not implemented yet. Do not copy CLI
-examples from old design material and expect them to run; use the Desk or API.
+The terminal client uses these same routes. From a built source checkout, use
+`npx cuesheet project add /path/to/project` to register a project and
+`npx cuesheet run --project PROJECT_ID --cuesheet ship "prompt"` to queue its
+configured cuesheet. `run` prints the run id; `runs`, `show`, and `stop`
+inspect or control it. `stations` lists configured Stations and cuesheets,
+and `answer STANDBY_ID go|no` answers a waiting Gate. Running inside a
+registered project makes `--project` optional.
 
 ## Development
 
@@ -686,8 +691,10 @@ Gate therefore requires the relevant external CLIs and connectivity.
 
 ### Can I use the documented CLI commands?
 
-No. `packages/cli` is currently an empty package. The Desk and HTTP API are the
-working control surfaces. Building the CLI is part of the remaining beta work.
+Yes, from a built source checkout while `cuesheetd` is running. The workspace
+package exposes `npx cuesheet`; it talks to the daemon over HTTP and discovers
+its port from `~/.cuesheet/daemon.json`. The released alpha installers predate
+this CLI. A named cuesheet must already be configured in the selected project.
 
 ### What is next?
 
