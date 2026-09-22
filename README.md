@@ -81,6 +81,8 @@ Then open `http://localhost:5173`.
 
 [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha) provides a Windows x64 NSIS installer plus macOS DMG and ZIP builds for Apple Silicon and Intel.
 
+Every commit pushed to GitHub also gets downloadable installers on the [Releases page](https://github.com/npyrz/Cuesheet/releases): pushes to `main` are published as production releases and marked Latest, while pushes to every other branch are published as prereleases. “Production” identifies the release channel; the version in the installer still identifies the app's maturity.
+
 The installers are unsigned. macOS may require right-clicking the app and choosing **Open**; Windows SmartScreen may require **More info → Run anyway**.
 
 > **Windows:** install into the default directory or another empty directory. The alpha uninstaller removes its installation directory wholesale, so do not install it into a folder containing other files.

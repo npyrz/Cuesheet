@@ -102,5 +102,6 @@ nsis:
   createDesktopShortcut: false
   createStartMenuShortcut: true
 
-# Releases are published by a human pushing a tag, never by a build.
+# GitHub Actions owns release creation after packaging, so electron-builder
+# only writes local artifacts and never publishes by itself.
 publish: null

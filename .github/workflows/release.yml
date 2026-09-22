@@ -1,23 +1,22 @@
-# Installers, built on a tag, published by a human.
+# Installers for every pushed commit.
 #
-# The release is created as a **draft**. Nothing becomes downloadable because
-# a workflow decided it should be: you look at the artifacts, you edit the
-# notes, and you press publish. For an unsigned alpha that is not caution, it
-# is the difference between a release and an accident.
+# A push to `main` becomes a production release and is marked Latest. A push
+# to any other branch becomes a prerelease. Releases need tags even when the
+# project is not cutting a semantic version, so each workflow run gets an
+# automatic, unique tag tied to its commit.
 
 name: Release
 
 on:
   push:
-    tags: ["v*"]
-  # Buildable without tagging, so the packaging path can be exercised without
-  # committing to a version. A manual run uploads artifacts and creates no
-  # release at all.
+    branches: ["**"]
+  # A manual run proves the packaging path and uploads workflow artifacts,
+  # but does not publish a duplicate release for the selected commit.
   workflow_dispatch:
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+# Do not add branch-scoped concurrency here. GitHub retains at most one pending
+# run in a concurrency group, so quick successive pushes could otherwise skip
+# releases for commits in the middle.
 
 jobs:
   build:
@@ -48,35 +47,19 @@ jobs:
       - name: Install
         run: npm ci
 
-      # The guard that stops `v0.1.0-alpha` shipping installers named `0.0.0`.
-      # `scripts/set-version.mjs` writes the version into every package.json
-      # and into the daemon's `DAEMON_VERSION`; `version.test.ts` proves those
-      # agree with each other, and this proves they agree with the tag.
-      - name: Tag matches the version in the tree
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p "require('./packages/desktop/package.json').version")"
-          if [ "$tag" != "$pkg" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package version $pkg."
-            echo "Run: node scripts/set-version.mjs $tag"
-            exit 1
-          fi
-          echo "Building version $pkg"
-
-      # Same checks as CI, in the same order — and the order is the load-bearing
-      # part. `npm ci` leaves no `dist`, and both steps below resolve
-      # `@cuesheet/*` through it, so building last fails them both on a clean
-      # runner. See the note in ci.yml.
-      #
-      # A tag that ships a red build is worse than a tag that fails, and this
-      # workflow can be run on a branch that CI never saw.
+      # Keep the release gate identical to CI. Build has to be first because
+      # workspace exports resolve through dist/, which npm ci does not create.
       - name: Build
         run: npm run build
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: npm run format:check
 
       - name: Test
         run: npm test
@@ -97,13 +80,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  draft:
-    name: Draft release
+  publish:
+    name: Publish ${{ github.ref_name }} release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      # The only write this workflow needs, and it is scoped to this job.
+      # `gh release create` creates both the automatic tag and its release.
       contents: write
 
     steps:
@@ -113,48 +96,46 @@ jobs:
           merge-multiple: true
           path: installers
 
-      # `if-no-files-found: error` guards the upload, not the download. An
-      # empty directory here would make `gh` treat `installers/*` as a literal
-      # filename and fail with something that reads like a gh bug.
       - name: There are installers to attach
         run: |
           ls -la installers
           test -n "$(ls -A installers)" || {
-            echo "::error::No installers were downloaded."; exit 1;
+            echo "::error::No installers were downloaded."
+            exit 1
           }
 
-      # `gh` ships on the runner, so there is no third-party action in the
-      # path that has permission to write releases.
-      - name: Create the draft
+      - name: Publish release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --draft \
-            --prerelease \
-            --notes "$(cat <<'NOTES'
-          **Alpha. Unsigned. One harness, one Station at a time, no Gates.**
+          short_sha="${GITHUB_SHA:0:7}"
+          tag="build-${GITHUB_RUN_ID}-${short_sha}"
+          example_installer="$(basename "$(find installers -maxdepth 1 -type f | head -n 1)")"
+
+          if [ "$BRANCH_NAME" = "main" ]; then
+            channel="Production"
+            release_flags=(--latest)
+          else
+            channel="Prerelease"
+            release_flags=(--prerelease --latest=false)
+          fi
+
+          cat > release-notes.md <<NOTES
+          Automated **${channel}** build from branch \`${BRANCH_NAME}\` at commit [\`${short_sha}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}).
+
+          The packaged application version is shown in each download's filename (for example, \`${example_installer}\`).
 
           ### Installing
 
-          - **macOS** — the app is not signed or notarized, so Gatekeeper will
-            quarantine it. Right-click the app and choose *Open*, or run
-            `xattr -d com.apple.quarantine /Applications/Cuesheet.app`.
-          - **Windows** — the installer is not signed, so SmartScreen will warn.
-            *More info* → *Run anyway*.
-
-          ### What works
-
-          The Desk, the daemon, and the `claude-code` harness: add a Station,
-          type a prompt, watch it stream, keep the run record and its diff.
-
-          ### What does not
-
-          No Gates, no Commons, no usage limits, no phone pairing. Config may
-          change without migration and run records may be discarded on upgrade.
+          - **macOS** — the app is not signed or notarized, so Gatekeeper may block it. Right-click the app and choose *Open*, or run \`xattr -d com.apple.quarantine /Applications/Cuesheet.app\`.
+          - **Windows** — the installer is not signed, so SmartScreen may warn. Choose *More info* → *Run anyway*.
           NOTES
-          )" \
-            installers/*
-          echo "Draft created. Review the artifacts, then publish it yourself."
+
+          gh release create "$tag" installers/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Cuesheet ${channel} — ${BRANCH_NAME} (${short_sha})" \
+            --notes-file release-notes.md \
+            "${release_flags[@]}"

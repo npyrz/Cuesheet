@@ -540,7 +540,7 @@ Don't let signing block Milestone B. Just don't pretend it isn't there.
 **Done when:** README install notes match what a stranger actually experiences.
 
 ### Step 27 — CI matrix ✅ (green on both runners)
-GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck → test → build the app. Upload installers as artifacts on tags.
+GitHub Actions on `macos-latest` and `windows-latest`: install → build → typecheck → lint → format-check → test → package the app. Every pushed commit gets macOS and Windows installers: `main` publishes a production release marked Latest, and every other branch publishes a prerelease. Manual runs upload workflow artifacts without publishing a duplicate release.
 
 **Done when:** a PR fails CI when a Windows-only path bug is introduced (add that as a test).
 
@@ -571,8 +571,8 @@ GitHub Actions on `macos-latest` and `windows-latest`: install → typecheck →
 ### Decisions Phase 6 settled
 
 - **One command sets the version; a test keeps it set.** `DAEMON_VERSION` is a literal so it survives bundling into an asar, which means nothing makes it track `package.json` — `/health` would answer `0.0.0` from a `0.1.0-alpha` build, and the first bug report would carry the wrong version. `node scripts/set-version.mjs <version>` writes all seven `package.json`s and the literal; `packages/daemon/src/version.test.ts` fails the build if they ever disagree. Generating `version.ts` at build time was the alternative and it is worse: a fresh clone would not typecheck until something had been built.
-- **The tag is checked against the tree.** `release.yml` refuses to build when `v0.1.0-alpha` does not match the version in `packages/desktop/package.json`. The version test proves the copies agree with *each other*; only this proves they agree with what you tagged.
-- **The release is a draft, always.** The workflow uploads installers and stops. Publishing is a person pressing a button, which for an unsigned alpha is the difference between a release and an accident.
+- **Release channels follow branches.** The original alpha process required a matching semantic-version tag and stopped at a draft for human review. That was superseded on 2026-09-22: every branch push now gets a unique automatic build tag and a published release. `main` is the production channel and is marked Latest; every other branch is explicitly a prerelease. The package version remains independent and still has to agree across the workspace.
+- **Every pushed commit means no shared concurrency group.** GitHub keeps at most one pending run in a concurrency group, replacing an older pending run when another push arrives. The release workflow therefore lets pushes run independently instead of silently dropping an intermediate commit's release.
 - **`extraResources` and `uiIndexCandidates` are one decision in two files.** The builder puts the Desk at `<resourcesPath>/ui`, which is the first path `src/ui-entry.ts` looks for. If they ever stop agreeing, the packaged app opens the "Desk has not been built" dialog — verified by mounting the dmg, not by reading the config.
 - **The asar holds two files.** `main.cjs` and `preload.cjs`, because `build.mjs` already bundled the daemon, fastify and ws into them. `node_modules` is excluded *explicitly*: this is a workspace, so `node_modules/@cuesheet/*` are symlinks, and symlinks in an asar fail only once packaged. For the same reason the three `@cuesheet/*` entries moved to `devDependencies` — after bundling they are build-time inputs, and electron-builder should not be trying to package them.
 - **Electron is pinned exactly.** `electron-builder` refuses a range outright: it downloads platform binaries for one specific release. A reproducible installer wants a reproducible runtime anyway.
