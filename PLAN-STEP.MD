@@ -1656,6 +1656,17 @@ Codex `AGENTS.md`; no model vendor participates in transport.
 credential store. The operator supplies any Git URL their installed Git can
 authenticate to, and HTTPS userinfo is redacted from API responses and errors.
 
+**The sync suite is spawn-bound, and Windows CI proved it.** Exercising real
+Git means a `pull` is two dozen `git` invocations and the conflict test drives
+three checkouts through about a hundred process spawns. On the Windows runner
+that put two tests past Vitest's 5s default — which then tore down the temp
+dir under a still-exiting `git` and reported an `EBUSY` rmdir as a second
+failure on top of the first. The file states its own budget and retries its
+cleanup; neither is a sleep, and a genuine hang still hits the ceiling. It is
+the companion to the rule the daemon suites already follow — wait on
+conditions, never on a clock — because the same runner that is too slow for a
+fixed sleep is too slow for a default budget meant for pure functions.
+
 ### Open questions to settle in the work, not now
 
 - **What a "fact" is.** Too granular and the store becomes a junk drawer; too coarse and it is a second README nobody reads. The approval inbox is the pressure valve either way.

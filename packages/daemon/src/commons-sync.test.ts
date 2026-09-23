@@ -6,7 +6,7 @@
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { run, which } from "@cuesheet/harness";
 import { createCommonsStore, type CommonsStore } from "./commons.js";
 import { startDaemon, type DaemonHandle } from "./server.js";
@@ -15,6 +15,20 @@ let home: string;
 let remote: string;
 let git: string | null;
 let daemon: DaemonHandle | null;
+
+/**
+ * These tests are slow because what they exercise is slow, not because they
+ * wait on anything: one `pull` is two dozen `git` invocations, and the
+ * conflict test drives three checkouts through a hundred process spawns.
+ * Spawning is the expensive part on Windows, where CI ran this file for 13s
+ * and two of these tipped over Vitest's 5s default. So the budget is stated
+ * rather than left at a default meant for pure functions — a ceiling a real
+ * hang still hits, not a sleep.
+ *
+ * Set here rather than per `it`, because the third argument to `it` makes
+ * Prettier expand the call and re-indent every test body in the file.
+ */
+vi.setConfig({ testTimeout: 60_000 });
 
 beforeEach(async () => {
   home = await realpath(await mkdtemp(path.join(tmpdir(), "cuesheet-sync-")));
@@ -31,7 +45,11 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await daemon?.close();
-  await rm(home, { recursive: true, force: true });
+  // `maxRetries` because Windows will not unlink a file a process still has
+  // open, and a `git` that has just exited can hold its pack a moment longer.
+  // Without it the teardown fails with EBUSY and reports it as a second,
+  // unrelated-looking failure stacked on top of the real one.
+  await rm(home, { recursive: true, force: true, maxRetries: 10 });
 });
 
 function checkout(name: string): CommonsStore {
