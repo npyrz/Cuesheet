@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Step 51 done** — the source checkout has a working terminal client; storage, migrations, signing, docs, and error reporting remain |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 done** — the source checkout has a working terminal client, and runs live in a per-project SQLite store that imports what the file store wrote and keeps it as an alternative; migrations, signing, docs, and error reporting remain |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. Merge `alpha-v2` into `main`, then continue with Step 52 on a beta development branch. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 is next. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -122,7 +122,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] **M2 · Limits** — usage windows, pre-run warnings, ledger and seat-preserving fallback routing. *Users hit caps in week one; this is not a polish item.* **Phase 10, done.**
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
-- [ ] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **now Step 52**
+- [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
 - [ ] Config migrations, and an upgrade that never discards run history — **now Steps 33 and 53**
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
 - [ ] Crash and error reporting you can actually act on — local only, no telemetry — **now Step 56**
@@ -1719,17 +1719,44 @@ and `answer` provide the corresponding read and control paths. The end-to-end
 test registers an isolated project through the CLI, resolves it from a nested
 directory, queues a named cuesheet, and reads the resulting daemon record.
 
-### Step 52 — SQLite behind `RunStore`
+### Step 52 — SQLite behind `RunStore` ✅
 
 The interface was cut for this in Step 10, and the seam has held through everything since. Two places already show the file store's scaling through: `reconcileInterruptedRuns` is O(all runs ever) by its own comment, and `store.list(limit)` reads directories to answer.
 
 `node:sqlite` is in Node 22, which removes the native-module risk that motivated files in the first place — the Decisions table's stated reason to revisit *"once packaging is proven"*, and packaging is proven.
 
-**Done when:** a store with 10,000 runs opens the Desk as fast as one with ten, and the file store still passes the same suite so an operator can choose.
+**Done when:** a store with 10,000 runs opens the Desk as fast as one with ten ✅, and the file store still passes the same suite so an operator can choose ✅.
+
+#### What the work settled
+
+**The packaging risk that chose files in Step 10 was checked, not assumed.** `node:sqlite` is compiled into the runtime rather than installed: nothing was added to any `package.json`, nothing is rebuilt per platform, and the asar contains no binary it did not contain before. The half that mattered was Electron, and the app was launched to find out rather than reasoned about — the embedded daemon in Electron 44 opens a database, imports and serves a history. On a runtime without the module at all (Node 22.5–22.12), `openRunStore` opens the file store instead and says nothing, because that is an environment fact the operator did not choose; an operator who *asks* for `sqlite` and cannot have it gets an error, because that was a decision.
+
+**The seam held, and the two places it did not are the honest ones.** `RunStore` grew exactly two optional methods, `unfinished()` and `close()`, and every existing caller compiled unchanged. Both exist because the backends genuinely differ: a database can be asked for the runs a crash stranded at any age, and a file store cannot — so `reconcile.ts` keeps its 200-run window for the store that needs it and asks the store that does not. Stating that difference in the interface is better than the alternative considered, which was to make `unfinished()` mandatory and implement it on files as a full scan: that would have made the contract uniform and the behaviour a lie.
+
+**The three transitions moved into `store.ts` before the second store was written.** `newRunRecord`, `applyRunUpdate` and `applyRunFinish` are now shared, so "finish without a cost keeps what the run accumulated" is one function rather than two implementations that agree today. A backend chooses where the bytes go; it does not get to choose what a transition means.
+
+**`RUN_STORE_CONTRACT` is the deliverable, more than the store is.** Twenty-one behavioural checks, importing no test framework — the same shape as `harness/contract.ts`, and for the same reason: the README invites harnesses from outside the repo, and a Postgres-backed store for a shared daemon is the next thing somebody writes. Both suites run it; each store then tests only what is true of its own medium. The file store passed it unmodified on the first run, which is the evidence that Step 10's interface was drawn in the right place.
+
+**Numbers, on this Windows machine.** At the store: `list(50)` against 10,000 runs is 0.11 ms on SQLite and 11.5 ms on files, and SQLite is flat from 2,000 to 10,000 while files grows with the directory. Writing those 10,000 runs takes 0.5 s against 12.9 s. Through the daemon, measuring the two requests the Desk actually issues when a project opens:
+
+| Runs in the project | `GET /runs?limit=50` | `GET /ledger` |
+|---|---|---|
+| SQLite, 10 | 12.4 ms | 14.9 ms |
+| SQLite, 10,000 | 11.9 ms | 51.8 ms |
+| Files, 10 | 12.1 ms | 16.0 ms |
+| Files, 10,000 | 15.6 ms | 1,057 ms |
+
+**The done-when is ticked on the run list and the ledger is stated rather than hidden.** The list is flat — HTTP round-trip dominates it at both sizes, which is what "as fast as one with ten" means in practice. `GET /ledger` is not flat on either backend, because `buildLedger` reads every run in the project by design; SQLite makes it twenty times cheaper (52 ms against 1.06 s) but it is still O(runs). Fixing that means denormalising per-Station spend into columns and aggregating in SQL, which is a schema design task justified by a number this measurement does not produce — 52 ms is below perception. It is recorded here so the next person who makes a project ledger slow knows where it came from.
+
+**Switching the default backend would have emptied the Desk, so it imports.** The run directories on disk are read once, when the database is created, and **left where they are**: `CUESHEET_RUN_STORE=files` afterwards still shows the same history, so the escape hatch does not depend on a backup nobody took. Both halves were exercised against a real profile rather than a fixture — seven runs from earlier phases, including a `held` one with seventeen events and a patch, imported by the Electron app on open and then read back identically by the file store.
+
+**Half of Step 53 arrived here, and it is the half that prevents damage.** The database carries SQLite's own `user_version`, and a build that finds a version it does not understand refuses to open rather than writing to it. A migration that runs once and is recorded is still Step 53's work; a downgrade quietly corrupting a newer store is the failure that could not wait for it.
 
 ### Step 53 — Migrations as a mechanism
 
 Step 33 performs one migration. This makes it a system: versioned config, versioned store, a migration that runs once and is recorded, and a refusal to open state written by a *newer* build rather than corrupting it.
+
+**Step 52 already installed two pieces of this**, and the remainder is what the step is now for: the run store is versioned (`user_version`) and refuses a newer one, and the file-store-to-SQLite import is a migration that runs once, detected by that version. Neither is *recorded* anywhere a person can read, config is still unversioned, and nothing runs an old profile in CI.
 
 **Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI.
 
@@ -1884,7 +1911,7 @@ Ticked means *exercised on a Windows machine*, not *handled in code*. The three 
 - [x] `MAX_PATH` 260-char limit — 148 chars deepest, against a 260 limit, with long paths *disabled*
 - [ ] Tray icon format differs (`Template.png` vs `.ico`) — the `.ico` is generated, packaged, and loads (close-to-tray proves a tray exists). The glyph **has** now been looked at, by decoding the file and rendering it at 8× (see Step 24): it is sound from 24px up and muddy at 16, where the fader tracks collapse into grey. What is left is a design decision about 16px proportions, not an observation — kept unticked because the decision is unmade
 - [ ] `setAppUserModelId` for notifications — set, and now pinned by a test against `electron-builder.yml`; **no toast has been observed**, because the test machine has toasts disabled system-wide
-- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, re-opened by Step 44, and **the photograph turns out to have been of the bug**. Ticked here means exercised on a Windows machine rather than handled in code, so the row stays open — but Step 44 found the defect by reading the hint rather than by seeing it, which is the argument for re-opening a row made concrete. `modifierKey()` returned `⌘` or `Ctrl` correctly, and every call site built `{modifierKey()}K` out of it: `⌘K` on a Mac, which is right because macOS sets its shortcuts solid, and `CtrlK` everywhere else, which is not a shortcut anybody writes. `shortcutHint("K")` now returns the whole shortcut, `Ctrl+K`, off this machine's own `process.platform` — which the preload has exposed since Step 21 and which nothing had ever read, the hint having been inferred from a deprecated `navigator.platform` all along. What is left is the photograph: the shell will not launch in the environment Step 44 was written in, so the corrected hint has been tested on a Windows machine and not yet *seen* on one
+- [ ] `⌘` vs `Ctrl` in every UI hint — photographed reading `Ctrl1K`, re-opened by Step 44, and **the photograph turns out to have been of the bug**. Ticked here means exercised on a Windows machine rather than handled in code, so the row stays open — but Step 44 found the defect by reading the hint rather than by seeing it, which is the argument for re-opening a row made concrete. `modifierKey()` returned `⌘` or `Ctrl` correctly, and every call site built `{modifierKey()}K` out of it: `⌘K` on a Mac, which is right because macOS sets its shortcuts solid, and `CtrlK` everywhere else, which is not a shortcut anybody writes. `shortcutHint("K")` now returns the whole shortcut, `Ctrl+K`, off this machine's own `process.platform` — which the preload has exposed since Step 21 and which nothing had ever read, the hint having been inferred from a deprecated `navigator.platform` all along. What is left is the photograph: the shell will not launch in the environment Step 44 was written in, so the corrected hint has been tested on a Windows machine and not yet *seen* on one. **Step 52 found out why, which makes this an environment blocker rather than a design one:** the agent environment exports `ELECTRON_RUN_AS_NODE=1`, so `require("electron")` hands the main process a path string and `app` is undefined before any window exists. Unset it for the launch and the shell starts, embedded daemon and all — which is how Step 52 checked `node:sqlite` inside Electron. The row stays open because nobody has looked at the hint, not because nobody can
 - [x] Paths with spaces in packaged builds — installed to `C:\Users\noahp\Cuesheet Alpha Test\Cuesheet` and launched
 
 ---

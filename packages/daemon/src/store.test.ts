@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { beforeEach, describe, expect, it } from "vitest";
 import { runsDir, type HostEnv, type RunEvent } from "@cuesheet/core";
 import { createFileRunStore, readEvents, RunNotFoundError } from "./store.js";
+import { RUN_STORE_CONTRACT } from "./store-contract.js";
 import { createRunIdFactory } from "./ids.js";
 
 const run = promisify(execFile);
@@ -29,6 +30,17 @@ function text(runId: string, chunk: string): RunEvent {
     chunk,
   };
 }
+
+describe("the RunStore contract", () => {
+  // The same list `store-sqlite.test.ts` runs. Everything below this block is
+  // about *files* — an atomic rename, a truncated JSONL line, a stale `.tmp`
+  // — and belongs to this backend alone.
+  for (const check of RUN_STORE_CONTRACT) {
+    it(check.name, async () => {
+      await check.run(store());
+    });
+  }
+});
 
 describe("layout", () => {
   it("honours the HostEnv seam instead of the real home directory", () => {

@@ -67,7 +67,8 @@ The fallback file lets the Desk configure a project without modifying its reposi
     └── <project-id>/
         ├── cuesheet.toml
         └── runs/
-            └── <run-id>/
+            ├── runs.db
+            └── <run-id>/          (written by the file store)
                 ├── run.json
                 ├── events.jsonl
                 └── diff.patch
@@ -82,12 +83,23 @@ Project roots and their optional `cuesheet.toml` files live wherever the user op
 | Project registry | Machine | `projects.json` | Recency ordered; forgetting never deletes the project folder |
 | Project config | Project | nearest `cuesheet.toml` | Loaded per runtime and reloadable |
 | Queue | Project process lifetime | `ProjectRuntime` | One active run per project |
-| Run summary | Project | `run.json` | Atomic replacement |
-| Event history | Run | `events.jsonl` | Append-only; truncated tail is ignored |
-| Patch | Run | `diff.patch` | Loaded separately because it may be large |
+| Run summary | Project | `runs.db`, or `run.json` | One row per run; the file store replaces the JSON atomically |
+| Event history | Run | `runs.db`, or `events.jsonl` | Insert per event; the file store appends and ignores a truncated tail |
+| Patch | Run | `runs.db`, or `diff.patch` | Stored apart from the run row because it may be large |
 | Usage window | Machine/vendor | in-memory cache | Bounded reads; unknown stays explicit |
 | Commons | Machine | git-backed Markdown | Global facts with project tags |
 
-## Current versus planned storage
+## Two run stores, one contract
 
-The file-backed `RunStore` is current and remains behind an interface. Phase 13 plans a SQLite implementation for large histories while retaining the file store contract, plus versioned migrations that refuse state written by a newer build. Those mechanisms are not implemented yet.
+`RunStore` has two implementations, and `RUN_STORE_CONTRACT` in the daemon is the executable definition both are held to; each is also tested for the properties only it can have.
+
+| | SQLite (`runs.db`) | Files (`<run-id>/`) |
+|---|---|---|
+| Selected by | default | `CUESHEET_RUN_STORE=files` |
+| Implementation | `node:sqlite`, built into Node 22.13+; no native module | `node:fs` |
+| Listing a page of runs | index scan of the requested rows | `readdir` of the project's history, then one read per row |
+| Finding runs stranded by a crash | indexed query, at any age | newest-first scan of a bounded window |
+| Ending a run | final state and patch in one transaction | atomic replacement of `run.json`, then a separate patch write |
+| Read without Cuesheet | any SQLite client | `cat` |
+
+The first open of a project under SQLite imports the run directories already there and leaves them in place, so the file store remains a working choice afterwards. A database whose `user_version` is newer than the build refuses to open rather than being written to by an older Cuesheet; that refusal is the half of Phase 13's migration mechanism that prevents damage, and the rest — versioned config, recorded migrations, released profiles exercised in CI — is still planned.

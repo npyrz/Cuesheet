@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { HostEnv, RunEvent } from "@cuesheet/core";
 import { createFileRunStore, readEvents } from "./store.js";
 import { createRunIdFactory } from "./ids.js";
+import { openSqliteRunStore } from "./store-sqlite.js";
 import { INTERRUPTED_REASON, reconcileInterruptedRuns } from "./reconcile.js";
 import { startDaemon } from "./server.js";
 
@@ -141,6 +142,43 @@ describe("reconcileInterruptedRuns", () => {
     expect(repaired).toHaveLength(2);
     expect((await s.get(queued.id))?.run.status).toBe("interrupted");
     expect((await s.get(standby.id))?.run.status).toBe("interrupted");
+  });
+
+  it("reaches a run stranded past the limit when the store can be asked", async () => {
+    // The mirror image of the test below, and the reason `unfinished()` is on
+    // the interface at all: the bounded scan is a concession to a store that
+    // cannot answer the question, not a policy. A SQLite store answers it at
+    // any age, so a run left `running` a thousand runs ago is still repaired.
+    const sqlite = await openSqliteRunStore({
+      root,
+      newId: createRunIdFactory(0),
+    });
+    try {
+      const stranded = await sqlite.create({
+        prompt: "the crash",
+        stationIds: ["opus"],
+        workspace: root,
+      });
+      await sqlite.update(stranded.id, { status: "running" });
+      for (let i = 0; i < 20; i += 1) {
+        const later = await sqlite.create({
+          prompt: `later ${i}`,
+          stationIds: ["opus"],
+          workspace: root,
+        });
+        await sqlite.finish(later.id, { status: "done" });
+      }
+
+      const repaired = await reconcileInterruptedRuns({
+        store: sqlite,
+        limit: 5,
+      });
+
+      expect(repaired).toEqual([stranded.id]);
+      expect((await sqlite.get(stranded.id))?.run.status).toBe("interrupted");
+    } finally {
+      await sqlite.close();
+    }
   });
 
   it("only scans as far back as the limit", async () => {

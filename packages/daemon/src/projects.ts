@@ -43,7 +43,8 @@ import {
   type ProjectRegistry,
 } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
-import { createFileRunStore, type RunStore } from "./store.js";
+import type { RunStore } from "./store.js";
+import { openRunStore, type RunStoreBackend } from "./store-backend.js";
 import { createRunQueue, type RunQueue } from "./queue.js";
 import { reconcileInterruptedRuns } from "./reconcile.js";
 import type { RunExecutor } from "./executor.js";
@@ -74,8 +75,9 @@ export interface ProjectRuntimesOptions {
   executor?: RunExecutor;
   executorFactory?: (deps: ExecutorFactoryDeps) => RunExecutor;
   /**
-   * Build a project's run store. Defaults to files under
-   * `~/.cuesheet/projects/<id>/runs`.
+   * Build a project's run store. Defaults to `~/.cuesheet/projects/<id>/runs`
+   * — a `runs.db` there since Step 52, run directories beside it before that
+   * and still, since the SQLite store imports them and leaves them alone.
    *
    * A root per project rather than one root keyed by project, which the plan
    * left to the work. The deciding property is `store.list(limit)`: run ids are
@@ -84,9 +86,16 @@ export interface ProjectRuntimesOptions {
    * opening a single `run.json`. A shared root would mean filtering every run
    * ever — the O(all runs) shape `reconcile.ts` already flags as where the file
    * store's scaling shows through — or maintaining an index. Per-project keeps
-   * the cheap property and makes Step 33's migration a directory move.
+   * the cheap property and makes Step 33's migration a directory move, and it
+   * survived the move to SQLite unchanged: one database per project rather
+   * than one keyed by it, for the same isolation reason.
    */
-  storeFactory?: (project: Project) => RunStore;
+  storeFactory?: (project: Project) => RunStore | Promise<RunStore>;
+  /**
+   * Which backend the default factory opens. Defaults to SQLite, falling back
+   * to files on a runtime without `node:sqlite`. See `store-backend.ts`.
+   */
+  storeBackend?: RunStoreBackend;
   /** Off only for tests that want to assert on an unreconciled store. */
   reconcile?: boolean;
   replayLimit?: number;
@@ -118,8 +127,14 @@ export function createProjectRuntimes(
     const mirror = bus.attach((event) => globalBus.emit(event));
 
     const store =
-      options.storeFactory?.(project) ??
-      createFileRunStore({ root: projectRunsDir(project.id, env) });
+      (await options.storeFactory?.(project)) ??
+      (await openRunStore({
+        env,
+        root: projectRunsDir(project.id, env),
+        ...(options.storeBackend !== undefined && {
+          backend: options.storeBackend,
+        }),
+      }));
 
     let loaded = await loadConfigFrom(
       projectConfigSearchPaths(project.root, project.id, env),
@@ -170,6 +185,10 @@ export function createProjectRuntimes(
       async close() {
         mirror.unsubscribe();
         await queue.shutdown();
+        // After the queue, never before: a store closed under a running run
+        // turns its final `finish` into a write to a closed database. The
+        // file store has nothing to close and says so by omitting the method.
+        await store.close?.();
       },
     };
   }

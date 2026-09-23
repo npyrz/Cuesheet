@@ -5,12 +5,25 @@
  * daemon's suite runs with exactly one project and would keep passing if the
  * scoping were cosmetic.
  */
-import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import type { HostEnv, ListedProject, Project, RunEvent } from "@cuesheet/core";
+import {
+  projectRunsDir,
+  type HostEnv,
+  type ListedProject,
+  type Project,
+  type RunEvent,
+} from "@cuesheet/core";
 import { startDaemon, type DaemonHandle } from "./server.js";
 import type { RunExecutor } from "./executor.js";
 import type { StationsResponse } from "./stations.js";
@@ -169,6 +182,13 @@ describe("two projects at once", () => {
       `${daemon.url}/projects/${web.id}/runs/${runId}`,
     );
     expect(response.status).toBe(404);
+
+    // One database per project, not one keyed by project. This daemon was
+    // started with no store of its own, so it is the Step 52 default that
+    // wrote these — the isolation property survived the backend change
+    // because the root did.
+    expect(await readdir(projectRunsDir(api.id, env))).toContain("runs.db");
+    expect(await readdir(projectRunsDir(web.id, env))).toContain("runs.db");
   });
 
   it("does not put one project's events on the other's socket", async () => {

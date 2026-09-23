@@ -20,7 +20,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 
 | Area | Current source |
 |---|---|
-| Daemon and Desk | Working: HTTP/WebSocket daemon, Electron app, React UI, queues, live streams, durable run records |
+| Daemon and Desk | Working: HTTP/WebSocket daemon, Electron app, React UI, queues, live streams, durable run records in a per-project SQLite store |
 | Harnesses | Claude Code and Codex run real work; Ollama is supported for the `worker` role |
 | Safety and review | Roles, path leashes, two-vendor Gates, Holds, and stop/recovery behavior work |
 | Projects | One daemon serves multiple isolated projects with independent config, history, queues, and events |

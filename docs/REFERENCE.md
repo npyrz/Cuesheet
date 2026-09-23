@@ -30,7 +30,8 @@ roadmap and status record.
 
 ### Requirements
 
-- Node.js 22 or newer and npm.
+- Node.js 22 or newer and npm. The default run store uses `node:sqlite`, which
+  is available from Node 22.13; older 22.x runtimes fall back to the file store.
 - Git. Cuesheet uses it for workspace diffs and for Commons history.
 - macOS 13+ or Windows 10+. Linux may work from source, but it is not yet a
   tested, packaged target and remains on the 1.0 checklist.
@@ -568,15 +569,30 @@ on Windows):
     └── <project-id>/
         ├── cuesheet.toml
         └── runs/
-            └── <run-id>/
+            ├── runs.db
+            └── <run-id>/          (only from a store written before v0.5)
                 ├── run.json
                 ├── events.jsonl
                 └── diff.patch
 ```
 
-A repository-local `cuesheet.toml` overrides the private per-project copy.
-Run metadata is written atomically; events are append-only. On restart, runs
-left non-terminal by a crash are reconciled to `interrupted`.
+A repository-local `cuesheet.toml` overrides the private per-project copy. On
+restart, runs left non-terminal by a crash are reconciled to `interrupted`.
+
+Each project's runs live in its own store. Two backends are supported and both
+are held to the same contract:
+
+| `CUESHEET_RUN_STORE` | Store | Notes |
+|---|---|---|
+| unset or `sqlite` | `runs/runs.db` | The default. Uses `node:sqlite`, which is built into Node 22.13+ — no native module is installed or compiled. |
+| `files` | `runs/<run-id>/` | One directory per run, readable with `cat`. Listing and crash reconciliation walk the directory tree, which is slower as a project's history grows. |
+
+The first time a project opens with the SQLite store, any run directories
+already present are imported into `runs.db` and **left on disk**, so setting
+`CUESHEET_RUN_STORE=files` afterwards still shows the same history. Run records
+under the file store are written atomically and its event logs are append-only;
+under SQLite a run's final state and its diff are committed in one transaction.
+On a runtime without `node:sqlite`, the daemon opens the file store instead.
 
 ## Security and privacy
 

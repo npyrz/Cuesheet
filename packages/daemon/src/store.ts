@@ -13,6 +13,13 @@
  * cross-platform Electron build, and `RunStore` is the seam that lets beta
  * swap in `node:sqlite` without touching a caller.
  *
+ * **Step 52 took that swap, and this store stayed.** `store-sqlite.ts` is the
+ * default now — it answers `list(limit)` and `unfinished()` off an index
+ * rather than off `readdir` — but files remain a supported backend rather than
+ * a legacy one, because they are the format a stranger can read with `cat`
+ * when everything else has gone wrong. Both implementations are held to
+ * `RUN_STORE_CONTRACT`; see `store-contract.ts`.
+ *
  * Two invariants this file exists to hold:
  *
  * - **Writes to one run are serialized.** Concurrent append streams throw
@@ -116,9 +123,86 @@ export interface RunStore {
    * opens every `events.jsonl` on disk just to render a row.
    */
   update(runId: RunId, patch: RunUpdate): Promise<Run>;
+  /**
+   * Every run still in a non-terminal state, at any age. Optional.
+   *
+   * `reconcileInterruptedRuns` wants exactly this question and the file store
+   * cannot answer it without reading every record ever written, which is why
+   * it scans a bounded window of recent runs instead and a run stranded
+   * further back stays `running` forever. A store with an index answers it
+   * outright; one without omits the method and keeps the bounded scan. Making
+   * it optional rather than mandatory is what keeps the file store a real
+   * choice instead of a crippled one.
+   */
+  unfinished?(): Promise<Run[]>;
+  /**
+   * Release whatever the store holds open. Optional, and idempotent.
+   *
+   * The file store needs nothing; a database connection does, and on Windows
+   * an open handle is not merely untidy — it makes the directory undeletable,
+   * which a test with a temp root discovers and a user upgrading in place
+   * discovers later.
+   */
+  close?(): Promise<void>;
 }
 
 export const ZERO_COST: Cost = { tokensIn: 0, tokensOut: 0 };
+
+/**
+ * What a fresh run record looks like, and what each transition does to it.
+ *
+ * These three live here rather than inside `createFileRunStore` because there
+ * are two stores now and this is the part they must agree on exactly: that
+ * `create` zeroes the cost, that `update` leaves the fields it was not given
+ * alone, and that `finish` without a cost keeps the one the run accumulated.
+ * A backend gets to choose where the bytes go; it does not get to choose what
+ * a transition means. Duplicating them would make the difference between the
+ * stores a matter of two implementations drifting rather than one changing.
+ *
+ * `exactOptionalPropertyTypes` is on throughout: assigning a possibly-absent
+ * value to an optional property is an error, so absent stays absent.
+ */
+export function newRunRecord(
+  input: CreateRunInput,
+  id: RunId,
+  createdAt: string,
+): Run {
+  return {
+    id,
+    kind: input.kind ?? "prompt",
+    status: "queued",
+    prompt: input.prompt,
+    stationIds: input.stationIds ?? [],
+    workspace: input.workspace,
+    createdAt,
+    cost: { ...ZERO_COST },
+    ...(input.cuesheetId !== undefined && { cuesheetId: input.cuesheetId }),
+  };
+}
+
+export function applyRunUpdate(run: Run, patch: RunUpdate): Run {
+  return {
+    ...run,
+    ...(patch.status !== undefined && { status: patch.status }),
+    ...(patch.startedAt !== undefined && { startedAt: patch.startedAt }),
+    ...(patch.cost !== undefined && { cost: patch.cost }),
+  };
+}
+
+export function applyRunFinish(
+  run: Run,
+  input: FinishRunInput,
+  finishedAt: string,
+): Run {
+  return {
+    ...run,
+    status: input.status,
+    finishedAt,
+    cost: input.cost ?? run.cost,
+    ...(input.result !== undefined && { result: input.result }),
+    ...(input.error !== undefined && { error: input.error }),
+  };
+}
 
 export interface FileRunStoreOptions {
   /** Defaults to the real host; tests point `homedir` at a temp directory. */
@@ -219,19 +303,7 @@ export function createFileRunStore(
     async create(input) {
       const createdAt = now().toISOString();
       const id = newId(now());
-      const run: Run = {
-        id,
-        kind: input.kind ?? "prompt",
-        status: "queued",
-        prompt: input.prompt,
-        stationIds: input.stationIds ?? [],
-        workspace: input.workspace,
-        createdAt,
-        cost: { ...ZERO_COST },
-        // `exactOptionalPropertyTypes` is on: assigning a possibly-undefined
-        // value to an optional property is an error, so absent means absent.
-        ...(input.cuesheetId !== undefined && { cuesheetId: input.cuesheetId }),
-      };
+      const run = newRunRecord(input, id, createdAt);
 
       return serialize(id, async () => {
         await mkdir(dir(id), { recursive: true });
@@ -256,12 +328,7 @@ export function createFileRunStore(
 
     async update(runId, patch) {
       return serialize(runId, () =>
-        patchRun(runId, (run) => ({
-          ...run,
-          ...(patch.status !== undefined && { status: patch.status }),
-          ...(patch.startedAt !== undefined && { startedAt: patch.startedAt }),
-          ...(patch.cost !== undefined && { cost: patch.cost }),
-        })),
+        patchRun(runId, (run) => applyRunUpdate(run, patch)),
       );
     },
 
@@ -270,14 +337,8 @@ export function createFileRunStore(
         if (input.diff !== undefined) {
           await writeFile(join(dir(runId), "diff.patch"), input.diff, "utf8");
         }
-        return patchRun(runId, (run) => ({
-          ...run,
-          status: input.status,
-          finishedAt: now().toISOString(),
-          cost: input.cost ?? run.cost,
-          ...(input.result !== undefined && { result: input.result }),
-          ...(input.error !== undefined && { error: input.error }),
-        }));
+        const finishedAt = now().toISOString();
+        return patchRun(runId, (run) => applyRunFinish(run, input, finishedAt));
       });
     },
 

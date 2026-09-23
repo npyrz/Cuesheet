@@ -46,6 +46,7 @@ import {
 } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
 import { type RunDetailResponse, type RunStore } from "./store.js";
+import type { RunStoreBackend } from "./store-backend.js";
 import { type RunExecutor } from "./executor.js";
 import {
   createProjectRuntimes,
@@ -128,8 +129,14 @@ export interface StartDaemonOptions {
    * exact thing this step exists to prevent. Use `storeFactory` otherwise.
    */
   store?: RunStore;
-  /** Build a store per project. Defaults to files under the project's dir. */
-  storeFactory?: (project: Project) => RunStore;
+  /** Build a store per project. Defaults to the project's own `runs.db`. */
+  storeFactory?: (project: Project) => RunStore | Promise<RunStore>;
+  /**
+   * `sqlite` (the default) or `files`. Read from `CUESHEET_RUN_STORE` when
+   * absent; see `store-backend.ts` for why this is an installation-level
+   * choice rather than a config table.
+   */
+  storeBackend?: RunStoreBackend;
   /**
    * The project registry. Defaults to `~/.cuesheet/projects.json`.
    *
@@ -323,6 +330,9 @@ export async function startDaemon(
               deps.config().config.limits,
             ),
         }),
+    }),
+    ...(options.storeBackend !== undefined && {
+      storeBackend: options.storeBackend,
     }),
     // A single injected store means "use this for every project". Honest only
     // with one project, which is what every caller passing it has.

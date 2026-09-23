@@ -38,6 +38,30 @@ export type {
 } from "./store.js";
 
 export {
+  openSqliteRunStore,
+  sqliteAvailable,
+  RUNS_DB_FILENAME,
+  RUNS_SCHEMA_VERSION,
+  SqliteUnavailableError,
+  RunsSchemaTooNewError,
+} from "./store-sqlite.js";
+export type { SqliteRunStore, SqliteRunStoreOptions } from "./store-sqlite.js";
+
+export {
+  openRunStore,
+  resolveRunStoreBackend,
+  DEFAULT_RUN_STORE_BACKEND,
+  RUN_STORE_ENV_VAR,
+} from "./store-backend.js";
+export type { RunStoreBackend, OpenRunStoreOptions } from "./store-backend.js";
+
+// The contract both stores are held to, exported for the same reason the
+// harness contract is: a backend written outside this repo should be able to
+// check itself without reading ours.
+export { RUN_STORE_CONTRACT } from "./store-contract.js";
+export type { RunStoreCheck } from "./store-contract.js";
+
+export {
   reconcileInterruptedRuns,
   INTERRUPTED_REASON,
   RECONCILE_SCAN_LIMIT,

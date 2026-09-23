@@ -26,14 +26,20 @@ import { isTerminalStatus, type RunId } from "@cuesheet/core";
 import type { RunStore } from "./store.js";
 
 /**
- * How far back to look.
+ * How far back to look **when the store cannot be asked directly**.
  *
- * The file store has no "give me the unfinished ones" query, so this reads
- * run records newest-first and stops. Reconciling *every* run would make boot
+ * The file store has no "give me the unfinished ones" query, so this reads run
+ * records newest-first and stops. Reconciling *every* run would make boot
  * O(all runs ever) — the second place the file store's scaling shows through,
- * after `list()` itself, and the second reason the plan puts SQLite behind
- * `RunStore` before beta. A run left `running` further back than this is
- * already old, already wrong, and not worth a slower launch for.
+ * after `list()` itself, and the second reason the plan put SQLite behind
+ * `RunStore` before beta.
+ *
+ * Step 52 took that reason away for the default store and left the window
+ * here rather than deleting it: a `RunStore` with `unfinished()` is asked for
+ * exactly the stranded runs, at any age, and one without keeps this bounded
+ * scan and its known hole — a run left `running` further back than this stays
+ * that way. That is a real difference between the backends and it is stated
+ * in the interface rather than hidden here.
  */
 export const RECONCILE_SCAN_LIMIT = 200;
 
@@ -43,6 +49,7 @@ export const INTERRUPTED_REASON =
 
 export interface ReconcileOptions {
   store: RunStore;
+  /** Only consulted for a store with no `unfinished()`. */
   limit?: number;
 }
 
@@ -58,8 +65,9 @@ export async function reconcileInterruptedRuns({
   store,
   limit = RECONCILE_SCAN_LIMIT,
 }: ReconcileOptions): Promise<RunId[]> {
-  const runs = await store.list(limit);
-  const stranded = runs.filter((run) => !isTerminalStatus(run.status));
+  const stranded = store.unfinished
+    ? await store.unfinished()
+    : (await store.list(limit)).filter((run) => !isTerminalStatus(run.status));
 
   const repaired: RunId[] = [];
   for (const run of stranded) {
