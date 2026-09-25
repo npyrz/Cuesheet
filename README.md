@@ -28,6 +28,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
 | Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
+| Upgrades | State from every published release opens with nothing lost, checked in CI against profiles captured from those releases; config, registry and run store are versioned and refuse a newer build's files |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).
 

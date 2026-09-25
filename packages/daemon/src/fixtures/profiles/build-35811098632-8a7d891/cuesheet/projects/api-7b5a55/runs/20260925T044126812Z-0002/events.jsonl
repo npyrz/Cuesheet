@@ -1,0 +1,26 @@
+{"t":"status","at":"2026-09-25T04:41:26.812Z","runId":"20260925T044126812Z-0002","status":"queued"}
+{"t":"status","at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","status":"running"}
+{"t":"text","chunk":"Reading the brief: Ship the limiter\n","at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"tool","name":"list","input":{"path":"."},"at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"denial","reason":"Path is the workspace root itself, not a file inside it.","path":".","at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"cost","tokensIn":120,"tokensOut":0,"at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"denial","reason":"Path escapes the workspace ({{HOME}}/code/api).","path":"../outside-the-workspace.txt","at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"standby","at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","standbyId":"sb_mugh45y5_3","ask":"Write cuesheet-mock.md in the workspace?"}
+{"t":"status","at":"2026-09-25T04:41:26.813Z","runId":"20260925T044126812Z-0002","status":"standby"}
+{"t":"status","at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","status":"running"}
+{"t":"text","chunk":"Planning the change.\n","at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"text","chunk":"Brief: Ship the limiter\n","at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"text","chunk":"Editing one file.\n","at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"text","chunk":"Done.\n","at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"tool","name":"write","input":{"path":"cuesheet-mock.md"},"at":"2026-09-25T04:41:26.866Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"file","path":"cuesheet-mock.md","op":"write","at":"2026-09-25T04:41:26.867Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":40,"usd":0.0012,"at":"2026-09-25T04:41:26.867Z","runId":"20260925T044126812Z-0002","stationId":"builder"}
+{"t":"standby","at":"2026-09-25T04:41:26.946Z","runId":"20260925T044126812Z-0002","standbyId":"sb_mugh461u_4","ask":"Gate \"review\" held this run. 0 of 1 required approval (0 reviews recorded). Override and continue?"}
+{"t":"status","at":"2026-09-25T04:41:26.946Z","runId":"20260925T044126812Z-0002","status":"standby"}
+{"t":"status","at":"2026-09-25T04:41:26.971Z","runId":"20260925T044126812Z-0002","status":"running"}
+{"t":"done","at":"2026-09-25T04:41:27.009Z","runId":"20260925T044126812Z-0002","result":{"status":"done","cost":{"tokensIn":120,"tokensOut":136,"usd":0.0012},"durationMs":196,"stations":[{"stationId":"builder","harness":"mock","vendor":"cuesheet","cost":{"tokensIn":120,"tokensOut":136,"usd":0.0012},"durationMs":97}],"diff":{"filesChanged":1,"insertions":5,"deletions":0},"gates":[{"gate":"review","outcome":"hold","reasons":["0 of 1 required approval (0 reviews recorded)."],"overridden":true}]}}
+{"t":"status","at":"2026-09-25T04:41:27.010Z","runId":"20260925T044126812Z-0002","status":"done"}

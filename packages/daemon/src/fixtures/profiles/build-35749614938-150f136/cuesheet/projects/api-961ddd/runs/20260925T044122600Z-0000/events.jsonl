@@ -1,0 +1,23 @@
+{"t":"status","at":"2026-09-25T04:41:22.600Z","runId":"20260925T044122600Z-0000","status":"queued"}
+{"t":"status","at":"2026-09-25T04:41:22.601Z","runId":"20260925T044122600Z-0000","status":"running"}
+{"t":"text","chunk":"Reading the brief: Add a rate limiter\n","at":"2026-09-25T04:41:22.601Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"tool","name":"list","input":{"path":"."},"at":"2026-09-25T04:41:22.601Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"denial","reason":"Path is the workspace root itself, not a file inside it.","path":".","at":"2026-09-25T04:41:22.602Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"cost","tokensIn":120,"tokensOut":0,"at":"2026-09-25T04:41:22.602Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"denial","reason":"Path escapes the workspace ({{HOME}}/code/api).","path":"../outside-the-workspace.txt","at":"2026-09-25T04:41:22.602Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"standby","at":"2026-09-25T04:41:22.602Z","runId":"20260925T044122600Z-0000","standbyId":"sb_mugh42p6_1","ask":"Write cuesheet-mock.md in the workspace?"}
+{"t":"status","at":"2026-09-25T04:41:22.602Z","runId":"20260925T044122600Z-0000","status":"standby"}
+{"t":"status","at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","status":"running"}
+{"t":"text","chunk":"Planning the change.\n","at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"text","chunk":"Brief: Add a rate limiter\n","at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"text","chunk":"Editing one file.\n","at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"text","chunk":"Done.\n","at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"tool","name":"write","input":{"path":"cuesheet-mock.md"},"at":"2026-09-25T04:41:22.656Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"file","path":"cuesheet-mock.md","op":"write","at":"2026-09-25T04:41:22.657Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"cost","tokensIn":0,"tokensOut":40,"usd":0.0012,"at":"2026-09-25T04:41:22.657Z","runId":"20260925T044122600Z-0000","stationId":"builder"}
+{"t":"done","at":"2026-09-25T04:41:22.776Z","runId":"20260925T044122600Z-0000","result":{"status":"done","cost":{"tokensIn":120,"tokensOut":136,"usd":0.0012},"durationMs":175,"stations":[{"stationId":"builder","harness":"mock","vendor":"cuesheet","cost":{"tokensIn":120,"tokensOut":136,"usd":0.0012},"durationMs":139}],"diff":{"filesChanged":1,"insertions":5,"deletions":0}}}
+{"t":"status","at":"2026-09-25T04:41:22.777Z","runId":"20260925T044122600Z-0000","status":"done"}

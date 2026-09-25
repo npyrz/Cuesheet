@@ -219,6 +219,35 @@ export interface LoadedConfig {
 
 export const DEFAULT_CONFIG: Config = ConfigSchema.parse({});
 
+// ── Versioning ──────────────────────────────────────────────────────────────
+
+/**
+ * The config format this build reads — the top-level `version = N` key.
+ *
+ * **Absent means 1, and 1 is the format `v0.1.0-alpha` shipped.** Every table
+ * added since (`[gate.*]`, `[limits]`, `[commons]`) was additive, so every
+ * released build's config parses here unchanged; the profiles under
+ * `daemon/src/fixtures/profiles` are what prove that rather than assert it.
+ * So no file needs the key today, and no writer adds it: stamping a
+ * `version = 1` into a repository's committed `cuesheet.toml` would be a diff
+ * in somebody's code that changes nothing.
+ *
+ * **The key exists for the build that comes after a breaking change.** That
+ * build writes `version = 2`, and this one — the older build a teammate still
+ * runs against the same committed file — refuses it rather than reading a
+ * format it half-understands and then writing a Station into it.
+ *
+ * **A config is upgraded where it is read, never rewritten on disk,** and that
+ * is a deliberate difference from the run store. `cuesheet.toml` is usually
+ * committed and shared, often by people on different builds; rewriting it on
+ * load would hand every teammate on an older build a file their build refuses.
+ * When version 2 exists, its upgrade from 1 goes in {@link parseConfig},
+ * between the version check and the schema, and runs on every read. Nothing
+ * is built for that yet, because a migration list with nothing in it is a
+ * mechanism nobody has exercised.
+ */
+export const CONFIG_VERSION = 1;
+
 // ── Parsing ─────────────────────────────────────────────────────────────────
 
 export class ConfigError extends Error {
@@ -230,6 +259,49 @@ export class ConfigError extends Error {
     super(message);
     this.name = "ConfigError";
   }
+}
+
+/**
+ * A config written by a newer Cuesheet. A `ConfigError`, so every caller that
+ * already refuses a broken file refuses this one too — `addStation` included,
+ * which is the one that would otherwise write into it.
+ */
+export class ConfigTooNewError extends ConfigError {
+  constructor(
+    readonly found: number,
+    sourcePath: string | null,
+  ) {
+    super(
+      `${sourcePath ?? "config"} was written by a newer version of Cuesheet ` +
+        `(config v${String(found)}; this build reads v${String(CONFIG_VERSION)}). ` +
+        `Upgrade Cuesheet rather than editing the version down; nothing has been changed.`,
+      sourcePath,
+    );
+    this.name = "ConfigTooNewError";
+  }
+}
+
+/**
+ * Read the `version` key, refusing one this build does not understand.
+ *
+ * Checked before the schema, so a newer file is refused for being newer
+ * rather than for whichever of its new fields zod happens to trip on first —
+ * "invalid" and "from the future" need different remedies.
+ */
+function configVersion(
+  table: Record<string, unknown>,
+  sourcePath: string | null,
+): number {
+  const raw = table["version"];
+  if (raw === undefined) return 1;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
+    throw new ConfigError(
+      `${sourcePath ?? "config"}: \`version\` must be a whole number of 1 or more.`,
+      sourcePath,
+    );
+  }
+  if (raw > CONFIG_VERSION) throw new ConfigTooNewError(raw, sourcePath);
+  return raw;
 }
 
 /**
@@ -282,9 +354,13 @@ export function parseConfig(
   }
 
   const table = raw as Record<string, unknown>;
+  configVersion(table, sourcePath);
   const warnings: ConfigWarning[] = [];
   const deferred: Record<string, unknown> = {};
   const implemented = new Set([
+    // A key rather than a table, and not part of `Config`: it describes the
+    // file, not the workflow, and `configVersion` has already dealt with it.
+    "version",
     "desk",
     "station",
     "gate",

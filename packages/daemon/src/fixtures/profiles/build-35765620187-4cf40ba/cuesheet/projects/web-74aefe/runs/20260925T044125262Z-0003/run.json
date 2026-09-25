@@ -1,0 +1,18 @@
+{
+  "id": "20260925T044125262Z-0003",
+  "kind": "prompt",
+  "status": "failed",
+  "prompt": "Fix the header",
+  "stationIds": [
+    "front"
+  ],
+  "workspace": "{{HOME}}/code/web",
+  "createdAt": "2026-09-25T04:41:25.262Z",
+  "cost": {
+    "tokensIn": 120,
+    "tokensOut": 96
+  },
+  "startedAt": "2026-09-25T04:41:25.262Z",
+  "finishedAt": "2026-09-25T04:41:25.359Z",
+  "error": "Leash denied cuesheet-mock.md: Path is outside the Station's allowed paths (src/**)."
+}

@@ -131,6 +131,15 @@ The repository-local file is useful when a team wants to review and share its
 Station layout. The home-directory fallback lets someone use Cuesheet without
 adding a file to the repository.
 
+An optional top-level `version = 1` names the config format. Leaving it out
+means version 1, which is the format every released build has written, so no
+existing file needs it and Cuesheet never adds it. A build that finds a
+version newer than it understands refuses the file, including refusing to add
+a Station to it, instead of reading a format it only half understands. When a
+format change ships, older files are upgraded as they are read. The file on
+disk is never rewritten, because it is often committed and shared with
+teammates on other builds.
+
 ### Complete schema example
 
 The Stations, Gate, cuesheet, limits, and Commons approval policy below are
@@ -457,6 +466,7 @@ the browser Desk's normal surface through the Vite proxy.
 |---|---|---|
 | `GET` | `/api/health` | Process health and daemon version. |
 | `GET` | `/api/usage` | Cached usage from every registered harness. |
+| `GET` | `/api/migrations` | What earlier boots migrated on disk, oldest first. |
 | `GET` | `/api/commons` | List Commons facts. |
 | `POST` | `/api/commons` | Write a fact and regenerate projections. |
 | `GET` | `/api/commons/inbox` | List pending agent-captured memories. |
@@ -562,6 +572,7 @@ on Windows):
 ```text
 ~/.cuesheet/
 ├── daemon.json
+├── migrations.jsonl
 ├── projects.json
 ├── commons/
 ├── commons-inbox/
@@ -593,6 +604,33 @@ already present are imported into `runs.db` and **left on disk**, so setting
 under the file store are written atomically and its event logs are append-only;
 under SQLite a run's final state and its diff are committed in one transaction.
 On a runtime without `node:sqlite`, the daemon opens the file store instead.
+
+### Upgrades
+
+Every released build's state opens on the current source with nothing lost.
+This is tested rather than promised: CI boots the daemon over a profile
+captured from each published release (`packages/daemon/src/fixtures/profiles`,
+written by `scripts/capture-profile.mjs`) and compares every project, Station,
+run, event, diff and Commons fact with what that release itself reported.
+
+Each piece of state carries its own version, and a build that finds a newer
+one refuses to write to it:
+
+| State | Version | Newer than this build |
+|---|---|---|
+| `projects.json` | `version` field | The daemon cannot read the project list and does not start |
+| `runs.db` | SQLite `user_version` | The daemon starts; that project's routes answer `409` with the reason |
+| `cuesheet.toml` | optional `version` key | The daemon starts; that project's routes answer `409` with the reason |
+
+Other projects keep working when one of them holds a newer build's files. In
+every case the files are left untouched. Downgrading is not supported: install
+the newer build again.
+
+Every migration that changes something appends one JSON line to
+`~/.cuesheet/migrations.jsonl`, and `GET /api/migrations` serves the same
+list: which build did what, when, and to which project. The log is only a
+record. Each migration decides whether to run by checking the state itself,
+so deleting the log changes nothing.
 
 ## Security and privacy
 
@@ -655,6 +693,14 @@ Check all three layers:
 3. A matching `deny` glob wins over any allow glob.
 
 For Codex, reviewer and caller roles also receive the CLI's read-only sandbox.
+
+### Cuesheet says my state was written by a newer version
+
+A newer build has written to that file: `projects.json`, a project's `runs.db`,
+or a `cuesheet.toml` with a higher `version`. Cuesheet refuses rather than
+risk damaging it, and it has changed nothing. Install the newer build again.
+Editing the version number down does not make the older build understand the
+newer format.
 
 ### I switched projects and the run disappeared
 

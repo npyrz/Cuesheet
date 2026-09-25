@@ -11,7 +11,12 @@ import {
   stationBlock,
   stationIdTaken,
 } from "./config-write.js";
-import { ConfigError, parseConfig } from "./config.js";
+import {
+  CONFIG_VERSION,
+  ConfigError,
+  ConfigTooNewError,
+  parseConfig,
+} from "./config.js";
 import type { HostEnv } from "./paths.js";
 
 async function scratch(): Promise<string> {
@@ -324,5 +329,33 @@ describe("addStation", () => {
     await expect(
       readFile(`${result.sourcePath}.tmp`, "utf8"),
     ).rejects.toThrow();
+  });
+});
+
+describe("a config from a newer build", () => {
+  it("is refused by addStation and left byte for byte as it was", async () => {
+    // The reason the version exists: an older build writing a Station into a
+    // file whose format it does not understand is how a teammate's newer
+    // config gets damaged by somebody else's click.
+    const dir = await scratch();
+    const target = join(dir, "cuesheet.toml");
+    const original = `version = ${String(CONFIG_VERSION + 1)}\n\n[[station]]\nid = "a"\nharness = "mock"\nrole = "engineer"\n`;
+    await writeFile(target, original, "utf8");
+
+    await expect(
+      addStation({ ...BASE }, { sourcePath: target, env: envAt(dir) }),
+    ).rejects.toThrow(ConfigTooNewError);
+    expect(await readFile(target, "utf8")).toBe(original);
+  });
+
+  it("keeps a version key through a write, since the writer appends", async () => {
+    const dir = await scratch();
+    const target = join(dir, "cuesheet.toml");
+    await writeFile(target, `version = ${String(CONFIG_VERSION)}\n`, "utf8");
+
+    await addStation({ ...BASE }, { sourcePath: target, env: envAt(dir) });
+    const text = await readFile(target, "utf8");
+    expect(text.startsWith(`version = ${String(CONFIG_VERSION)}\n`)).toBe(true);
+    expect(parseConfig(text).config.station.map((s) => s.id)).toEqual(["opus"]);
   });
 });

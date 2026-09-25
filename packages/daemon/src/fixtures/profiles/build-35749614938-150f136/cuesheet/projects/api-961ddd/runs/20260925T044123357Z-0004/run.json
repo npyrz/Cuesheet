@@ -1,0 +1,16 @@
+{
+  "id": "20260925T044123357Z-0004",
+  "kind": "prompt",
+  "status": "standby",
+  "prompt": "Parked on a question",
+  "stationIds": [
+    "builder"
+  ],
+  "workspace": "{{HOME}}/code/api",
+  "createdAt": "2026-09-25T04:41:23.357Z",
+  "cost": {
+    "tokensIn": 0,
+    "tokensOut": 0
+  },
+  "startedAt": "2026-09-25T04:41:23.358Z"
+}

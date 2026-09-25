@@ -1,0 +1,56 @@
+{
+  "id": "20260925T044126812Z-0002",
+  "kind": "prompt",
+  "status": "done",
+  "prompt": "Ship the limiter",
+  "stationIds": [
+    "builder"
+  ],
+  "workspace": "{{HOME}}/code/api",
+  "createdAt": "2026-09-25T04:41:26.812Z",
+  "cost": {
+    "tokensIn": 120,
+    "tokensOut": 136,
+    "usd": 0.0012
+  },
+  "cuesheetId": "ship",
+  "startedAt": "2026-09-25T04:41:26.812Z",
+  "finishedAt": "2026-09-25T04:41:27.010Z",
+  "result": {
+    "status": "done",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 136,
+      "usd": 0.0012
+    },
+    "durationMs": 196,
+    "stations": [
+      {
+        "stationId": "builder",
+        "harness": "mock",
+        "vendor": "cuesheet",
+        "cost": {
+          "tokensIn": 120,
+          "tokensOut": 136,
+          "usd": 0.0012
+        },
+        "durationMs": 97
+      }
+    ],
+    "diff": {
+      "filesChanged": 1,
+      "insertions": 5,
+      "deletions": 0
+    },
+    "gates": [
+      {
+        "gate": "review",
+        "outcome": "hold",
+        "reasons": [
+          "0 of 1 required approval (0 reviews recorded)."
+        ],
+        "overridden": true
+      }
+    ]
+  }
+}

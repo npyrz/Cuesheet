@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "lastOpenedId": "web-16dc5c",
+  "projects": [
+    {
+      "id": "api-7b5a55",
+      "name": "api",
+      "root": "{{HOME}}/code/api",
+      "addedAt": "2026-09-25T04:41:26.424Z",
+      "lastOpenedAt": "2026-09-25T04:41:26.424Z"
+    },
+    {
+      "id": "web-16dc5c",
+      "name": "web",
+      "root": "{{HOME}}/code/web",
+      "addedAt": "2026-09-25T04:41:27.024Z",
+      "lastOpenedAt": "2026-09-25T04:41:27.024Z"
+    }
+  ]
+}

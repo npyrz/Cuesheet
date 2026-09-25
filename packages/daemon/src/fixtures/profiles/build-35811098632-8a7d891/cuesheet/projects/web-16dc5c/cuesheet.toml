@@ -1,0 +1,7 @@
+[[station]]
+id = "front"
+harness = "mock"
+role = "engineer"
+workspace = "{{HOME}}/code/web"
+paths = [ "src/**" ]
+deny = [ ".git/**" ]

@@ -5,7 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  CONFIG_VERSION,
   ConfigError,
+  ConfigTooNewError,
   DEFERRED_TABLES,
   configSearchPaths,
   isGateRef,
@@ -316,4 +318,54 @@ describe("a UTF-8 BOM", () => {
     const loaded = parseConfig(toml, "/cuesheet.toml");
     expect(loaded.config.desk?.name).toBe(`a${BOM}b`);
   });
+});
+
+describe("the config version", () => {
+  const station = `[[station]]\nid = "opus"\nharness = "claude-code"\nrole = "engineer"\nworkspace = "/ws"\n`;
+
+  it("treats an absent version as the format every released build wrote", () => {
+    const loaded = parseConfig(station);
+    expect(loaded.config.station).toHaveLength(1);
+    expect(loaded.warnings).toEqual([]);
+  });
+
+  it("accepts the current version without calling it an unknown table", () => {
+    const loaded = parseConfig(
+      `version = ${String(CONFIG_VERSION)}\n${station}`,
+    );
+    expect(loaded.config.station).toHaveLength(1);
+    expect(loaded.warnings).toEqual([]);
+    expect(loaded.deferred).toEqual({});
+  });
+
+  it("refuses a config written by a newer build, and says that is what it is", () => {
+    const text = `version = ${String(CONFIG_VERSION + 1)}\n${station}`;
+    expect(() => parseConfig(text, "/p/cuesheet.toml")).toThrow(
+      ConfigTooNewError,
+    );
+    expect(() => parseConfig(text, "/p/cuesheet.toml")).toThrow(
+      /newer version of Cuesheet/,
+    );
+  });
+
+  it("refuses for being newer before the schema can refuse for anything else", () => {
+    // A newer format will contain things this build cannot validate. The
+    // operator needs "upgrade", not a list of fields that look like typos.
+    const text = `version = ${String(CONFIG_VERSION + 1)}\n[[station]]\nid = "x"\nrole = "from-the-future"\n`;
+    expect(() => parseConfig(text)).toThrow(ConfigTooNewError);
+  });
+
+  it.each(["0", "1.5", '"1"', "-1"])(
+    "rejects version = %s as malformed rather than too new",
+    (value) => {
+      let caught: unknown;
+      try {
+        parseConfig(`version = ${value}\n${station}`);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(ConfigError);
+      expect(caught).not.toBeInstanceOf(ConfigTooNewError);
+    },
+  );
 });

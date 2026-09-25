@@ -13,7 +13,7 @@ export default tseslint.config(
      * bundler. They are ESM modules with no TypeScript config behind them, so
      * eslint assumes a browser and reports `Buffer`, `process` and `console`
      * as undefined — correctly, given what it knows. Declared by hand rather
-     * than pulling in the `globals` package for six names.
+     * than pulling in the `globals` package for a handful of names.
      */
     files: ["**/*.mjs", "eslint.config.js", "*.config.js"],
     languageOptions: {
@@ -24,6 +24,7 @@ export default tseslint.config(
         process: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
+        fetch: "readonly",
       },
     },
   },

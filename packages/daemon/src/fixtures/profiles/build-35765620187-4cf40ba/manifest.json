@@ -1,0 +1,363 @@
+{
+  "tag": "build-35765620187-4cf40ba",
+  "capturedWith": "v25.2.1",
+  "daemonVersion": "0.1.0-alpha",
+  "home": "{{HOME}}",
+  "workspaces": [
+    "code/api",
+    "code/web"
+  ],
+  "projects": [
+    {
+      "id": "web-74aefe",
+      "name": "web",
+      "root": "{{HOME}}/code/web",
+      "stations": [
+        {
+          "id": "front",
+          "harness": "mock",
+          "role": "engineer",
+          "workspace": "{{HOME}}/code/web",
+          "paths": [
+            "src/**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "20260925T044125262Z-0003",
+          "status": "failed",
+          "stationIds": [
+            "front"
+          ],
+          "events": 22,
+          "diff": null,
+          "run": {
+            "id": "20260925T044125262Z-0003",
+            "kind": "prompt",
+            "status": "failed",
+            "prompt": "Fix the header",
+            "stationIds": [
+              "front"
+            ],
+            "workspace": "{{HOME}}/code/web",
+            "createdAt": "2026-09-25T04:41:25.262Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 96
+            },
+            "startedAt": "2026-09-25T04:41:25.262Z",
+            "finishedAt": "2026-09-25T04:41:25.359Z",
+            "error": "Leash denied cuesheet-mock.md: Path is outside the Station's allowed paths (src/**)."
+          }
+        }
+      ]
+    },
+    {
+      "id": "api-4c9611",
+      "name": "api",
+      "root": "{{HOME}}/code/api",
+      "stations": [
+        {
+          "id": "builder",
+          "harness": "mock",
+          "role": "engineer",
+          "workspace": "{{HOME}}/code/api",
+          "paths": [
+            "**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        },
+        {
+          "id": "critic",
+          "harness": "mock",
+          "role": "reviewer",
+          "workspace": "{{HOME}}/code/api",
+          "paths": [
+            "**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "20260925T044125511Z-0005",
+          "status": "queued",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 1,
+          "diff": null,
+          "run": {
+            "id": "20260925T044125511Z-0005",
+            "kind": "prompt",
+            "status": "queued",
+            "prompt": "Queued behind it",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:25.511Z",
+            "cost": {
+              "tokensIn": 0,
+              "tokensOut": 0
+            }
+          }
+        },
+        {
+          "id": "20260925T044125458Z-0004",
+          "status": "standby",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 9,
+          "diff": null,
+          "run": {
+            "id": "20260925T044125458Z-0004",
+            "kind": "prompt",
+            "status": "standby",
+            "prompt": "Parked on a question",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:25.458Z",
+            "cost": {
+              "tokensIn": 0,
+              "tokensOut": 0
+            },
+            "startedAt": "2026-09-25T04:41:25.459Z"
+          }
+        },
+        {
+          "id": "20260925T044125026Z-0002",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 26,
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..1b5ec01\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Ship the limiter\n+\n+Written by the mock harness at 2026-09-25T04:41:25.082Z.\n",
+          "run": {
+            "id": "20260925T044125026Z-0002",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Ship the limiter",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:25.026Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 136,
+              "usd": 0.0012
+            },
+            "cuesheetId": "ship",
+            "startedAt": "2026-09-25T04:41:25.027Z",
+            "finishedAt": "2026-09-25T04:41:25.227Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 136,
+                "usd": 0.0012
+              },
+              "durationMs": 200,
+              "stations": [
+                {
+                  "stationId": "builder",
+                  "harness": "mock",
+                  "vendor": "cuesheet",
+                  "cost": {
+                    "tokensIn": 120,
+                    "tokensOut": 136,
+                    "usd": 0.0012
+                  },
+                  "durationMs": 99
+                }
+              ],
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              },
+              "gates": [
+                {
+                  "gate": "review",
+                  "outcome": "hold",
+                  "reasons": [
+                    "0 of 1 required approval (0 reviews recorded)."
+                  ],
+                  "overridden": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "20260925T044124920Z-0001",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 13,
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..d0f88ad\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Add a rate limiter\n+\n+Written by the mock harness at 2026-09-25T04:41:24.762Z.\n",
+          "run": {
+            "id": "20260925T044124920Z-0001",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Rename the handler",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:24.920Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 0
+            },
+            "startedAt": "2026-09-25T04:41:24.920Z",
+            "finishedAt": "2026-09-25T04:41:25.019Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 0
+              },
+              "durationMs": 98,
+              "stations": [
+                {
+                  "stationId": "builder",
+                  "harness": "mock",
+                  "vendor": "cuesheet",
+                  "cost": {
+                    "tokensIn": 120,
+                    "tokensOut": 0
+                  },
+                  "durationMs": 53
+                }
+              ],
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              }
+            }
+          }
+        },
+        {
+          "id": "20260925T044124705Z-0000",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 23,
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..d0f88ad\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Add a rate limiter\n+\n+Written by the mock harness at 2026-09-25T04:41:24.762Z.\n",
+          "run": {
+            "id": "20260925T044124705Z-0000",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Add a rate limiter",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:24.705Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 136,
+              "usd": 0.0012
+            },
+            "startedAt": "2026-09-25T04:41:24.706Z",
+            "finishedAt": "2026-09-25T04:41:24.897Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 136,
+                "usd": 0.0012
+              },
+              "durationMs": 189,
+              "stations": [
+                {
+                  "stationId": "builder",
+                  "harness": "mock",
+                  "vendor": "cuesheet",
+                  "cost": {
+                    "tokensIn": 120,
+                    "tokensOut": 136,
+                    "usd": 0.0012
+                  },
+                  "durationMs": 153
+                }
+              ],
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "commons": {
+    "facts": [
+      {
+        "id": "rate-limits-live-in-middleware",
+        "title": "Rate limits live in middleware",
+        "tags": [
+          "captured"
+        ],
+        "projects": [
+          "api-4c9611"
+        ],
+        "provenance": {
+          "station": "builder",
+          "run": "20260925T044125026Z-0002",
+          "at": "2026-09-25T04:41:25.420Z"
+        },
+        "body": "Rate limits live in middleware, learned during a run."
+      },
+      {
+        "id": "tabs-not-spaces",
+        "title": "Tabs, not spaces",
+        "tags": [
+          "style"
+        ],
+        "projects": [],
+        "provenance": {
+          "at": "2026-09-25T04:41:25.369Z"
+        },
+        "body": "The API repository indents with tabs."
+      }
+    ],
+    "pending": [
+      {
+        "id": "memory-1ef6f2db-d035-4ec7-b8e9-db5b712d8ec0",
+        "suggestedId": "integration-tests-need-redis",
+        "title": "Integration tests need Redis",
+        "body": "Integration tests need Redis, learned during a run.",
+        "tags": [
+          "captured"
+        ],
+        "projects": [
+          "api-4c9611"
+        ],
+        "provenance": {
+          "station": "builder",
+          "run": "20260925T044125026Z-0002",
+          "at": "2026-09-25T04:41:25.421Z"
+        }
+      }
+    ]
+  }
+}

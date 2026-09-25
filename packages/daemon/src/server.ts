@@ -23,7 +23,9 @@ import {
   checkLimits,
   chooseFallback,
   ConfigError,
+  ConfigTooNewError,
   configFile,
+  createMigrationLog,
   createProjectRegistry,
   DEFAULT_PORT,
   expandHome,
@@ -40,6 +42,7 @@ import {
   type HostEnv,
   type Fact,
   type LoadedConfig,
+  type MigrationLog,
   type Project,
   type ProjectRegistry,
   type RunEvent,
@@ -47,6 +50,7 @@ import {
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
 import { type RunDetailResponse, type RunStore } from "./store.js";
 import type { RunStoreBackend } from "./store-backend.js";
+import { RunsSchemaTooNewError } from "./store-sqlite.js";
 import { type RunExecutor } from "./executor.js";
 import {
   createProjectRuntimes,
@@ -293,6 +297,9 @@ export async function startDaemon(
     if (event.t === "done") usage.clear();
   });
   const registry = options.projectRegistry ?? createProjectRegistry({ env });
+  // Beside the registry and derived from the same `env`, so a test with an
+  // isolated home gets an isolated log without asking for one.
+  const migrationLog = createMigrationLog({ build: DAEMON_VERSION, env });
   const projector = createCommonsProjector({
     store: commons,
     registry,
@@ -303,6 +310,7 @@ export async function startDaemon(
   const runtimes = createProjectRuntimes({
     registry,
     env,
+    migrationLog,
     globalBus: bus,
     standbys,
     reconcile,
@@ -346,6 +354,7 @@ export async function startDaemon(
   const bootstrapped = await bootstrapProject({
     registry,
     runtimes,
+    migrationLog,
     cwd,
     env,
   });
@@ -409,6 +418,7 @@ export async function startDaemon(
     env,
     registry,
     runtimes,
+    migrationLog,
   };
 
   registerRoutes(app, routeDeps);
@@ -518,10 +528,11 @@ export async function startDaemon(
 async function bootstrapProject(deps: {
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
+  migrationLog: MigrationLog;
   cwd: string;
   env: HostEnv;
 }): Promise<BootstrapReport> {
-  const { registry, runtimes, cwd, env } = deps;
+  const { registry, runtimes, migrationLog, cwd, env } = deps;
   const report: BootstrapReport = { runtime: null, notes: [], problems: [] };
 
   const known = await registry.list();
@@ -537,8 +548,10 @@ async function bootstrapProject(deps: {
     // install, not to a folder, and with one project that is unambiguous. With
     // two, the daemon would be picking which one inherits a history that names
     // neither, so it leaves them alone rather than attributing them wrongly.
-    if (known.length === 1) await relocateRuns(existing.id, env, report);
-    report.runtime = await runtimes.get(existing.id);
+    if (known.length === 1) {
+      await relocateRuns(existing.id, env, migrationLog, report);
+    }
+    report.runtime = await openDefault(runtimes, existing, report);
     return report;
   }
   // Every known project's folder is gone. Opening a new one on top would be a
@@ -574,6 +587,11 @@ async function bootstrapProject(deps: {
       report.notes.push(
         `Upgraded: moved ${moved.from} to ${moved.to} for project "${project.name}".`,
       );
+      await recordQuietly(migrationLog, {
+        kind: "config-move",
+        project: project.id,
+        ...moved,
+      });
     }
   } catch (error) {
     // Nothing is lost — the config is still where it was — but this project
@@ -585,9 +603,45 @@ async function bootstrapProject(deps: {
     );
   }
 
-  await relocateRuns(project.id, env, report);
-  report.runtime = await runtimes.get(project.id);
+  await relocateRuns(project.id, env, migrationLog, report);
+  report.runtime = await openDefault(runtimes, project, report);
   return report;
+}
+
+/**
+ * Build the project the daemon comes up on — unless its state was written by
+ * a newer build, in which case say so and come up on none.
+ *
+ * A refusal used to propagate out of `startDaemon`, so one project holding a
+ * newer `runs.db` or `cuesheet.toml` stopped the daemon serving *every*
+ * project, and the Desk had nothing to show but a failed start. The refusal is
+ * about that project's files and so is the remedy. The same line Step 33 drew
+ * for a failed migration applies: the daemon boots, `/projects` answers, and
+ * the project's own routes return the refusal (409) until a newer build opens
+ * it. A config that is merely *broken* still stops the boot, as it always has;
+ * that is the operator's typo, and an empty Desk would hide it.
+ */
+async function openDefault(
+  runtimes: ProjectRuntimes,
+  project: Project,
+  report: BootstrapReport,
+): Promise<ProjectRuntime | null> {
+  try {
+    return await runtimes.get(project.id);
+  } catch (error) {
+    if (!isNewerStateError(error)) throw error;
+    report.problems.push(
+      `Project "${project.name}" was not opened: ${errorText(error)}`,
+    );
+    return null;
+  }
+}
+
+/** State written by a newer Cuesheet — refused, never read or written. */
+function isNewerStateError(error: unknown): boolean {
+  return (
+    error instanceof ConfigTooNewError || error instanceof RunsSchemaTooNewError
+  );
 }
 
 /** What `startDaemon` needs back: the project to serve, and what to log. */
@@ -609,6 +663,7 @@ interface BootstrapReport {
 async function relocateRuns(
   projectId: string,
   env: HostEnv,
+  migrationLog: MigrationLog,
   report: BootstrapReport,
 ): Promise<void> {
   try {
@@ -617,12 +672,33 @@ async function relocateRuns(
       report.notes.push(
         `Upgraded: moved run history from ${moved.from} to ${moved.to}.`,
       );
+      await recordQuietly(migrationLog, {
+        kind: "runs-move",
+        project: projectId,
+        ...moved,
+      });
     }
   } catch (error) {
     report.problems.push(
       `Could not move the existing run history at ${runsDir(env)}: ${errorText(error)}. ` +
         `Nothing has been deleted, and this will be retried on the next start.`,
     );
+  }
+}
+
+/**
+ * Append to the migration log without letting the log fail a migration that
+ * has already happened. The move is on disk either way; losing the line that
+ * describes it is worth a shrug, and refusing to boot over it is not.
+ */
+async function recordQuietly(
+  log: MigrationLog,
+  entry: Parameters<MigrationLog["record"]>[0],
+): Promise<void> {
+  try {
+    await log.record(entry);
+  } catch {
+    // Deliberately empty; see above.
   }
 }
 
@@ -643,6 +719,7 @@ interface RouteDeps {
   env: HostEnv;
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
+  migrationLog: MigrationLog;
 }
 
 /**
@@ -678,6 +755,15 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   } = deps;
 
   app.get("/health", async () => ({ ok: true, version: DAEMON_VERSION }));
+
+  /**
+   * What earlier boots changed on disk, oldest first. Global, like `/health`:
+   * most of it happened to the install before there was a project to scope it
+   * to. Read-only — the log records migrations, it does not drive them.
+   */
+  app.get("/migrations", async () => ({
+    migrations: await deps.migrationLog.read(),
+  }));
 
   /**
    * Plan usage — **global, not per project**, and the exception is worth a
@@ -1065,7 +1151,16 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       reply.code(400).send({ error: "Malformed project id." });
       return null;
     }
-    const runtime = await runtimes.get(id);
+    let runtime: ProjectRuntime | null;
+    try {
+      runtime = await runtimes.get(id);
+    } catch (error) {
+      // 409: the project exists and the request was fine; its files belong
+      // to a newer build. Anything else is still a 500, as before.
+      if (!isNewerStateError(error)) throw error;
+      reply.code(409).send({ error: errorText(error) });
+      return null;
+    }
     if (!runtime) {
       reply.code(404).send({ error: "No such project." });
       return null;

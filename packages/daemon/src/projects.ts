@@ -34,17 +34,20 @@
 import {
   hostEnv,
   loadConfigFrom,
+  pathFor,
   projectConfigFile,
   projectConfigSearchPaths,
   projectRunsDir,
   type HostEnv,
   type LoadedConfig,
+  type MigrationLog,
   type Project,
   type ProjectRegistry,
 } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
 import type { RunStore } from "./store.js";
 import { openRunStore, type RunStoreBackend } from "./store-backend.js";
+import { RUNS_DB_FILENAME, type RunsMigration } from "./store-sqlite.js";
 import { createRunQueue, type RunQueue } from "./queue.js";
 import { reconcileInterruptedRuns } from "./reconcile.js";
 import type { RunExecutor } from "./executor.js";
@@ -98,6 +101,8 @@ export interface ProjectRuntimesOptions {
   storeBackend?: RunStoreBackend;
   /** Off only for tests that want to assert on an unreconciled store. */
   reconcile?: boolean;
+  /** Where a store that migrated on open says so. Absent means unrecorded. */
+  migrationLog?: MigrationLog;
   replayLimit?: number;
 }
 
@@ -117,7 +122,59 @@ export function createProjectRuntimes(
   const { registry, globalBus, standbys } = options;
   const runtimes = new Map<string, Promise<ProjectRuntime | null>>();
 
+  /**
+   * Log what opening a store changed. Two things count, and creating a new
+   * database for a new project is neither: a store that imported history, and
+   * a store that already had a schema and was moved to the next one.
+   *
+   * Logged after the fact and never read back, so a failure to write the line
+   * is not a reason to refuse the project — the migration itself committed.
+   */
+  async function recordStoreMigration(
+    project: Project,
+    store: RunStore,
+  ): Promise<void> {
+    const log = options.migrationLog;
+    const migration = storeMigration(store);
+    if (!log || !migration) return;
+    const root = projectRunsDir(project.id, env);
+    try {
+      if (migration.imported > 0 || migration.unreadable > 0) {
+        await log.record({
+          kind: "runs-import",
+          project: project.id,
+          from: root,
+          to: pathFor(env).join(root, RUNS_DB_FILENAME),
+          detail:
+            `Copied ${String(migration.imported)} run(s) from the file store into SQLite; ` +
+            `the directories were left in place.` +
+            (migration.unreadable > 0
+              ? ` ${String(migration.unreadable)} unreadable run director${migration.unreadable === 1 ? "y was" : "ies were"} skipped and left on disk.`
+              : ""),
+        });
+      }
+      if (migration.from > 0) {
+        await log.record({
+          kind: "runs-schema",
+          project: project.id,
+          from: String(migration.from),
+          to: String(migration.to),
+        });
+      }
+    } catch {
+      // See above: the record is for people, and the migration is already done.
+    }
+  }
+
   async function build(project: Project): Promise<ProjectRuntime> {
+    // First, before anything is opened or attached. A config this build
+    // refuses — broken, or written by a newer build — throws here, and a
+    // build that failed *after* opening the store would leave a database
+    // handle open on every retry, which on Windows also pins the directory.
+    let loaded = await loadConfigFrom(
+      projectConfigSearchPaths(project.root, project.id, env),
+    );
+
     const bus = createEventBus({
       replayLimit: options.replayLimit ?? DEFAULT_REPLAY_LIMIT,
     });
@@ -135,10 +192,8 @@ export function createProjectRuntimes(
           backend: options.storeBackend,
         }),
       }));
+    await recordStoreMigration(project, store);
 
-    let loaded = await loadConfigFrom(
-      projectConfigSearchPaths(project.root, project.id, env),
-    );
     const config = (): LoadedConfig => loaded;
     const reload = async (): Promise<LoadedConfig> => {
       loaded = await loadConfigFrom(
@@ -254,3 +309,9 @@ const noopExecutor: RunExecutor = () =>
     cost: { tokensIn: 0, tokensOut: 0 },
     durationMs: 0,
   });
+
+/** The migration a store performed on open, when it is a store that can. */
+function storeMigration(store: RunStore): RunsMigration | null {
+  const migration = (store as { migration?: RunsMigration | null }).migration;
+  return migration ?? null;
+}

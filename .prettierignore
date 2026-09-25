@@ -10,3 +10,7 @@ package-lock.json
 # actually sent. Reformatting one would make the fixture a paraphrase of the
 # wire rather than the wire, which is the whole reason these files exist.
 packages/harness/src/fixtures
+
+# Captured release profiles — what a shipped build wrote, byte for byte, and
+# what the upgrade test holds the current build to. Same reason as above.
+packages/daemon/src/fixtures/profiles

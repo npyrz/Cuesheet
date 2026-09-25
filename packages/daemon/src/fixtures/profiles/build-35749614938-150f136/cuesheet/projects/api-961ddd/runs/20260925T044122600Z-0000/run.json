@@ -1,0 +1,45 @@
+{
+  "id": "20260925T044122600Z-0000",
+  "kind": "prompt",
+  "status": "done",
+  "prompt": "Add a rate limiter",
+  "stationIds": [
+    "builder"
+  ],
+  "workspace": "{{HOME}}/code/api",
+  "createdAt": "2026-09-25T04:41:22.600Z",
+  "cost": {
+    "tokensIn": 120,
+    "tokensOut": 136,
+    "usd": 0.0012
+  },
+  "startedAt": "2026-09-25T04:41:22.600Z",
+  "finishedAt": "2026-09-25T04:41:22.777Z",
+  "result": {
+    "status": "done",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 136,
+      "usd": 0.0012
+    },
+    "durationMs": 175,
+    "stations": [
+      {
+        "stationId": "builder",
+        "harness": "mock",
+        "vendor": "cuesheet",
+        "cost": {
+          "tokensIn": 120,
+          "tokensOut": 136,
+          "usd": 0.0012
+        },
+        "durationMs": 139
+      }
+    ],
+    "diff": {
+      "filesChanged": 1,
+      "insertions": 5,
+      "deletions": 0
+    }
+  }
+}

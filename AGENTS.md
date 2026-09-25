@@ -99,6 +99,7 @@ Windows is a first-class target and most bugs found here were Windows bugs.
 
 - **A test calling `startDaemon` must pass an isolated `env`**, or it writes into the developer's real `~/.cuesheet/projects.json`. The failure is invisible locally and permanent.
 - `port: 0` binds ephemerally so suites run in parallel workers.
+- **Every published release has a captured profile** in `packages/daemon/src/fixtures/profiles/<tag>/`, and `profiles.test.ts` replays each one against the current build. A new release adds a directory by running `scripts/capture-profile.mjs` against a built worktree of that tag (the recipe is in the script's header). Never edit a profile by hand: it is what that build wrote, and `manifest.json` is what that build answered.
 - Wait on conditions, never on fixed timeouts — a runner under load does not finish an HTTP round trip plus a queue turn inside 20ms. Both `server.test.ts` and `queue.test.ts` carry a `waitFor` helper for this.
 
 ## Conventions

@@ -1,0 +1,11 @@
+diff --git a/cuesheet-mock.md b/cuesheet-mock.md
+new file mode 100644
+index 0000000..381b0ca
+--- /dev/null
++++ b/cuesheet-mock.md
+@@ -0,0 +1,5 @@
++# Mock run
++
++Add a rate limiter
++
++Written by the mock harness at 2026-09-25T04:41:22.656Z.

@@ -1,0 +1,17 @@
+{
+  "id": "memory-0cc9fb1c-b2f4-4e81-b8e0-c078734b77de",
+  "suggestedId": "integration-tests-need-redis",
+  "title": "Integration tests need Redis",
+  "body": "Integration tests need Redis, learned during a run.",
+  "tags": [
+    "captured"
+  ],
+  "projects": [
+    "api-961ddd"
+  ],
+  "provenance": {
+    "station": "builder",
+    "run": "20260925T044122922Z-0002",
+    "at": "2026-09-25T04:41:23.318Z"
+  }
+}

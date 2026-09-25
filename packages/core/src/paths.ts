@@ -91,6 +91,19 @@ export function projectsFile(env: HostEnv = hostEnv()): string {
 }
 
 /**
+ * The migration log — `~/.cuesheet/migrations.jsonl`.
+ *
+ * One line per migration that actually changed something, appended by the
+ * build that did it. It sits beside `projects.json` rather than inside a
+ * project because the migrations it records are mostly about the install: the
+ * alpha layout moving into projects happens *before* there is a project to
+ * put a log in.
+ */
+export function migrationLogFile(env: HostEnv = hostEnv()): string {
+  return pathFor(env).join(configDir(env), "migrations.jsonl");
+}
+
+/**
  * A project id is a directory name under `~/.cuesheet/projects` and a URL
  * segment in `/projects/:id/...`, which is why it lives here beside the
  * builders rather than with the registry: the constraint *is* a path

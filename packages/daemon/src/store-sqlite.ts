@@ -40,9 +40,9 @@
  * appends is unnecessary here, because a statement cannot interleave with
  * another statement.
  */
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import type * as SqliteModuleTypes from "node:sqlite";
-import type { DatabaseSync, StatementSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import {
   hostEnv,
@@ -70,18 +70,6 @@ type SqliteModule = typeof SqliteModuleTypes;
 /** The database file inside a project's runs directory. */
 export const RUNS_DB_FILENAME = "runs.db";
 
-/**
- * Bumped when the schema changes in a way a previous build cannot read.
- *
- * Stored in SQLite's own `user_version`, which costs nothing and is already
- * there. Step 53 turns this into a mechanism — a migration that runs once and
- * is recorded, and a refusal to open state written by a *newer* build. The
- * refusal is here already, because it is the half that prevents damage: an
- * older build that opened a newer database and wrote to it would corrupt it
- * quietly, and a downgrade is exactly when that happens.
- */
-export const RUNS_SCHEMA_VERSION = 1;
-
 export interface SqliteRunStoreOptions {
   /** Defaults to the real host; tests point `homedir` at a temp directory. */
   env?: HostEnv;
@@ -100,6 +88,8 @@ export interface SqliteRunStore extends RunStore {
    * directories are left where they are.
    */
   readonly importedRuns: number;
+  /** `null` when the database was already current and nothing changed. */
+  readonly migration: RunsMigration | null;
 }
 
 /** Thrown when the runtime has no `node:sqlite` to open. */
@@ -142,7 +132,31 @@ export async function sqliteAvailable(): Promise<boolean> {
   }
 }
 
-const SCHEMA = `
+/**
+ * One step of the schema, from the version before it to `to`.
+ *
+ * Applied in order, inside the same transaction as the `user_version` bump —
+ * so a database is at a version exactly when that version's statements have
+ * all committed, and a crash between the two leaves it at the version before
+ * rather than claiming one it does not have.
+ */
+export interface RunsSchemaMigration {
+  readonly to: number;
+  readonly sql: string;
+}
+
+/**
+ * Every schema this store has had, oldest first. A new version is a new entry
+ * at the end — never an edit to an old one, because an old one has already
+ * run on somebody's disk and editing it changes nothing there.
+ *
+ * Version 1 keeps `IF NOT EXISTS` because it shipped that way in Step 52; a
+ * database at version 1 never runs it again, so the clause is inert history.
+ */
+export const RUNS_SCHEMA_MIGRATIONS: readonly RunsSchemaMigration[] = [
+  {
+    to: 1,
+    sql: `
   CREATE TABLE IF NOT EXISTS runs (
     id          TEXT PRIMARY KEY,
     created_at  TEXT NOT NULL,
@@ -168,7 +182,34 @@ const SCHEMA = `
     run_id  TEXT PRIMARY KEY,
     patch   TEXT NOT NULL
   ) WITHOUT ROWID;
-`;
+`,
+  },
+];
+
+/**
+ * The schema version this build writes, stored in SQLite's own `user_version`.
+ *
+ * A build that finds a larger number refuses to open the database rather than
+ * write to it: an older build writing to a newer schema corrupts it quietly,
+ * and a downgrade is exactly when that happens.
+ */
+export const RUNS_SCHEMA_VERSION =
+  RUNS_SCHEMA_MIGRATIONS[RUNS_SCHEMA_MIGRATIONS.length - 1]?.to ?? 0;
+
+/** What opening this database changed, for the daemon's migration log. */
+export interface RunsMigration {
+  /** `user_version` found on open. `0` is a database SQLite just created. */
+  readonly from: number;
+  readonly to: number;
+  /** Run directories copied in from the file store. */
+  readonly imported: number;
+  /**
+   * Run directories the file store could not read, left on disk and not
+   * imported. Counted rather than hidden: they were invisible to the file
+   * store too, but an import is the moment someone might ask where they went.
+   */
+  readonly unreadable: number;
+}
 
 export async function openSqliteRunStore(
   options: SqliteRunStoreOptions = {},
@@ -203,14 +244,46 @@ export async function openSqliteRunStore(
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec("PRAGMA busy_timeout = 5000");
 
-  const version = readUserVersion(db);
-  if (version > RUNS_SCHEMA_VERSION) {
+  const found = readUserVersion(db);
+  if (found > RUNS_SCHEMA_VERSION) {
     db.close();
-    throw new RunsSchemaTooNewError(version, RUNS_SCHEMA_VERSION);
+    throw new RunsSchemaTooNewError(found, RUNS_SCHEMA_VERSION);
   }
-  db.exec(SCHEMA);
-  if (version !== RUNS_SCHEMA_VERSION) {
-    db.exec(`PRAGMA user_version = ${RUNS_SCHEMA_VERSION}`);
+
+  // The only asynchronous part, so it happens before the transaction opens:
+  // the import is decided by `found`, and reading the directories first means
+  // the transaction below is one uninterrupted run of statements.
+  const legacy =
+    found === 0 ? await readFileRuns(root) : { runs: [], unreadable: 0 };
+
+  // Schema, import and version in one transaction, before a statement is
+  // prepared against tables that may not exist yet. Step 52 set `user_version` in autocommit *before* importing, so
+  // an import that failed partway left a database that said it was current
+  // and held no history — and the next boot, reading that version, skipped
+  // the import for good. The history was still on disk and would never be
+  // shown again, which is the quietest kind of loss there is. Now the version
+  // is only ever written by the same commit as the rows it vouches for.
+  let migration: RunsMigration | null = null;
+  if (found !== RUNS_SCHEMA_VERSION) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const step of RUNS_SCHEMA_MIGRATIONS) {
+        if (step.to > found) db.exec(step.sql);
+      }
+      importFileRuns(db, legacy.runs);
+      db.exec(`PRAGMA user_version = ${String(RUNS_SCHEMA_VERSION)}`);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      db.close();
+      throw error;
+    }
+    migration = {
+      from: found,
+      to: RUNS_SCHEMA_VERSION,
+      imported: legacy.runs.length,
+      unreadable: legacy.unreadable,
+    };
   }
 
   const statements = {
@@ -271,20 +344,11 @@ export async function openSqliteRunStore(
     );
   }
 
-  // Before the store serves anything: a caller that listed runs first and
-  // imported second would see an empty history for as long as that took.
-  const importedRuns = await importFileRuns({
-    root,
-    version,
-    insert,
-    db,
-    statements,
-  });
-
   let closed = false;
 
   return {
-    importedRuns,
+    importedRuns: migration?.imported ?? 0,
+    migration,
 
     async create(input) {
       const at = now();
@@ -377,16 +441,32 @@ function readUserVersion(db: DatabaseSync): number {
   return typeof value === "number" ? value : 0;
 }
 
-interface ImportOptions {
-  root: string;
-  /** The schema version found on open. Non-zero means this is not a new file. */
-  version: number;
-  insert: (run: Run) => void;
-  db: DatabaseSync;
-  statements: {
-    insertEvent: StatementSync;
-    upsertDiff: StatementSync;
-  };
+/** What {@link readFileRuns} found in a runs root. */
+interface FileRuns {
+  runs: StoredRun[];
+  unreadable: number;
+}
+
+/**
+ * Read the run directories an earlier build wrote, for {@link importFileRuns}.
+ *
+ * Through the file store rather than re-parsing the layout here: it already
+ * tolerates a truncated final line and a stale `.tmp` file, and a second
+ * reader of that format would have to learn both. It also skips a directory
+ * whose `run.json` does not parse — which the file store has always done
+ * silently, and which is counted here so the migration log can say so.
+ */
+async function readFileRuns(root: string): Promise<FileRuns> {
+  const files = createFileRunStore({ root });
+  const existing = await files.list();
+  const directories = (await readdir(root).catch(() => [])).filter(isRunId);
+
+  const runs: StoredRun[] = [];
+  for (const run of existing) {
+    const record = await files.get(run.id);
+    if (record) runs.push(record);
+  }
+  return { runs, unreadable: directories.length - runs.length };
 }
 
 /**
@@ -400,56 +480,44 @@ interface ImportOptions {
  *
  * Three properties worth stating:
  *
- * - **It runs only when the database is new** — detected by `user_version`
- *   being 0 on open, which is true of a file SQLite just created and false of
- *   one this build has written. An import that ran twice would either fail on
- *   the primary key or duplicate every event.
- * - **It is one transaction.** A crash halfway leaves no database rather than
- *   half a history, and the next boot imports again from a clean slate.
+ * - **It runs only when the database is new** — `user_version` 0 on open,
+ *   which is true of a file SQLite just created and false of one this build
+ *   has written. An import that ran twice would either fail on the primary
+ *   key or duplicate every event.
+ * - **It runs inside the caller's migration transaction,** together with the
+ *   schema and the version bump. A crash halfway leaves a database at version
+ *   0 with no rows, and the next boot imports again from a clean slate. Step
+ *   52 gave the import its own transaction but bumped the version outside it,
+ *   which made "imports again" false; see the note at the call site.
  * - **It copies rather than moves.** The directories stay exactly where they
  *   are, so `CUESHEET_RUN_STORE=files` is still a working answer afterwards
  *   and the operator's escape hatch does not depend on a backup they did not
  *   take. The cost is disk that is now written twice; the alternative is a
  *   one-way door.
  */
-async function importFileRuns({
-  root,
-  version,
-  insert,
-  db,
-  statements,
-}: ImportOptions): Promise<number> {
-  if (version !== 0) return 0;
-
-  // Read through the file store rather than re-parsing the layout here: it
-  // already tolerates a truncated final line and a stale `.tmp` file, and a
-  // second reader of that format would have to learn both.
-  const files = createFileRunStore({ root });
-  const existing = await files.list();
-  if (existing.length === 0) return 0;
-
-  const stored: StoredRun[] = [];
-  for (const run of existing) {
-    const record = await files.get(run.id);
-    if (record) stored.push(record);
-  }
-
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    for (const record of stored) {
-      insert(record.run);
-      for (const event of record.events) {
-        statements.insertEvent.run(record.run.id, JSON.stringify(event));
-      }
-      if (record.diff !== undefined) {
-        statements.upsertDiff.run(record.run.id, record.diff);
-      }
+function importFileRuns(db: DatabaseSync, runs: readonly StoredRun[]): void {
+  if (runs.length === 0) return;
+  const insertRun = db.prepare(
+    "INSERT INTO runs (id, created_at, status, terminal, doc) VALUES (?, ?, ?, ?, ?)",
+  );
+  const insertEvent = db.prepare(
+    "INSERT INTO events (run_id, doc) VALUES (?, ?)",
+  );
+  const insertDiff = db.prepare(
+    "INSERT INTO diffs (run_id, patch) VALUES (?, ?)",
+  );
+  for (const record of runs) {
+    const { run } = record;
+    insertRun.run(
+      run.id,
+      run.createdAt,
+      run.status,
+      isTerminalStatus(run.status) ? 1 : 0,
+      JSON.stringify(run),
+    );
+    for (const event of record.events) {
+      insertEvent.run(run.id, JSON.stringify(event));
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
+    if (record.diff !== undefined) insertDiff.run(run.id, record.diff);
   }
-
-  return stored.length;
 }

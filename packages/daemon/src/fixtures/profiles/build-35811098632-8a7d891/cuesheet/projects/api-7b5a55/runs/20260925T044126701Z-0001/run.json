@@ -1,0 +1,42 @@
+{
+  "id": "20260925T044126701Z-0001",
+  "kind": "prompt",
+  "status": "done",
+  "prompt": "Rename the handler",
+  "stationIds": [
+    "builder"
+  ],
+  "workspace": "{{HOME}}/code/api",
+  "createdAt": "2026-09-25T04:41:26.701Z",
+  "cost": {
+    "tokensIn": 120,
+    "tokensOut": 0
+  },
+  "startedAt": "2026-09-25T04:41:26.702Z",
+  "finishedAt": "2026-09-25T04:41:26.803Z",
+  "result": {
+    "status": "done",
+    "cost": {
+      "tokensIn": 120,
+      "tokensOut": 0
+    },
+    "durationMs": 98,
+    "stations": [
+      {
+        "stationId": "builder",
+        "harness": "mock",
+        "vendor": "cuesheet",
+        "cost": {
+          "tokensIn": 120,
+          "tokensOut": 0
+        },
+        "durationMs": 55
+      }
+    ],
+    "diff": {
+      "filesChanged": 1,
+      "insertions": 5,
+      "deletions": 0
+    }
+  }
+}

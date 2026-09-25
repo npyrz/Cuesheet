@@ -42,10 +42,16 @@ export {
   sqliteAvailable,
   RUNS_DB_FILENAME,
   RUNS_SCHEMA_VERSION,
+  RUNS_SCHEMA_MIGRATIONS,
   SqliteUnavailableError,
   RunsSchemaTooNewError,
 } from "./store-sqlite.js";
-export type { SqliteRunStore, SqliteRunStoreOptions } from "./store-sqlite.js";
+export type {
+  SqliteRunStore,
+  SqliteRunStoreOptions,
+  RunsMigration,
+  RunsSchemaMigration,
+} from "./store-sqlite.js";
 
 export {
   openRunStore,

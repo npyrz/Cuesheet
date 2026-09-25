@@ -1,0 +1,7 @@
+[[station]]
+id = "builder"
+harness = "mock"
+role = "engineer"
+workspace = "{{HOME}}/code/api"
+paths = [ "**" ]
+deny = [ ".git/**" ]

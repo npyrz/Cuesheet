@@ -1,0 +1,162 @@
+{
+  "tag": "v0.1.0-alpha",
+  "capturedWith": "v25.2.1",
+  "daemonVersion": "0.1.0-alpha",
+  "home": "{{HOME}}",
+  "workspaces": [
+    "code/api"
+  ],
+  "projects": [
+    {
+      "id": null,
+      "name": null,
+      "root": null,
+      "stations": [
+        {
+          "id": "builder",
+          "harness": "mock",
+          "role": "engineer",
+          "workspace": "{{HOME}}/code/api",
+          "paths": [
+            "**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "20260925T044122048Z-0003",
+          "status": "queued",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 1,
+          "diff": null,
+          "run": {
+            "id": "20260925T044122048Z-0003",
+            "kind": "prompt",
+            "status": "queued",
+            "prompt": "Queued behind it",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:22.048Z",
+            "cost": {
+              "tokensIn": 0,
+              "tokensOut": 0
+            }
+          }
+        },
+        {
+          "id": "20260925T044121995Z-0002",
+          "status": "running",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 9,
+          "diff": null,
+          "run": {
+            "id": "20260925T044121995Z-0002",
+            "kind": "prompt",
+            "status": "running",
+            "prompt": "Parked on a question",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:21.995Z",
+            "cost": {
+              "tokensIn": 0,
+              "tokensOut": 0
+            },
+            "startedAt": "2026-09-25T04:41:21.996Z"
+          }
+        },
+        {
+          "id": "20260925T044121887Z-0001",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 13,
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..981025a\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Add a rate limiter\n+\n+Written by the mock harness at 2026-09-25T04:41:21.676Z.\n",
+          "run": {
+            "id": "20260925T044121887Z-0001",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Rename the handler",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:21.887Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 0
+            },
+            "startedAt": "2026-09-25T04:41:21.888Z",
+            "finishedAt": "2026-09-25T04:41:21.986Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 0
+              },
+              "durationMs": 97,
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              }
+            }
+          }
+        },
+        {
+          "id": "20260925T044121671Z-0000",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 23,
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..981025a\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Add a rate limiter\n+\n+Written by the mock harness at 2026-09-25T04:41:21.676Z.\n",
+          "run": {
+            "id": "20260925T044121671Z-0000",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Add a rate limiter",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-09-25T04:41:21.671Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 136,
+              "usd": 0.0012
+            },
+            "startedAt": "2026-09-25T04:41:21.672Z",
+            "finishedAt": "2026-09-25T04:41:21.853Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 136,
+                "usd": 0.0012
+              },
+              "durationMs": 180,
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "commons": null
+}

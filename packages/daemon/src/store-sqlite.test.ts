@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -9,6 +9,8 @@ import {
   openSqliteRunStore,
   RunsSchemaTooNewError,
   RUNS_DB_FILENAME,
+  RUNS_SCHEMA_MIGRATIONS,
+  RUNS_SCHEMA_VERSION,
   sqliteAvailable,
   type SqliteRunStore,
 } from "./store-sqlite.js";
@@ -200,6 +202,90 @@ describe("adopting an existing file store", () => {
     const s = await store();
     expect(s.importedRuns).toBe(0);
     expect(await s.list()).toEqual([]);
+  });
+
+  it("reports what the open migrated, and nothing on the next one", async () => {
+    await seedFileRuns();
+    const s = await store();
+    expect(s.migration).toEqual({
+      from: 0,
+      to: RUNS_SCHEMA_VERSION,
+      imported: 2,
+      unreadable: 0,
+    });
+    await s.close();
+
+    expect((await store()).migration).toBeNull();
+  });
+
+  it("counts a run directory it could not read, and leaves it on disk", async () => {
+    await seedFileRuns();
+    // A valid run id whose record does not parse. The file store has always
+    // skipped these silently; an import is where somebody asks where it went.
+    const broken = path.join(root, "20200101T000000000Z-0000");
+    await mkdir(broken);
+    await writeFile(path.join(broken, "run.json"), "{ not json", "utf8");
+
+    const s = await store();
+    expect(s.migration?.imported).toBe(2);
+    expect(s.migration?.unreadable).toBe(1);
+    expect(await readdir(broken)).toEqual(["run.json"]);
+  });
+
+  /**
+   * The bug Step 53 found in Step 52. The version used to be set in autocommit
+   * before the import ran, so an import that failed partway left a database
+   * claiming to be current with no history in it — and every later open read
+   * that version and skipped the import for good. The runs were still on disk
+   * and would never be shown again.
+   *
+   * The failure is real rather than injected: a run directory copied under a
+   * second name carries its original id in `run.json`, and the second insert
+   * of that id violates the primary key.
+   */
+  it("leaves the database unversioned when an import fails, so the next open retries it", async () => {
+    const { first } = await seedFileRuns();
+    const copy = path.join(root, `${first.id.slice(0, -4)}9999`);
+    await cp(path.join(root, first.id), copy, { recursive: true });
+
+    await expect(openSqliteRunStore({ root })).rejects.toThrow();
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const raw = new DatabaseSync(path.join(root, RUNS_DB_FILENAME));
+    const version = raw.prepare("PRAGMA user_version").get()?.["user_version"];
+    raw.close();
+    expect(version).toBe(0);
+
+    await rm(copy, { recursive: true });
+    const s = await store();
+    expect(s.importedRuns).toBe(2);
+    expect(await s.list()).toHaveLength(2);
+  });
+});
+
+describe("schema migrations", () => {
+  it("are ordered, and the last one is the version this build writes", () => {
+    const versions = RUNS_SCHEMA_MIGRATIONS.map((step) => step.to);
+    expect(versions).toEqual([...versions].sort((a, b) => a - b));
+    expect(new Set(versions).size).toBe(versions.length);
+    expect(versions.at(-1)).toBe(RUNS_SCHEMA_VERSION);
+  });
+
+  it("stamps a new database with the current version in the same commit as its tables", async () => {
+    const s = await store();
+    await s.close();
+    const { DatabaseSync } = await import("node:sqlite");
+    const raw = new DatabaseSync(path.join(root, RUNS_DB_FILENAME));
+    const version = raw.prepare("PRAGMA user_version").get()?.["user_version"];
+    const tables = raw
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+      )
+      .all()
+      .map((row) => row["name"]);
+    raw.close();
+    expect(version).toBe(RUNS_SCHEMA_VERSION);
+    expect(tables).toEqual(expect.arrayContaining(["diffs", "events", "runs"]));
   });
 });
 

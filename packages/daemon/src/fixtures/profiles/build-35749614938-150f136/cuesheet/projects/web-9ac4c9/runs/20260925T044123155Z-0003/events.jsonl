@@ -1,0 +1,22 @@
+{"t":"status","at":"2026-09-25T04:41:23.155Z","runId":"20260925T044123155Z-0003","status":"queued"}
+{"t":"status","at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","status":"running"}
+{"t":"text","chunk":"Reading the brief: Fix the header\n","at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"tool","name":"list","input":{"path":"."},"at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"denial","reason":"Path is the workspace root itself, not a file inside it.","path":".","at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"cost","tokensIn":120,"tokensOut":0,"at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"denial","reason":"Path escapes the workspace ({{HOME}}/code/web).","path":"../outside-the-workspace.txt","at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"standby","at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","standbyId":"sb_mugh434k_5","ask":"Write cuesheet-mock.md in the workspace?"}
+{"t":"status","at":"2026-09-25T04:41:23.156Z","runId":"20260925T044123155Z-0003","status":"standby"}
+{"t":"status","at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","status":"running"}
+{"t":"text","chunk":"Planning the change.\n","at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"text","chunk":"Brief: Fix the header\n","at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"text","chunk":"Editing one file.\n","at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"text","chunk":"Done.\n","at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"cost","tokensIn":0,"tokensOut":24,"at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"tool","name":"write","input":{"path":"cuesheet-mock.md"},"at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"denial","reason":"Path is outside the Station's allowed paths (src/**).","path":"cuesheet-mock.md","at":"2026-09-25T04:41:23.208Z","runId":"20260925T044123155Z-0003","stationId":"front"}
+{"t":"error","at":"2026-09-25T04:41:23.248Z","runId":"20260925T044123155Z-0003","message":"Leash denied cuesheet-mock.md: Path is outside the Station's allowed paths (src/**)."}
+{"t":"status","at":"2026-09-25T04:41:23.249Z","runId":"20260925T044123155Z-0003","status":"failed"}

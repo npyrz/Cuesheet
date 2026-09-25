@@ -1,0 +1,15 @@
+{
+  "id": "20260925T044127319Z-0005",
+  "kind": "prompt",
+  "status": "queued",
+  "prompt": "Queued behind it",
+  "stationIds": [
+    "builder"
+  ],
+  "workspace": "{{HOME}}/code/api",
+  "createdAt": "2026-09-25T04:41:27.319Z",
+  "cost": {
+    "tokensIn": 0,
+    "tokensOut": 0
+  }
+}

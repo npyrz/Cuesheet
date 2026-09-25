@@ -1,0 +1,9 @@
+{"t":"status","at":"2026-09-25T04:41:27.266Z","runId":"20260925T044127266Z-0004","status":"queued"}
+{"t":"status","at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","status":"running"}
+{"t":"text","chunk":"Reading the brief: Parked on a question\n","at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","stationId":"builder"}
+{"t":"tool","name":"list","input":{"path":"."},"at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","stationId":"builder"}
+{"t":"denial","reason":"Path is the workspace root itself, not a file inside it.","path":".","at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","stationId":"builder"}
+{"t":"cost","tokensIn":120,"tokensOut":0,"at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","stationId":"builder"}
+{"t":"denial","reason":"Path escapes the workspace ({{HOME}}/code/api).","path":"../outside-the-workspace.txt","at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","stationId":"builder"}
+{"t":"standby","at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","standbyId":"sb_mugh46ar_6","ask":"Write cuesheet-mock.md in the workspace?"}
+{"t":"status","at":"2026-09-25T04:41:27.267Z","runId":"20260925T044127266Z-0004","status":"standby"}

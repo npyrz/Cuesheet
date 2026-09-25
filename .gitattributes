@@ -15,3 +15,9 @@
 *.ico  binary
 *.icns binary
 *.pdf  binary
+
+# Captured release profiles (Step 53). The Commons store inside each one is a
+# real git repository stored as `dot-git`; its objects and index are binary,
+# and `text=auto` guessing wrong on one of them would corrupt the fixture on a
+# Windows checkout in a way no test message would explain.
+packages/daemon/src/fixtures/profiles/**/dot-git/** binary
