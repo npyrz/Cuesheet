@@ -338,7 +338,12 @@ describe("scale", () => {
     const tenThousand = await time(large);
 
     expect(tenThousand).toBeLessThan(Math.max(ten * 5, 250));
-  });
+    // The timeout is for the seeding, not the measurement: ten thousand
+    // `create` calls are ten thousand commits, and on a Windows runner sharing
+    // its disk with the Commons sync suite that alone outran vitest's 5s
+    // default. What is asserted — `list(50)` against the ten-run baseline —
+    // is milliseconds either way, so widening this bounds nothing it checks.
+  }, 30_000);
 });
 
 describe("availability", () => {
