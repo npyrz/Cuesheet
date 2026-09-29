@@ -104,3 +104,39 @@ The browser can control an updater supplied by a signed desktop-owned daemon.
 6. Capture each published release's profile using `scripts/capture-profile.mjs`.
    The first SQLite release (`build-36170856000-bb9ab14`) still needs capture and
    SQLite-aware profile restoration; the current captured set has four releases.
+
+## Changelog and release notes
+
+Update `CHANGELOG.md`'s `Unreleased` section in the PR that changes behavior.
+The publish job checks out the exact build commit and runs
+`node scripts/release-notes.mjs release-notes.md` before creating a release.
+Missing, duplicate or empty sections stop publication. No release notes are
+assembled from unreviewed commit messages. The generated notes link back to the
+changelog and release guide at that immutable commit.
+
+Per-commit releases use the cumulative `Unreleased` section; do not empty it
+after each branch push. At a named milestone, move its entries into a dated
+`## [VERSION]` section, add the release link, and start the next `Unreleased`
+section with actual pending changes. The generator supports `CHANGELOG_SECTION`
+for a named section when used by a future named-release workflow. The current
+push workflow continues to select `Unreleased` and does not publish semantic
+milestones automatically.
+
+To preview notes without publishing (POSIX shell):
+
+```bash
+GITHUB_REPOSITORY=npyrz/Cuesheet GITHUB_REF_NAME=beta GITHUB_SHA="$(git rev-parse HEAD)" node scripts/release-notes.mjs /tmp/cuesheet-release-notes.md
+```
+
+PowerShell:
+
+```powershell
+$env:GITHUB_REPOSITORY = "npyrz/Cuesheet"
+$env:GITHUB_REF_NAME = "beta"
+$env:GITHUB_SHA = git rev-parse HEAD
+node scripts/release-notes.mjs "$env:TEMP/cuesheet-release-notes.md"
+```
+
+Review the generated changes and installation notes before publication. Existing
+published entries in the changelog are historical records, not promises that
+unreleased features were present in an older installer.

@@ -53,7 +53,7 @@ Coding agents are good at doing work, but each vendor brings its own session mod
   packaged target.
 - At least one installed and authenticated harness:
   - [Claude Code](https://claude.com/claude-code)
-  - [Codex CLI](https://developers.openai.com/codex)
+  - [Codex CLI](https://github.com/openai/codex)
   - [Ollama](https://ollama.com)
 
 Cuesheet invokes CLIs you authenticated yourself; it does not store or proxy model credentials.
@@ -170,7 +170,7 @@ See [System design](docs/system-design/README.md) for diagrams and subsystem wal
 
 ## Contributing
 
-Issues and pull requests are welcome, especially focused harness, cross-platform, usage-reporting, and review improvements. Read [AGENTS.md](AGENTS.md) for the repository's architecture and engineering rules, then run the full validation suite before submitting a change:
+Issues and pull requests are welcome, especially focused harness, cross-platform, usage-reporting, and review improvements. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for setup and PR expectations, or [the harness guide](docs/harnesses.md) to add a runtime. [AGENTS.md](AGENTS.md) contains the engineering rules. Run the full validation suite before submitting a change:
 
 ```bash
 npm run build
@@ -180,9 +180,9 @@ npm run format:check
 npm test
 ```
 
-CI runs all five checks on macOS and Windows.
+CI runs all five checks on macOS and Windows. Use the [bug report form](https://github.com/npyrz/Cuesheet/issues/new?template=bug_report.yml) for reproducible defects. See the [code of conduct](CODE_OF_CONDUCT.md) and [changelog](CHANGELOG.md).
 
-Cuesheet has not been audited. Do not expose the daemon to an untrusted network. See [Security and privacy](docs/REFERENCE.md#security-and-privacy) before using it on sensitive repositories.
+Cuesheet has not been audited. Do not expose the daemon to an untrusted network. Report vulnerabilities through [SECURITY.md](SECURITY.md), which describes the private disclosure route and current boundaries. See [Security and privacy](docs/REFERENCE.md#security-and-privacy) before using it on sensitive repositories.
 
 ## License
 

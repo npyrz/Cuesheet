@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a reproducible Cuesheet problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a vulnerability, use the private route in [SECURITY.md](https://github.com/npyrz/Cuesheet/security/policy).
+        Do not attach an entire ~/.cuesheet profile, credentials, private source, or unredacted prompts.
+  - type: input
+    id: version
+    attributes:
+      label: Cuesheet version or commit
+      description: Include the release tag or source commit; several older development installers share the same app version.
+      placeholder: "build-… / commit …; installed app or source checkout"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, architecture and client
+      placeholder: "Windows 11 x64, Electron app / macOS arm64, browser / CLI; Node version for source"
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Harness, CLI version, model and role
+      description: Say "not applicable" for problems unrelated to a run.
+      placeholder: "codex, version …, model …, reviewer"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Numbered steps, a disposable example repository/config, and how often the problem occurs.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include the error text and whether it affects existing projects, run history, or a fresh setup.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Relevant command output, a small config excerpt, or screenshots. Remove tokens, private prompts/source, personal paths and remote credentials. State which checks you ran.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked existing issues and removed sensitive data from this report.
+          required: true

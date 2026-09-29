@@ -18,6 +18,7 @@ export default tseslint.config(
     files: ["**/*.mjs", "eslint.config.js", "*.config.js"],
     languageOptions: {
       globals: {
+        AbortController: "readonly",
         Buffer: "readonly",
         URL: "readonly",
         console: "readonly",

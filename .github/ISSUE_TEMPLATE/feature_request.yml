@@ -1,0 +1,27 @@
+name: Feature or harness proposal
+description: Describe a user problem or propose a runtime integration.
+title: "[Proposal]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the user problem and what happens today.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed behavior and alternatives
+      description: Include an example, a useful completion criterion, and any alternatives considered.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and evidence
+      description: Link relevant plan steps. For a harness, include vendor, installation, supported roles, actual sandbox capabilities, stream/cost evidence and OS support. Do not paste credentials or private streams.
+  - type: markdown
+    attributes:
+      value: |
+        See [the harness guide](https://github.com/npyrz/Cuesheet/blob/beta/docs/harnesses.md) and [the build plan](https://github.com/npyrz/Cuesheet/blob/beta/PLAN-STEP.MD).

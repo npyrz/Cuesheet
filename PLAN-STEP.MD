@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance, docs, and error reporting remain |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 and 55 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance remain. Step 55 adds the contributor/security/harness docs, templates and changelog-backed releases; local error reporting is next |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Step 55 is the next independent coding step. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Step 55 is done in source; Step 56 is the next independent coding step. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -127,7 +127,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
 - [ ] Crash and error reporting you can actually act on — local only, no telemetry — **now Step 56**
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
-- [ ] The files the README links to and the repository does not contain — **now Step 55**
+- [x] Repository contribution, security and harness docs, community templates and changelog-backed release notes — **Step 55, done in source**. GitHub private reporting is enabled; new files and issue forms take effect on GitHub when merged/pushed to the relevant branch
 
 **Beta → 1.0**
 - [ ] **M3 · Pocket** — QR pairing, tailnet serving, mobile standby. *The README leads with it; 1.0 can't ship without it.*
@@ -1854,15 +1854,66 @@ promise SmartScreen reputation. That observation remains part of installed
 acceptance.
 
 
-### Step 55 — The repository as a product
+### Step 55 — The repository as a product ✅
 
-The README links to `docs/harnesses.md` twice, `CONTRIBUTING.md` once and `SECURITY.md` once. **None of the three files exist**, so all four links 404 on GitHub today. `.github/` holds two workflows and nothing else — no issue templates, no PR template, no code of conduct, no changelog.
+At planning time the README linked to absent `docs/harnesses.md`, `CONTRIBUTING.md` and `SECURITY.md`. The Step 55 audit found that a later README rewrite had removed those links, but not filled the documentation gap. `.github/` still held only the two workflows. The missing guides, issue and PR templates, code of conduct and changelog are now present and linked from the README.
 
 - `docs/harnesses.md` — the one the README calls "the highest-leverage contribution", and the 1.0 bar already requires a third-party harness proven against it. Three shipped harnesses of three genuinely different shapes is the material to write it from.
 - `SECURITY.md` — a disclosure path. The README makes real security claims (loopback by default, short-lived pairing tokens, leashes) and tells people it is not audited; that combination needs somewhere to send a finding.
 - `CONTRIBUTING.md`, code of conduct, issue and PR templates, and a changelog that releases are cut from rather than written after.
 
-**Done when:** no link in the README 404s, and someone can file a good bug report or a first harness PR without asking a question first.
+**Done when:** no link in the README 404s, and someone can file a good bug report or a first harness PR without asking a question first. ✅ Source and authoring path verified; GitHub publication follows the normal merge/push workflow.
+
+#### What the work settled
+
+**The extension guide follows the code, including its limits.** `docs/harnesses.md`
+explains every interface member, the difference between permissions and declared
+confinement, capture-before-mapping, cache accounting, aborts, connectors and
+registration. The packages are private workspaces, not an already published SDK;
+there is no automatic plugin loader. The old reference's example declared a
+sandbox without implementing one, so it now points to the runnable guide.
+`examples/harness/echo-worker.mjs` and its check script exercise the real public
+contract in a temporary workspace with no model calls. They are not registered
+as a real vendor. The example passes its own typecheck and runs in the ordinary
+test suite. This does not tick the separate 1.0 bar for a third-party production
+harness.
+
+**The disclosure route is real, not just a URL.** GitHub's reporting-setting API
+returned `enabled: false` before this work. Private vulnerability reporting was
+enabled and read back as `enabled: true`. `SECURITY.md` describes that route,
+redacted reproduction details, the current unauthenticated loopback boundary,
+subprocess leash limits, absent automatic secret redaction and current release
+support. It promises neither an audit nor a response SLA. The code of conduct
+provides public moderation and private-contact-request paths without inventing
+a maintainer email address. No report, issue or message was submitted.
+
+**A bug form asks for the evidence this product needs.** It asks for the exact
+release tag or commit (old installers reused the same app version), OS/client,
+harness/model/role, reproduction, expected/actual behavior and sanitized evidence.
+The proposal form, PR template and contributor guide carry scope and validation
+expectations. Blank issues stay enabled for the documented private-contact
+fallback. These templates are source deliverables; GitHub's issue
+chooser uses the default branch (`main`), so its new forms appear after merge
+there, not merely because files exist in this checkout.
+
+**Release notes now have a source before the release exists.** `CHANGELOG.md`
+contains cumulative Unreleased changes and the five published tags verified
+against GitHub. The publish job checks out the build's exact commit and runs
+`scripts/release-notes.mjs` before creating its draft. Missing, duplicate or empty
+sections refuse publication. Per-commit releases take the cumulative Unreleased
+section and label it as such; the release guide describes moving entries at a
+named milestone. Tests cover section boundaries, CRLF, missing content and
+branch-name escaping; a local preview verified the real changelog's output.
+No release was published in this work.
+
+**Verification:** 71 local Markdown paths/anchors across the README and public
+guides resolved. README public links were checked; the old Codex docs URL
+redirected away from the CLI documentation, so it now points to the verified
+OpenAI Codex repository. GitHub's issue form link correctly requires sign-in.
+Both issue forms parse with unique field ids and required evidence fields.
+Build, typecheck, lint, format-check and tests passed on macOS: 71 test files,
+1,109 passed tests and 9 skipped. This change has not yet run on Windows CI.
+
 
 ### Step 56 — Errors you can act on, locally
 

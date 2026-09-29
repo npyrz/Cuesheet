@@ -309,44 +309,9 @@ The `Harness` interface is the main extension seam. A harness provides:
 - `run()` for streamed work and a structured result; and
 - optional `confinement(role)` describing the runtime's own sandbox.
 
-Minimal shape:
-
-```ts
-import type { Harness, RunContext, RunResult } from "@cuesheet/harness";
-
-export default {
-  id: "my-agent",
-  vendor: "acme",
-  roles: ["engineer", "reviewer"],
-
-  async probe() {
-    return { installed: true, authed: true };
-  },
-
-  async usage() {
-    return [];
-  },
-
-  contextFiles: [{ path: "MY_AGENT.md", scope: "project" }],
-
-  confinement(role) {
-    return role === "reviewer" ? "read-only" : "workspace-write";
-  },
-
-  async writeConnectors(_connectors) {},
-
-  async run(ctx: RunContext): Promise<RunResult> {
-    ctx.emit({ t: "text", chunk: "Starting\n" });
-    return { diff: await ctx.workspace.diff(), cost: ctx.meter.total() };
-  },
-} satisfies Harness;
-```
-
-Export and register a built-in from `packages/harness/src/index.ts`; the daemon
-adapts that registry in `packages/daemon/src/runtime.ts`. Keep vendor stream
-parsing based on captured, scrubbed fixtures rather than remembered formats.
-Harnesses must not import one another, and the daemon—not an individual
-harness—owns Gates, queues, project scope, and run persistence.
+For a runnable example, registration instructions, fixture requirements and a
+first-PR checklist, see [Writing a harness](harnesses.md). That guide follows the
+current interface and distinguishes declared confinement from actual enforcement.
 
 `vendor` affects behavior: a Gate's `distinct_vendors` check counts the vendors
 of Stations that actually acted. It is not display-only metadata.
@@ -521,6 +486,9 @@ registered project makes `--project` optional.
 
 ## Development
 
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the contributor workflow and
+[CHANGELOG.md](../CHANGELOG.md) for user-visible changes.
+
 Install dependencies once, then use the root scripts:
 
 ```bash
@@ -633,6 +601,8 @@ record. Each migration decides whether to run by checking the state itself,
 so deleting the log changes nothing.
 
 ## Security and privacy
+
+Report vulnerabilities using the private route in [SECURITY.md](../SECURITY.md).
 
 Current, verifiable properties:
 

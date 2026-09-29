@@ -135,6 +135,16 @@ jobs:
       contents: write
 
     steps:
+      # Read the changelog from the exact commit whose installers were built.
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Prepare release notes from the changelog
+        run: node scripts/release-notes.mjs release-notes.md
+
       - uses: actions/download-artifact@v5
         with:
           pattern: installers-*
@@ -157,7 +167,6 @@ jobs:
         run: |
           short_sha="${GITHUB_SHA:0:7}"
           tag="build-${GITHUB_RUN_ID}-${short_sha}"
-          example_installer="$(basename "$(find installers -maxdepth 1 -type f | head -n 1)")"
 
           if [ "$BRANCH_NAME" = "main" ]; then
             channel="Production"
@@ -166,18 +175,6 @@ jobs:
             channel="Prerelease"
             release_flags=(--prerelease --latest=false)
           fi
-
-          cat > release-notes.md <<NOTES
-          Automated **${channel}** build from branch \`${BRANCH_NAME}\` at commit [\`${short_sha}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}).
-
-          The packaged application version is shown in each download's filename (for example, \`${example_installer}\`).
-
-          ### Installing
-
-          - **macOS** — signed with Developer ID and notarized. Drag Cuesheet into Applications.
-          - **Windows** — signed installer. SmartScreen reputation is controlled by Microsoft and may still warn for a new publisher.
-          - **Updates** — main-branch installs check the Latest release automatically. Choose *Check for updates* in the app or tray menu, then *Restart and install*. Branch prereleases require a manual install. Active runs are saved as interrupted before restart.
-          NOTES
 
           gh release create "$tag" installers/* \
             --repo "$GITHUB_REPOSITORY" \
