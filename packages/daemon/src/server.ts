@@ -99,8 +99,10 @@ import {
   writeLock,
 } from "./lockfile.js";
 import { DAEMON_VERSION } from "./version.js";
+import { registerUpdateRoutes, type UpdateService } from "./updates.js";
 
 export interface StartDaemonOptions {
+  updates?: UpdateService;
   /** `0` binds an ephemeral port — what tests use, so they never collide. */
   port?: number;
   host?: string;
@@ -406,6 +408,7 @@ export async function startDaemon(
   await app.register(websocket);
 
   const routeDeps: RouteDeps = {
+    ...(options.updates && { updates: options.updates }),
     standbys,
     prober,
     harnessRoles,
@@ -707,6 +710,7 @@ function errorText(error: unknown): string {
 }
 
 interface RouteDeps {
+  updates?: UpdateService;
   standbys: StandbyRegistry;
   prober: HarnessProber;
   harnessRoles: HarnessRoles;
@@ -739,6 +743,7 @@ interface RouteDeps {
  * a phone answering a standby should not have to know which project raised it.
  */
 function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  registerUpdateRoutes(app, deps.updates);
   const {
     standbys,
     prober,

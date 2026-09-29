@@ -1,4 +1,4 @@
-# Installers for every pushed commit.
+# Signed installers for every pushed commit. Missing credentials fail closed.
 #
 # A push to `main` becomes a production release and is marked Latest. A push
 # to any other branch becomes a prerelease. Releases need tags even when the
@@ -49,7 +49,12 @@ jobs:
 
       # Keep the release gate identical to CI. Build has to be first because
       # workspace exports resolve through dist/, which npm ci does not create.
+      - name: Assign an increasing application version
+        run: node scripts/release-version.mjs
+
       - name: Build
+        env:
+          CUESHEET_SIGNED_RELEASE: "true"
         run: npm run build
 
       - name: Typecheck
@@ -66,17 +71,57 @@ jobs:
 
       - name: Package
         working-directory: packages/desktop
-        run: npx electron-builder ${{ matrix.builder }} --publish never
+        env:
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          MAC_SIGNING_IDENTITY: ${{ vars.MAC_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+        run: npx electron-builder --config electron-builder.release.mjs ${{ matrix.builder }} --publish never
+
+      - name: Verify macOS signatures and notarization tickets
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for app in packages/desktop/release/mac*/Cuesheet.app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+          done
+
+      - name: Verify Windows installer and application signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem packages/desktop/release/*.exe)
+          $files += Get-Item packages/desktop/release/win-unpacked/Cuesheet.exe
+          if ($files.Count -lt 2) { throw "Missing installer or application" }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($file.Name)" }
+          }
+
+      - name: Require update manifests
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            test -s packages/desktop/release/latest-mac.yml
+          else
+            test -s packages/desktop/release/latest.yml
+          fi
 
       - uses: actions/upload-artifact@v5
         with:
           name: installers-${{ matrix.artifact }}
-          # The installers themselves. `.blockmap` and `latest*.yml` belong to
-          # an auto-updater this app does not have yet.
+          # Manifests and blockmaps are part of the release, not build debris.
           path: |
             packages/desktop/release/*.dmg
             packages/desktop/release/*.zip
             packages/desktop/release/*.exe
+            packages/desktop/release/*.blockmap
+            packages/desktop/release/latest*.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -129,13 +174,17 @@ jobs:
 
           ### Installing
 
-          - **macOS** — the app is not signed or notarized, so Gatekeeper may block it. Right-click the app and choose *Open*, or run \`xattr -d com.apple.quarantine /Applications/Cuesheet.app\`.
-          - **Windows** — the installer is not signed, so SmartScreen may warn. Choose *More info* → *Run anyway*.
+          - **macOS** — signed with Developer ID and notarized. Drag Cuesheet into Applications.
+          - **Windows** — signed installer. SmartScreen reputation is controlled by Microsoft and may still warn for a new publisher.
+          - **Updates** — main-branch installs check the Latest release automatically. Choose *Check for updates* in the app or tray menu, then *Restart and install*. Branch prereleases require a manual install. Active runs are saved as interrupted before restart.
           NOTES
 
           gh release create "$tag" installers/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Cuesheet ${channel} — ${BRANCH_NAME} (${short_sha})" \
+            --draft \
             --notes-file release-notes.md \
             "${release_flags[@]}"
+
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false "${release_flags[@]}"

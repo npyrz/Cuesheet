@@ -32,6 +32,12 @@ const shared = {
   sourcemap: true,
   minify: !dev,
   logLevel: "info",
+  define: {
+    CUESHEET_UPDATES_ENABLED: JSON.stringify(
+      process.env.CUESHEET_SIGNED_RELEASE === "true" &&
+        process.env.GITHUB_REF_NAME === "main",
+    ),
+  },
   external: [
     // Provided by the runtime, never bundled.
     "electron",

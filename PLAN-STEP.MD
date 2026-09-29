@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and every published release's state opening on this build with nothing lost, replayed from captured profiles. Step 53's CI clause waits on its first run on both runners; signing, docs, and error reporting remain |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance, docs, and error reporting remain |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 is built and waiting on its first CI run, and Step 54 is next. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Step 55 is the next independent coding step. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -77,7 +77,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
 
-**Current state:** development is on the beta track in Phase 13; the latest release remains `v0.1.0-alpha`. “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
+**Current state:** development is on the beta track in Phase 13; the latest named milestone remains `v0.1.0-alpha` (later per-commit development prereleases also exist). “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
@@ -123,7 +123,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
-- [ ] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** The mechanism is built, and all four published releases' profiles open with nothing lost on macOS, under both run stores. The box stays unticked until the profile suite has passed in CI on both runners, which is the half of the done-when that says "in CI"
+- [ ] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** The mechanism is built, and all four published releases' profiles open with nothing lost on macOS, under both run stores. The original four-profile suite has now passed both release runners. The newly published SQLite release still needs a captured profile; the box stays unticked until that history is covered too
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
 - [ ] Crash and error reporting you can actually act on — local only, no telemetry — **now Step 56**
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
@@ -1752,13 +1752,13 @@ The interface was cut for this in Step 10, and the seam has held through everyth
 
 **Half of Step 53 arrived here, and it is the half that prevents damage.** The database carries SQLite's own `user_version`, and a build that finds a version it does not understand refuses to open rather than writing to it. A migration that runs once and is recorded is still Step 53's work; a downgrade quietly corrupting a newer store is the failure that could not wait for it.
 
-### Step 53 — Migrations as a mechanism ◐ *(built; the CI clause waits on the first run)*
+### Step 53 — Migrations as a mechanism ◐ *(original CI clause proved; newest release profile outstanding)*
 
 Step 33 performs one migration. This makes it a system: versioned config, versioned store, a migration that runs once and is recorded, and a refusal to open state written by a *newer* build rather than corrupting it.
 
 **Step 52 already installed two pieces of this**, and the remainder is what the step is now for: the run store is versioned (`user_version`) and refuses a newer one, and the file-store-to-SQLite import is a migration that runs once, detected by that version. Neither is *recorded* anywhere a person can read, config is still unversioned, and nothing runs an old profile in CI.
 
-**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ◐ Proven on macOS against all four published releases, under both run stores. **Not ticked** until `profiles.test.ts` has run green on `macos-latest` and `windows-latest`, and CI runs only for pushes to `main`, pull requests and manual dispatch, so that happens when this branch next meets one of them, not in this work.
+**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ◐ The original four captured releases passed on both `macos-latest` and `windows-latest` in [release run 36170856000](https://github.com/npyrz/Cuesheet/actions/runs/36170856000), verified on 2026-09-28. That run published `build-36170856000-bb9ab14`, the first SQLite release. Its profile is not captured yet, so the claim about **every** released version remains open; the stale CI blocker is no longer the reason.
 
 #### What the work settled
 
@@ -1789,13 +1789,70 @@ Step 33 performs one migration. This makes it a system: versioned config, versio
 - **The Desk's own browser storage** (the remembered project, a collapsed panel) is per-viewer convenience, and it is not covered.
 - **The next push publishes a release this suite has no profile for.** `release.yml` publishes a prerelease for every pushed commit, after the same five checks as CI. The first push of this work will therefore publish the first release that writes `runs.db` and `migrations.jsonl`. Capturing that tag with `scripts/capture-profile.mjs` is the first job after the push, and it is what gives the suite its first SQLite profile. The floor test in `profiles.test.ts` names the releases that existed when this step was written. It cannot notice a newer one, because the network is not a test dependency.
 
-### Step 54 — Signing, notarization, auto-update
+### Step 54 — Signing, notarization, auto-update ◐ *(built; signing credentials and installed acceptance outstanding)*
 
 One chain, not three checkboxes: macOS notarization is a precondition for `electron-updater` working without a Gatekeeper prompt, and an unsigned auto-updater is worse than no auto-updater. Windows SmartScreen reputation accrues only to a signed binary, and only over time, which makes the signing date a dependency for every install after it.
 
 Step 26 documented the honest unsigned position. This is where that stops being acceptable, because an app that cannot update itself is not one people keep.
 
 **Done when:** a stranger's install updates itself with no terminal, no quarantine flag and no SmartScreen dialog — and a release that fails to notarize fails the pipeline rather than shipping.
+
+**Status, 2026-09-28:** the source integration is built. `gh secret list` and
+`gh variable list` returned no configured entries, and macOS reported zero valid
+signing identities. This is a checked environment blocker, not an assumption.
+No certificate was purchased, no credentials were created, and no release was
+published in this work. The done-when stays unticked until real signed installs
+complete the two-version acceptance in [docs/releases.md](docs/releases.md).
+
+#### What the work settled
+
+**The release path now refuses unsigned output.** Local packaging remains an
+unsigned development path. CI uses a separate signed configuration that requires
+Apple signing/notarization credentials and a Windows publisher certificate,
+sets `forceCodeSigning`, and validates the resulting platform signatures. The
+Mac job additionally checks the stapled notarization ticket and Gatekeeper
+assessment. A missing notarization credential is fatal before packaging; the
+builder's default of silently skipping it is not acceptable here. Both runner
+jobs must succeed before a draft with all installers and update assets is made
+public. The exact secret and variable names are in the release guide.
+
+**A commit tag is not an application version.** All earlier per-commit releases
+carried the same `0.1.0-alpha` version. An updater comparing installed and offered
+versions would see no change. CI now stages an increasing prerelease version
+from the source version, workflow run number and attempt before building every
+workspace, including the daemon's version literal. Source maturity stays alpha
+until the beta bar is met; neither signing nor a branch name earns that badge.
+
+**Only main's signed installs follow Latest.** Checks happen on startup and every
+four hours; downloads are automatic and installation requires the operator's
+restart confirmation. Branch prereleases and local builds do not auto-update.
+The runtime explicitly excludes GitHub prereleases and downgrades, independently
+of the source version's alpha/beta suffix. Manifests and blockmaps now ship with
+the installers, and the Mac ZIP remains load-bearing for Squirrel.Mac.
+
+**An update is a daemon operation even though Electron owns the installer.**
+`GET /updates`, `POST /updates/check` and confirmed `POST /updates/install` expose
+one injected service to every client. Standalone daemons report unavailable.
+The application and tray menus call those routes. An attached shell cannot
+claim ownership of another process's shutdown. Restart acknowledges its HTTP
+request, stops queues and flushes stores, and only then calls `quitAndInstall`.
+That ordering matters on Windows, where calling the updater first starts the
+installer before the normal quit event. Shutdown failure or timeout refuses the
+installation. Ordinary quitting never silently installs a download.
+
+**What is verified and what is not.** Local tests exercise coalesced checks,
+failed verification and retry, explicit restart consent, duplicate requests,
+shutdown ordering and failed shutdown, credential refusal and increasing version
+precedence. The real signed-packaging command was also run without credentials
+and failed before packaging, as intended. Build, typecheck, lint, format-check and the full suite passed on macOS:
+69 test files, 1,105 passed tests and 9 skipped. The first test attempt was
+sandbox-blocked from listening on loopback; the permitted rerun passed.
+An unsigned arm64 package also launched with an isolated temporary home, served
+`/health`, and reported `/updates` unavailable. These checks do not prove a
+signed installer or a stranger's update, and a Windows signature alone cannot
+promise SmartScreen reputation. That observation remains part of installed
+acceptance.
+
 
 ### Step 55 — The repository as a product
 

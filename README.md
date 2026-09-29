@@ -14,9 +14,9 @@ Cuesheet puts Claude Code, Codex, Ollama, and future coding agents behind one lo
 
 ## Project status
 
-> **Development is on the beta track. The latest published release is still [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha).**
+> **Development is on the beta track. The latest named milestone is still [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha).**
 
-The current source is building toward `v0.5.0-beta`; it is not a beta release yet. The released installers are older unsigned alpha builds, while the source tree includes the newer multi-project, limits, routing, ledger, and Commons work described below.
+The current source is building toward `v0.5.0-beta`; it is not a beta release yet. The published installers are unsigned alpha and development builds, while the source tree includes the newer multi-project, limits, routing, ledger, and Commons work described below.
 
 | Area | Current source |
 |---|---|
@@ -28,7 +28,8 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
 | Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
-| Upgrades | State from every published release opens with nothing lost, checked in CI against profiles captured from those releases; config, registry and run store are versioned and refuse a newer build's files |
+| Upgrades | Four captured release profiles pass on macOS and Windows; the newest SQLite release still needs capture. Config, registry and run store are versioned and refuse a newer build's files |
+| Desktop updates | Signed-release pipeline and updater built; signing credentials and real installed-update verification are still outstanding |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).
 
@@ -102,9 +103,11 @@ uses the running daemon; it does not start a second one.
 
 [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha) provides a Windows x64 NSIS installer plus macOS DMG and ZIP builds for Apple Silicon and Intel.
 
-Every commit pushed to GitHub also gets downloadable installers on the [Releases page](https://github.com/npyrz/Cuesheet/releases): pushes to `main` are published as production releases and marked Latest, while pushes to every other branch are published as prereleases. “Production” identifies the release channel; the version in the installer still identifies the app's maturity.
+The release workflow attempts signed installers for every commit pushed to GitHub. It now requires signing credentials and fails without them. Once configured, builds appear on the [Releases page](https://github.com/npyrz/Cuesheet/releases): pushes to `main` are published as production releases and marked Latest, while pushes to every other branch are published as prereleases. “Production” identifies the release channel; the version in the installer still identifies the app's maturity.
 
-The installers are unsigned. macOS may require right-clicking the app and choosing **Open**; Windows SmartScreen may require **More info → Run anyway**.
+Existing published installers are unsigned. macOS may require right-clicking the app and choosing **Open**; Windows SmartScreen may require **More info → Run anyway**.
+
+Future signed `main` installs check for updates automatically. Choose **Check for updates…** from the app or tray menu, then confirm **Restart and install**. The daemon saves run history before restarting; active and queued runs become interrupted. Branch prereleases require manual installation. See [release setup and acceptance](docs/releases.md).
 
 > **Windows:** install into the default directory or another empty directory. The alpha uninstaller removes its installation directory wholesale, so do not install it into a folder containing other files.
 

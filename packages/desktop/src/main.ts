@@ -32,7 +32,9 @@ import {
 } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { EventBus } from "@cuesheet/daemon";
+import type { EventBus, UpdateStatus } from "@cuesheet/daemon";
+import { autoUpdater } from "electron-updater";
+import { createDesktopUpdates, type DesktopUpdates } from "./updates.js";
 import {
   ACTIVE_PROJECT_CHANNEL,
   bridgeArguments,
@@ -67,6 +69,8 @@ const APP_ID = "io.github.npyrz.cuesheet";
 
 /** How long a clean shutdown gets before the app quits regardless. */
 const SHUTDOWN_TIMEOUT_MS = 5_000;
+// Replaced by the bundler only for the signed main-branch release path.
+declare const CUESHEET_UPDATES_ENABLED: boolean;
 app.setAppUserModelId(APP_ID);
 
 /**
@@ -97,6 +101,8 @@ let daemon: DaemonConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+let updates: DesktopUpdates | undefined;
+let updateTimer: ReturnType<typeof setInterval> | undefined;
 
 /**
  * The project the Desk says it is showing, or `null` for the launch surface.
@@ -125,7 +131,10 @@ async function connectDaemon(): Promise<DaemonConnection> {
     // free. `harnessRuntime()` is where the app opts into real harnesses —
     // the same one line `cuesheetd`'s `main.ts` uses, so the two embedders
     // cannot drift.
-    const handle = await startDaemon({ ...harnessRuntime() });
+    const handle = await startDaemon({
+      ...harnessRuntime(),
+      ...(updates && { updates }),
+    });
     return {
       port: handle.port,
       url: handle.url,
@@ -353,6 +362,13 @@ function refreshTrayMenu(port: number): void {
         },
       },
       { type: "separator" },
+      {
+        label: "Check for updates…",
+        click: () => {
+          void showUpdates();
+        },
+      },
+      { type: "separator" },
       { label: "Quit Cuesheet", click: () => app.quit() },
     ]),
   );
@@ -408,11 +424,34 @@ function notify(
 
 async function boot(): Promise<void> {
   try {
-    // The daemon's boot and Electron's are independent, so they overlap. On a
-    // cold start `whenReady` is the slower of the two; doing them in sequence
-    // adds the daemon's boot to every launch for no reason.
-    const [connection] = await Promise.all([connectDaemon(), app.whenReady()]);
-    daemon = connection;
+    await app.whenReady();
+    if (app.isPackaged && CUESHEET_UPDATES_ENABLED) {
+      updates = createDesktopUpdates(autoUpdater, {
+        version: app.getVersion(),
+        restart: () => app.quit(),
+        changed: (status) => {
+          if (status.phase === "ready") {
+            notify(
+              "Update ready",
+              `Cuesheet ${status.version} is ready. Choose Check for updates to restart and install.`,
+            );
+          }
+          if (status.phase === "error" && quitting) {
+            // Squirrel can report an error asynchronously, after the daemon
+            // has closed. Do not strand a window over a stopped server.
+            dialog.showErrorBox(
+              "Update was not installed",
+              status.message ?? "The installer failed.",
+            );
+            app.quit();
+          }
+        },
+      });
+    }
+    daemon = await connectDaemon();
+    // Attaching to another process gives us no right to stop its runs, and
+    // that process has no updater for this shell. The API reports unavailable.
+    if (!daemon.owned) updates = undefined;
   } catch (error) {
     await app.whenReady();
     dialog.showErrorBox(
@@ -428,8 +467,100 @@ async function boot(): Promise<void> {
     setActiveProject(parseActiveProject(payload));
   });
   createTray(daemon.port);
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: process.platform === "darwin" ? app.name : "File",
+        submenu: [
+          { role: "about" },
+          {
+            label: "Check for updates…",
+            click: () => {
+              void showUpdates();
+            },
+          },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
   if (daemon.bus !== null) watchForNotifications(daemon.bus);
   await createWindow(daemon.port);
+  if (updates) {
+    const check = () => {
+      if (daemon && !quitting) {
+        void fetch(`${daemon.url}/updates/check`, { method: "POST" }).catch(
+          () => undefined,
+        );
+      }
+    };
+    check();
+    updateTimer = setInterval(check, 4 * 60 * 60 * 1000);
+    updateTimer.unref();
+  }
+}
+
+async function showUpdates(): Promise<void> {
+  if (!daemon || quitting) return;
+  try {
+    const read = async () =>
+      (await (await fetch(`${daemon!.url}/updates`)).json()) as UpdateStatus;
+    let status = await read();
+    if (status.phase === "idle" || status.phase === "error") {
+      await fetch(`${daemon.url}/updates/check`, { method: "POST" });
+      status = await read();
+      const deadline = Date.now() + 10_000;
+      while (status.phase === "checking" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        status = await read();
+      }
+    }
+    if (status.phase === "ready") {
+      const result = await dialog.showMessageBox({
+        type: "info",
+        title: "Update ready",
+        message: `Restart to install Cuesheet ${status.version}?`,
+        detail:
+          "Active and queued runs will be interrupted. Their history will be saved before the app restarts.",
+        buttons: ["Later", "Restart and install"],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (result.response === 1) {
+        const response = await fetch(`${daemon.url}/updates/install`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
+        });
+        if (!response.ok)
+          throw new Error(
+            "The update is no longer ready. Check for updates again.",
+          );
+      }
+      return;
+    }
+    const messages: Partial<Record<UpdateStatus["phase"], string>> = {
+      idle: "Cuesheet is up to date.",
+      checking: "Checking for updates. You can keep working.",
+      downloading: `Downloading Cuesheet ${status.version}. You will be notified when it is ready.`,
+      installing: "Cuesheet is preparing to restart.",
+    };
+    await dialog.showMessageBox({
+      type: "info",
+      title: "Cuesheet updates",
+      message:
+        status.message ?? messages[status.phase] ?? "Updates are unavailable.",
+    });
+  } catch (error) {
+    dialog.showErrorBox(
+      "Could not check for updates",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 /**
@@ -525,6 +656,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", (event) => {
     if (quitting) return;
     quitting = true;
+    clearInterval(updateTimer);
 
     // Never leave a tray icon behind on Windows, where a ghost lingers until
     // the user mouses over it.
@@ -535,6 +667,29 @@ if (!app.requestSingleInstanceLock()) {
 
     event.preventDefault();
     const connection = daemon;
+
+    if (updates?.installRequested()) {
+      let timeout: ReturnType<typeof setTimeout>;
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(
+              new Error(
+                "The daemon did not stop in time. The update was not installed; reopen Cuesheet and try again.",
+              ),
+            ),
+          SHUTDOWN_TIMEOUT_MS,
+        );
+      });
+      void updates
+        .finishInstall(() => Promise.race([connection.close(), deadline]))
+        .catch((error: unknown) => {
+          console.error("[cuesheet] update shutdown failed:", error);
+          app.quit();
+        })
+        .finally(() => clearTimeout(timeout));
+      return;
+    }
 
     // A close that hangs must not become an app that cannot be quit. Five
     // seconds is far longer than a clean shutdown takes and far shorter than

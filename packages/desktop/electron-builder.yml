@@ -70,8 +70,10 @@ mac:
       arch: [arm64, x64]
   # Unsigned, and honest about it. `identity: null` stops electron-builder
   # picking up whatever certificate happens to be in the keychain, so a local
-  # build and a CI build produce the same thing. Step 26 is where this changes.
+  # build stays unsigned. CI uses electron-builder.release.mjs, which requires
+  # a Developer ID identity and notarization credentials before packaging.
   identity: null
+  notarize: false
 
 dmg:
   # The window a stranger sees first. Nothing clever: the app, and the folder

@@ -18,13 +18,16 @@
     "icons": "node ../../scripts/make-icons.mjs"
   },
   "devDependencies": {
-    "electron": "44.3.0",
-    "electron-builder": "^26.15.3",
-    "esbuild": "^0.28.2",
     "@cuesheet/core": "*",
     "@cuesheet/daemon": "*",
-    "@cuesheet/ui": "*"
+    "@cuesheet/ui": "*",
+    "electron": "44.3.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2"
   },
   "author": "Noah Pyrzanowski",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
 }

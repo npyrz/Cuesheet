@@ -178,3 +178,4 @@ export {
 export type { DaemonLock, HealthResponse } from "./lockfile.js";
 
 export { DAEMON_VERSION } from "./version.js";
+export type { UpdateService, UpdateStatus } from "./updates.js";
