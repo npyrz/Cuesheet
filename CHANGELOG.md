@@ -22,11 +22,13 @@ arrived in that build. Published tags below identify actual installers.
 
 - SQLite schema creation and file-history import now commit together, so a failed import cannot mark an empty database as migrated.
 - A project with newer state is refused without taking down the entire daemon.
+- Selecting the file backend over SQLite history now refuses instead of displaying an empty or stale run list.
+- SQLite release-profile capture preserves committed WAL history and safely relocates stored paths; Windows profile/Commons tests have explicit budgets for real HTTP/Git work.
 
 ### Compatibility and known limits
 
 - The beta release bar remains open. Phone pairing, Caller automation and On-Call are not implemented.
-- Four captured release profiles pass on macOS and Windows; the first SQLite release still needs a captured profile.
+- All five published releases now have captured profiles, including the first SQLite release. SQLite-to-files conversion is unsupported; incompatible selection leaves the database untouched.
 - Signed release jobs refuse to publish without signing/notarization credentials. Local unsigned development builds remain available.
 
 ## [build-36170856000-bb9ab14] — 2026-09-25

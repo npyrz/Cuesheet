@@ -567,11 +567,15 @@ are held to the same contract:
 | `files` | `runs/<run-id>/` | One directory per run, readable with `cat`. Listing and crash reconciliation walk the directory tree, which is slower as a project's history grows. |
 
 The first time a project opens with the SQLite store, any run directories
-already present are imported into `runs.db` and **left on disk**, so setting
-`CUESHEET_RUN_STORE=files` afterwards still shows the same history. Run records
+already present are imported into `runs.db` and **left on disk** as a backup.
+Those directories are not a mirror: subsequent SQLite runs live only in the
+database. Selecting `files` over an existing `runs.db` returns a project-scoped
+409 and leaves history untouched. Use the SQLite backend to reopen that
+project; automatic SQLite-to-files conversion is not supported. Run records
 under the file store are written atomically and its event logs are append-only;
 under SQLite a run's final state and its diff are committed in one transaction.
-On a runtime without `node:sqlite`, the daemon opens the file store instead.
+On a runtime without `node:sqlite`, new and file-only projects use files;
+a project with existing SQLite history refuses with an upgrade instruction.
 
 ### Upgrades
 

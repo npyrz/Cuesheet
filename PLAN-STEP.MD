@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 and 55–56 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance remain. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 and 55–56 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53 now captures all five published profiles, including SQLite/WAL; the updated replay still needs both CI runners. Step 54's signing/updater code is built; credentials and installed acceptance remain. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Steps 55–56 are done in source. Phase 13 now awaits the remaining Step 53 profile capture and Step 54 signing/installed-update acceptance. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (its SQLite profile is now captured; updated CI replay remains). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Steps 55–56 are done in source. Phase 13 now awaits Step 53’s updated CI replay and Step 54 signing/installed-update acceptance. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -123,7 +123,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
-- [ ] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** The mechanism is built, and all four published releases' profiles open with nothing lost on macOS, under both run stores. The original four-profile suite has now passed both release runners. The newly published SQLite release still needs a captured profile; the box stays unticked until that history is covered too
+- [ ] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** The mechanism is built, and all four published releases' profiles open with nothing lost on macOS, under both run stores. The original four-profile suite has now passed both release runners. All five published releases now have captured profiles and pass locally. Updated CI replay remains; the box stays unticked until both runners prove the expanded suite
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
 - [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; Windows CI remains to run this change
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
@@ -1752,13 +1752,13 @@ The interface was cut for this in Step 10, and the seam has held through everyth
 
 **Half of Step 53 arrived here, and it is the half that prevents damage.** The database carries SQLite's own `user_version`, and a build that finds a version it does not understand refuses to open rather than writing to it. A migration that runs once and is recorded is still Step 53's work; a downgrade quietly corrupting a newer store is the failure that could not wait for it.
 
-### Step 53 — Migrations as a mechanism ◐ *(original CI clause proved; newest release profile outstanding)*
+### Step 53 — Migrations as a mechanism ◐ *(all five profiles captured; updated CI replay outstanding)*
 
 Step 33 performs one migration. This makes it a system: versioned config, versioned store, a migration that runs once and is recorded, and a refusal to open state written by a *newer* build rather than corrupting it.
 
 **Step 52 already installed two pieces of this**, and the remainder is what the step is now for: the run store is versioned (`user_version`) and refuses a newer one, and the file-store-to-SQLite import is a migration that runs once, detected by that version. Neither is *recorded* anywhere a person can read, config is still unversioned, and nothing runs an old profile in CI.
 
-**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ◐ The original four captured releases passed on both `macos-latest` and `windows-latest` in [release run 36170856000](https://github.com/npyrz/Cuesheet/actions/runs/36170856000), verified on 2026-09-28. That run published `build-36170856000-bb9ab14`, the first SQLite release. Its profile is not captured yet, so the claim about **every** released version remains open; the stale CI blocker is no longer the reason.
+**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ◐ The original four captured releases passed on both `macos-latest` and `windows-latest` in [release run 36170856000](https://github.com/npyrz/Cuesheet/actions/runs/36170856000), verified on 2026-09-28. That run published `build-36170856000-bb9ab14`, the first SQLite release. Its profile is now captured and passes locally, including committed SQLite/WAL state. Updated CI replay remains before the claim about **every** released version is fully ticked.
 
 #### What the work settled
 
@@ -1780,6 +1780,35 @@ Step 33 performs one migration. This makes it a system: versioned config, versio
 
 **Two things the capture found about the old builds that were worth knowing before trusting a fixture.** A run waiting on a standby is `running` in the alpha's record and `standby` in the betas', and only the event stream agrees between them. The script first waited on the record and hung. The `web` project's run is `failed`, because its Station's leash (`src/**`) refused the mock's write at the workspace root. That is left in rather than tidied up: a failed run is history like any other.
 
+#### Phase 13 acceptance audit, 2026-09-30
+
+The fifth published release, `build-36170856000-bb9ab14`, now has a profile
+captured from its exact tag in a built, isolated worktree. The capture still
+uses that build's HTTP answers as the oracle and ends in SIGKILL. SQLite adds
+one requirement the original file-only script missed: committed rows can still
+be in WAL. Capture recovers them with SQLite, scrubs only the JSON/patch text
+columns, vacuums away old path bytes and checkpoints the WAL. Replay relocates
+those same columns with JSON escaping on Windows; integrity checks protect
+both operations. Database fixtures are explicitly binary in Git attributes.
+No profile record or manifest was hand-written.
+
+The capture also found a real runtime hole. `CUESHEET_RUN_STORE=files` over a
+SQLite-only release showed an empty Desk; over an imported database it could
+show only the older directories. Those directories are a backup, not a mirror.
+The file selection now refuses with a project-scoped 409 before touching the
+database. SQLite-to-files export is not implemented. File-origin profiles still
+open under both choices; the SQLite profile opens losslessly under SQLite and
+is byte-identical after the incompatible choice is refused. This supersedes
+Step 52's historical claim that selecting files afterwards shows all history.
+
+The latest release runner, [36806837821](https://github.com/npyrz/Cuesheet/actions/runs/36806837821),
+ran Step 56's crash tests successfully on Windows. Two older suites exceeded
+Vitest's 5s default: alpha profile replay and a Commons HTTP/Git check. Both now
+have explicit 30s test/hook ceilings; profile cleanup retries Windows file
+locks. These are condition-driven checks, not fixed sleeps. Local replay passes;
+the updated source still needs both CI runners before Step 53 is fully ticked.
+All five local checks pass: 72 test files, 1,118 passed tests and 9 skipped.
+
 #### What the profiles do not prove, stated so nobody assumes it
 
 - **They were captured on macOS.** CI replays them on Windows, which proves Windows reads them. A profile *written* on Windows differs in path strings, and the test's substitution covers only the home directory: backslash-escaped in JSON and TOML, raw elsewhere. A Windows-captured profile is worth adding the first time a Windows release is cut from a Windows machine.
@@ -1797,7 +1826,7 @@ Step 26 documented the honest unsigned position. This is where that stops being 
 
 **Done when:** a stranger's install updates itself with no terminal, no quarantine flag and no SmartScreen dialog — and a release that fails to notarize fails the pipeline rather than shipping.
 
-**Status, 2026-09-28:** the source integration is built. `gh secret list` and
+**Status, rechecked 2026-09-30:** the source integration is built. `gh secret list` and
 `gh variable list` returned no configured entries, and macOS reported zero valid
 signing identities. This is a checked environment blocker, not an assumption.
 No certificate was purchased, no credentials were created, and no release was
@@ -1958,7 +1987,9 @@ shutdown, log rotation and unavailable storage. The Desk preview was exercised
 in the browser with an isolated temporary home; clipboard copy and downloaded
 report bytes were verified too. Build, typecheck, lint, format-check and the
 full suite passed on macOS: 72 test files, 1,115 passed tests and 9 skipped.
-Windows execution remains for CI.
+The later Phase 13 audit verified these diagnostics tests passing on Windows
+in release run 36806837821; that run failed on two older suites' 5s budgets,
+not the crash tests.
 
 ---
 

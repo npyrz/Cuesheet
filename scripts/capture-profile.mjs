@@ -33,7 +33,8 @@
  *   `.git` is stored as `dot-git`, because a nested `.git` cannot be committed
  *   inside this repository. The test reverses both.
  */
-import { spawn, spawnSync } from "node:child_process";
+import spawn from "cross-spawn";
+import { relocateProfileDatabase } from "./profile-sqlite.mjs";
 import {
   cp,
   mkdir,
@@ -70,7 +71,7 @@ const web = path.join(code, "web");
 /** A workspace is the user's code, not Cuesheet state, but a diff needs git. */
 function gitRepo(dir) {
   const git = (...args) => {
-    const r = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    const r = spawn.sync("git", args, { cwd: dir, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   };
   git("init", "-q");
@@ -369,6 +370,7 @@ async function snapshot(scope, root) {
       status: stored.run.status,
       stationIds: stored.run.stationIds,
       events: stored.events.length,
+      eventLog: stored.events,
       diff:
         diff.status === 200
           ? typeof diff.json === "string"
@@ -401,6 +403,11 @@ if (hasProjects) {
     manifest.projects.push({
       id: p.id,
       name: p.name,
+      store: (await stat(
+        path.join(home, ".cuesheet", "projects", p.id, "runs", "runs.db"),
+      ).catch(() => null))
+        ? "sqlite"
+        : "files",
       ...(await snapshot(`/projects/${p.id}`, p.root)),
     });
   }
@@ -436,6 +443,13 @@ await mkdir(out, { recursive: true });
 await cp(state, path.join(out, "cuesheet"), { recursive: true });
 
 const homes = [home, home.replace(/^\/private\//, "/")];
+function scrubText(text) {
+  for (const h of homes) {
+    text = text.split(JSON.stringify(h).slice(1, -1)).join("{{HOME}}");
+    text = text.split(h).join("{{HOME}}");
+  }
+  return text;
+}
 async function scrub(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     let full = path.join(dir, entry.name);
@@ -458,17 +472,19 @@ async function scrub(dir) {
       await scrub(full);
       continue;
     }
+    if (entry.name === "runs.db") {
+      await relocateProfileDatabase(full, (text) => scrubText(text));
+      continue;
+    }
+    if (/^runs\.db-(wal|shm)$/.test(entry.name)) continue;
     const bytes = await readFile(full);
     if (bytes.includes(0)) continue;
-    let text = bytes.toString("utf8");
-    for (const h of homes) text = text.split(h).join("{{HOME}}");
-    await writeFile(full, text);
+    await writeFile(full, scrubText(bytes.toString("utf8")));
   }
 }
 await scrub(path.join(out, "cuesheet"));
 
-let body = JSON.stringify(manifest, null, 2);
-for (const h of homes) body = body.split(h).join("{{HOME}}");
+const body = scrubText(JSON.stringify(manifest, null, 2));
 await writeFile(path.join(out, "manifest.json"), `${body}\n`);
 
 await rm(home, { recursive: true, force: true });

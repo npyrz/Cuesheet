@@ -28,7 +28,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
 | Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
-| Upgrades | Four captured release profiles pass on macOS and Windows; the newest SQLite release still needs capture. Config, registry and run store are versioned and refuse a newer build's files |
+| Upgrades | All five published releases have captured profiles, including SQLite/WAL history. Config, registry and run store are versioned; incompatible file-backend selection refuses before hiding SQLite history |
 | Local diagnostics | Durable crash/run context and a previewable report in the Desk; copy/download stays local until you attach it |
 | Desktop updates | Signed-release pipeline and updater built; signing credentials and real installed-update verification are still outstanding |
 

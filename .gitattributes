@@ -21,3 +21,8 @@
 # and `text=auto` guessing wrong on one of them would corrupt the fixture on a
 # Windows checkout in a way no test message would explain.
 packages/daemon/src/fixtures/profiles/**/dot-git/** binary
+
+# SQLite pages and WAL frames must never be line-ending normalized.
+*.db binary
+*.db-wal binary
+*.db-shm binary

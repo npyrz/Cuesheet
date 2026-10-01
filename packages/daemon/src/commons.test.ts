@@ -9,11 +9,15 @@
 import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { run, which } from "@cuesheet/harness";
 import { createCommonsStore, CommonsError } from "./commons.js";
 import { createCommonsInbox } from "./commons-inbox.js";
 import { startDaemon, type DaemonHandle } from "./server.js";
+
+// These API checks start a daemon and spawn real Git processes. The Windows
+// runner exceeded the 5s pure-function default while other suites used Git.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 let root: string;
 

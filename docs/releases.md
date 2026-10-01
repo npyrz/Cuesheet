@@ -1,8 +1,8 @@
 # Signed releases and updates
 
 Step 54's code is built; its installed-machine acceptance check is still open.
-On 2026-09-28 the repository had no Actions signing secrets or variables, and
-the development Mac had no valid code-signing identity. No signed release or
+On 2026-09-30 the audit again found no Actions signing secrets or variables,
+and the development Mac had no valid code-signing identity. No signed release or
 successful installed update is claimed by this document.
 
 ## Configure signing
@@ -102,8 +102,38 @@ The browser can control an updater supplied by a signed desktop-owned daemon.
    identifies the Windows publisher; it does not promise immediate SmartScreen
    reputation or removal of a new-publisher warning.
 6. Capture each published release's profile using `scripts/capture-profile.mjs`.
-   The first SQLite release (`build-36170856000-bb9ab14`) still needs capture and
-   SQLite-aware profile restoration; the current captured set has four releases.
+   All five releases currently published are captured, including the first
+   SQLite release (`build-36170856000-bb9ab14`). Capture now recovers committed
+   WAL data and relocates text through SQLite; replay restores JSON paths with
+   Windows escaping and checks database integrity. Each new publication adds
+   its own captured profile before claiming coverage for that version.
+
+## Phase 13 completion record
+
+Source checks and installed acceptance are separate evidence. The current
+published set has five captured profiles. The 2026-09-30 audit found no signing
+secrets/variables or local signing identity; latest release run
+[36806837821](https://github.com/npyrz/Cuesheet/actions/runs/36806837821) refused
+macOS packaging for missing credentials. Its Windows checks also exposed two
+5s test-budget failures, now addressed with explicit 30s ceilings for profile
+replay and Commons Git/API work. Step 56's crash tests passed on that Windows
+runner. A passing CI job alone does not close signed-install acceptance.
+
+Record the following here or in the plan when actual signed builds exist:
+
+| Evidence | Required observation | Current state |
+|---|---|---|
+| Both CI platforms | All five checks on the final source commit | Updated profile/timeout checks awaiting CI |
+| Signing configuration | Apple and Windows credentials installed in Actions | Missing |
+| Signed build A and B | Two increasing versions, all installers/manifests/blockmaps verified | Not produced |
+| macOS arm64 and x64 install/update | Downloaded/quarantined install opens and updates without terminal work; Gatekeeper observed | Not exercised |
+| Windows install/update | Valid publisher, SmartScreen observed, confirmed restart preserves history | Not exercised |
+| Failure paths | Invalid payload refuses install; failed notarization prevents publication | Unit policy checks pass; real signed acceptance outstanding |
+| Published profile coverage | Capture and replay every published build, including A and B | Five current releases captured; future A/B captures remain |
+
+Do not mark Phase 13 complete or change the source version to `0.5.0-beta`
+until these installed observations are recorded. No certificate purchase,
+account enrollment or credential upload is performed by this audit.
 
 ## Changelog and release notes
 
