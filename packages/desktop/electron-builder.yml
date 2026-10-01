@@ -69,8 +69,8 @@ mac:
     - target: zip
       arch: [arm64, x64]
   # Unsigned, and honest about it. `identity: null` stops electron-builder
-  # picking up whatever certificate happens to be in the keychain, so a local
-  # build stays unsigned. CI uses electron-builder.release.mjs, which requires
+  # picking up whatever certificate happens to be in the keychain, so the
+  # default stays unsigned. Opt-in signed CI uses electron-builder.release.mjs, requiring
   # a Developer ID identity and notarization credentials before packaging.
   identity: null
   notarize: false

@@ -183,3 +183,10 @@ export type { UpdateService, UpdateStatus } from "./updates.js";
 
 export { createDiagnostics } from "./diagnostics.js";
 export type { Diagnostics } from "./diagnostics.js";
+
+export {
+  createSourceUpdates,
+  inspectSourceUpdate,
+  applySourceUpdate,
+} from "./source-updates.js";
+export type { SourceUpdateOptions } from "./source-updates.js";

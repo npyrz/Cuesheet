@@ -4,18 +4,24 @@ export interface UpdateStatus {
   phase:
     | "unavailable"
     | "idle"
+    | "available"
     | "checking"
     | "downloading"
     | "ready"
     | "installing"
     | "error";
   currentVersion: string;
+  mode?: "source" | "installer";
+  currentRevision?: string;
+  targetRevision?: string;
+  checkout?: string;
+  command?: string;
   version?: string;
   percent?: number;
   message?: string;
 }
 
-/** The shell supplies the installer; every client uses the same HTTP controls. */
+/** Source checks and optional shell installers share the same HTTP controls. */
 export interface UpdateService {
   status(): UpdateStatus;
   check(): Promise<void>;
@@ -35,7 +41,7 @@ export function registerUpdateRoutes(
         phase: "unavailable",
         currentVersion: "",
         message:
-          "Updates require a signed desktop installation running its own daemon.",
+          "No updater is configured for this installation. Source checkouts can use npm run update:check.",
       },
   );
 
@@ -43,9 +49,9 @@ export function registerUpdateRoutes(
     if (!service)
       return reply
         .code(409)
-        .send({ error: "This daemon has no desktop updater." });
-    // Checking includes a download, so callers poll status rather than holding
-    // an HTTP connection open for the size of an installer.
+        .send({ error: "This daemon has no configured updater." });
+    // Release checks can fetch Git metadata or an installer. Poll status rather
+    // than holding an HTTP connection open for an external network request.
     void service.check();
     return reply.code(202).send(service.status());
   });

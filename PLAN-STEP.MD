@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–53 and 55–56 done** — a working terminal client; runs in a per-project SQLite store; and all five published releases' state preserved on this build, replayed from captured profiles on macOS and Windows, including SQLite/WAL. Step 54's signing/updater code is built; credentials and installed acceptance remain. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–53 and 55–56 done** — a working terminal client; runs in a per-project SQLite store; and all five published releases' state preserved on this build, replayed from captured profiles on macOS and Windows, including SQLite/WAL. Step 54 is revised for clone-and-run distribution: release checks and a stopped-checkout update script are built; the updated Windows CI check remains. Signing is optional for prebuilt installers. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Steps 55–56 are done in source. Phase 13 now awaits Step 54 signing/installed-update acceptance. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 now targets source checkout updates, as clarified by the maintainer; local implementation is built and updated Windows CI acceptance remains; Steps 55–56 are done in source. Phase 13 now awaits Step 54's source-update verification on both CI platforms. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -77,7 +77,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
 
-**Current state:** development is on the beta track in Phase 13; the latest named milestone remains `v0.1.0-alpha` (later per-commit development prereleases also exist). “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
+**Current state:** development is on the beta track in Phase 13; the latest named milestone remains `v0.1.0-alpha` (later per-commit development prereleases also exist). “Working on beta” means closing the checklist below. It does not make an unverified or migration-incomplete build a beta release.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
@@ -87,7 +87,7 @@ The sequencing is the plan's, not the README's. That table numbers features (M2,
 |---|---|---|---|
 | 🟠 **Pre-alpha** | `0.0.x` | No installer. Runs from a checkout. Shapes and contracts are still moving; expect to delete state between runs. | You, and nobody else. |
 | 🟡 **Alpha** | `0.1.x` | Installable, unsigned. One harness, one station at a time, no gates. Config may break without migration. Run records may be discarded on upgrade. | People who will read a changelog and tolerate a wipe. |
-| 🔵 **Beta** | `0.5.x` | Feature-complete against the README's core thesis. Signed. Config format frozen with migrations. No data loss, ever. | Strangers, daily, on real work. |
+| 🔵 **Beta** | `0.5.x` | Feature-complete against the README's core thesis. Source checkout updates verified; signing optional for installers. Config format frozen with migrations. No data loss, ever. | Strangers, daily, on real work. |
 | 🟢 **1.0** | `1.0.0` | The README is true as written, minus the sections it marks optional. Security posture documented and reviewed. | Anyone. |
 
 ### Exit criteria
@@ -124,7 +124,8 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
 - [x] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** All five published releases have captured profiles and pass replay on macOS and Windows in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503). File-origin history opens under both stores; SQLite history opens losslessly under SQLite, and incompatible file selection refuses without touching the database
-- [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
+- [ ] Source checkout updates from published release tags — **Step 54 revised on 2026-09-30 by maintainer clarification.** Clone-and-run distribution does not require signing. App/browser/CLI checks and a stopped-checkout update script are built; updated CI acceptance remains
+- [ ] Optional prebuilt installer signing and notarization — separate distribution hardening, no longer a Phase 13 prerequisite
 - [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; the tests pass on macOS and Windows CI
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
 - [x] Repository contribution, security and harness docs, community templates and changelog-backed release notes — **Step 55, done in source**. GitHub private reporting is enabled; new files and issue forms take effect on GitHub when merged/pushed to the relevant branch
@@ -1819,22 +1820,69 @@ Apple/Windows signing credentials; it published nothing.
 - **They come from the release's daemon, not its installer.** The Electron app embeds the same daemon over the same `~/.cuesheet`, and nothing the shell adds is state, but it is still a different binary than the one downloaded.
 - **Two formats stay unversioned, on purpose.** The file store's `run.json` has not changed since Step 10, and a Commons fact is a Markdown file a person may edit. Neither has had a breaking change to version against. Each gets a version on its first breaking change, and the profiles are what will say whether the change broke anything.
 - **The Desk's own browser storage** (the remembered project, a collapsed panel) is per-viewer convenience, and it is not covered.
-- **Each new publication needs its own capture.** The first SQLite release is now captured. Step 54 changed `release.yml` to require signed output, so current pushes refuse packaging while credentials are absent and add no published state. Once signing is configured, every new release must be captured with `scripts/capture-profile.mjs`. The floor test in `profiles.test.ts` names the releases covered by this audit; it cannot notice a newer one, because the network is not a test dependency.
+- **Each new publication needs its own capture.** The first SQLite release is now captured. Step 54 originally made signing mandatory; the maintainer subsequently clarified source distribution and made installer signing opt-in. With the revised default unsigned packaging path, every new release must be captured with `scripts/capture-profile.mjs`. The floor test in `profiles.test.ts` names the releases covered by this audit; it cannot notice a newer one, because the network is not a test dependency.
 
-### Step 54 — Signing, notarization, auto-update ◐ *(built; signing credentials and installed acceptance outstanding)*
+### Step 54 — Published releases and source checkout updates ◐ *(built; updated CI acceptance remains)*
 
-One chain, not three checkboxes: macOS notarization is a precondition for `electron-updater` working without a Gatekeeper prompt, and an unsigned auto-updater is worse than no auto-updater. Windows SmartScreen reputation accrues only to a signed binary, and only over time, which makes the signing date a dependency for every install after it.
+**Scope revised by the maintainer on 2026-09-30:** people clone the repository,
+build it and use Cuesheet as an app, CLI or browser. An included script checks
+this repository for a release and updates the checkout. Signing and notarization
+are optional for prebuilt installers; they are not required for this distribution.
+This explicitly replaces the original signed-installer/terminal-free done-when,
+rather than silently counting a different result as proof of it.
 
-Step 26 documented the honest unsigned position. This is where that stops being acceptable, because an app that cannot update itself is not one people keep.
+**Done when:** a source checkout checks published releases through the app,
+browser and CLI; an included script updates a stopped, clean checkout to the
+exact release and rebuilds it without discarding user data; local changes,
+divergence and downgrades are refused; and failed installation/build can recover
+the previous checkout. The updated source suite must pass macOS and Windows CI.
 
-**Done when:** a stranger's install updates itself with no terminal, no quarantine flag and no SmartScreen dialog — and a release that fails to notarize fails the pipeline rather than shipping.
+#### Source distribution implementation
 
-**Status, rechecked 2026-09-30:** the source integration is built. `gh secret list` and
-`gh variable list` returned no configured entries, and macOS reported zero valid
-signing identities. This is a checked environment blocker, not an assumption.
-No certificate was purchased, no credentials were created, and no release was
-published in this work. The done-when stays unticked until real signed installs
-complete the two-version acceptance in [docs/releases.md](docs/releases.md).
+`npm run update:check` queries public GitHub releases and fetches the exact tag
+from this repository into a private Git ref, comparing commit ancestry rather
+than the source version shared by earlier releases. It changes no checked-out
+source. The daemon supplies the same check at startup and every four hours;
+`GET /updates` and `POST /updates/check` serve every client. App menus, the Desk's
+launcher/project/palette and `npx cuesheet updates` expose it without selecting
+a project. `--tag RELEASE_TAG` opts into a specific published prerelease.
+
+`npm run update` requires the daemon stopped and the checkout clean, then
+fast-forwards, runs `npm ci` and rebuilds all packages. It leaves `~/.cuesheet`
+and ignored local files untouched. A private Git lock serializes updates;
+local commits or edits are never forced away. A failed install/build restores
+and rebuilds the previous revision when the tracked checkout still matches the
+release; changes made meanwhile refuse automatic recovery. Stop Vite as well:
+it has no daemon lock. Restart the app/daemon after the script finishes. The
+HTTP installer endpoint refuses source updates because rebuilding a live daemon
+or Vite tree is not a safe installation path.
+
+Signing is now opt-in via Actions variable `CUESHEET_SIGNED_RELEASE=true`.
+The default release workflow builds unsigned convenience installers and retains
+its five source checks. Explicitly signed builds still require valid credentials,
+platform verification and notarization; their updater remains separate.
+
+**Verification:** eleven new source-update tests use real Git and npm against two fixture release
+commits in a path with spaces. They exercise checking without source mutation,
+fast-forward/rebuild, preserved local state, ignored-file collision refusal,
+local edit/untracked/running/concurrent-update refusal,
+divergence/downgrade refusal, failed-build rollback/rebuild, coalesced HTTP checks
+and API errors, including repositories with only prereleases or no releases.
+A CLI integration check proves no active project is needed. All five checks
+pass locally: 73 test files, 1,130 passed tests and 9 skipped. The live GitHub
+check reports this development checkout ahead of the current release without
+downgrading it. The Desk update dialog and retry control were exercised against
+an isolated daemon with an available-release fixture. Updated Windows CI is
+still required before marking this revised step complete; signing credentials
+are no longer the blocker. These changes remain local and uncommitted.
+
+#### Earlier signed-installer work (retained as optional capability)
+
+The original acceptance required a stranger's installer to update with no
+terminal, quarantine flag or SmartScreen dialog and to fail publication if
+notarization failed. The audit found no signing credentials or identities; that
+installed acceptance was not completed and is not being claimed here. The
+source-distribution requirement above supersedes it by explicit user direction.
 
 #### What the work settled
 

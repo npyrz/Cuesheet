@@ -81,6 +81,31 @@ async function boot(): Promise<DaemonHandle> {
 }
 
 describe("the cuesheet CLI", () => {
+  it("checks updates without selecting a project", async () => {
+    daemon = await startDaemon({
+      port: 0,
+      cwd: home,
+      env,
+      writeLockFile: false,
+      updates: {
+        status: () => ({
+          phase: "available",
+          mode: "source",
+          currentVersion: "test",
+          message: "Release available. Run npm run update.",
+        }),
+        check: async () => {},
+        prepareInstall: () => {},
+        restart: () => {},
+      },
+    });
+    const variables = { CUESHEET_URL: daemon.url };
+    expect(await runCli(["updates"], { ...cliOptions(home), variables })).toBe(
+      0,
+    );
+    expect(output).toEqual(["Release available. Run npm run update."]);
+  });
+
   it("registers a project and queues its named cuesheet from a nested directory", async () => {
     const active = await boot();
     expect(

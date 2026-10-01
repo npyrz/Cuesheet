@@ -30,7 +30,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
 | Upgrades | All five published releases have captured profiles, including SQLite/WAL history. Config, registry and run store are versioned; incompatible file-backend selection refuses before hiding SQLite history |
 | Local diagnostics | Durable crash/run context and a previewable report in the Desk; copy/download stays local until you attach it |
-| Desktop updates | Signed-release pipeline and updater built; signing credentials and real installed-update verification are still outstanding |
+| Source updates | App, browser and CLI check published GitHub releases; `npm run update` fast-forwards and rebuilds a stopped, clean checkout. Signed installers are optional |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).
 
@@ -104,11 +104,23 @@ uses the running daemon; it does not start a second one.
 
 [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha) provides a Windows x64 NSIS installer plus macOS DMG and ZIP builds for Apple Silicon and Intel.
 
-The release workflow attempts signed installers for every commit pushed to GitHub. It now requires signing credentials and fails without them. Once configured, builds appear on the [Releases page](https://github.com/npyrz/Cuesheet/releases): pushes to `main` are published as production releases and marked Latest, while pushes to every other branch are published as prereleases. “Production” identifies the release channel; the version in the installer still identifies the app's maturity.
+The release workflow builds unsigned convenience installers by default. Signing is an optional configuration for prebuilt installers; it is not required to clone and run Cuesheet. Existing unsigned downloads may need macOS **Open** or Windows SmartScreen's **More info → Run anyway**.
 
-Existing published installers are unsigned. macOS may require right-clicking the app and choosing **Open**; Windows SmartScreen may require **More info → Run anyway**.
+### Update a source checkout
 
-Future signed `main` installs check for updates automatically. Choose **Check for updates…** from the app or tray menu, then confirm **Restart and install**. The daemon saves run history before restarting; active and queued runs become interrupted. Branch prereleases require manual installation. See [release setup and acceptance](docs/releases.md).
+The app and standalone daemon check this repository's published GitHub releases at startup and every four hours. Check from the app menu, the Desk's updates control, or `npx cuesheet updates`. To check without starting Cuesheet:
+
+```bash
+npm run update:check
+```
+
+Stop the app or daemon and any Vite dev server, then run this from the Cuesheet checkout:
+
+```bash
+npm run update
+```
+
+The script fetches the exact published release tag, fast-forwards a clean checkout, installs locked dependencies and rebuilds. Restart the app or daemon afterward. It refuses local changes, divergent history and downgrades; projects and run history remain under `~/.cuesheet`. A branch prerelease can be selected explicitly with `npm run update -- --tag RELEASE_TAG`. See [source updates and optional installers](docs/releases.md) for recovery and release details.
 
 > **Windows:** install into the default directory or another empty directory. The alpha uninstaller removes its installation directory wholesale, so do not install it into a folder containing other files.
 

@@ -20,7 +20,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "version:set": "node scripts/set-version.mjs"
+    "version:set": "node scripts/set-version.mjs",
+    "update:check": "node scripts/update.mjs --check",
+    "update": "node scripts/update.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

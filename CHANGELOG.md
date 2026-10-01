@@ -9,16 +9,20 @@ arrived in that build. Published tags below identify actual installers.
 
 ### Added
 
+- Source checkout updates: app, browser and CLI check published GitHub releases; `npm run update:check` and `npm run update` select exact tags, refuse unsafe checkout states, rebuild and recover from failed builds. No signing subscription is required for the primary clone-and-run path.
+
 - Multi-project daemon and rebuilt Desk with project switching, role/confinement information, usage limits, fallback routing and a cost ledger.
 - Codex review alongside Claude Code, independent-vendor Gates and Holds, and worker-only Ollama inference.
 - Git-backed Commons facts, projections, approval inbox, MCP recall and operator-owned Git sync.
 - Terminal client for projects, Stations, runs and standbys; per-project SQLite run storage and version-aware upgrade checks.
-- Signed-release configuration and desktop updater with explicit restart confirmation. **Credentials and installed-update acceptance are still outstanding; existing releases are unsigned.**
+- Optional signed-release configuration and installer updater with explicit restart confirmation. **Its credentials and installed-update acceptance are still outstanding; source checkout updates do not require them.**
 - Contributor and harness guides, a runnable offline harness example, security policy, code of conduct, issue forms, PR template and changelog-based release notes.
 
 - Local crash/error diagnostics with bounded logs, interrupted-run context, path-free stack locations and a Desk preview/copy/download flow. Reports are never uploaded automatically.
 
 ### Fixed
+
+- Signing is opt-in for convenience installers; the default release workflow no longer fails merely because signing credentials are absent.
 
 - SQLite schema creation and file-history import now commit together, so a failed import cannot mark an empty database as migrated.
 - A project with newer state is refused without taking down the entire daemon.
