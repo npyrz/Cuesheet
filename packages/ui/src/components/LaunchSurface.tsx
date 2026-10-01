@@ -33,6 +33,7 @@ export interface LaunchSurfaceProps {
   onForget: (id: string) => void;
   onRetry: () => void;
   error?: string | null;
+  onDiagnostics?: () => void;
 }
 
 export function LaunchSurface({
@@ -43,6 +44,7 @@ export function LaunchSurface({
   onForget,
   onRetry,
   error,
+  onDiagnostics,
 }: LaunchSurfaceProps): React.JSX.Element {
   const recents = describeRecents(projects);
   const empty = emptyState(chooseDirectory !== undefined);
@@ -138,6 +140,12 @@ export function LaunchSurface({
               The folder picker is part of the desktop app.
             </p>
           )
+        )}
+
+        {onDiagnostics && (
+          <button type="button" className="ghost" onClick={onDiagnostics}>
+            local diagnostics
+          </button>
         )}
 
         {error != null && error !== "" && (

@@ -29,6 +29,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
 | Upgrades | Four captured release profiles pass on macOS and Windows; the newest SQLite release still needs capture. Config, registry and run store are versioned and refuse a newer build's files |
+| Local diagnostics | Durable crash/run context and a previewable report in the Desk; copy/download stays local until you attach it |
 | Desktop updates | Signed-release pipeline and updater built; signing credentials and real installed-update verification are still outstanding |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).
@@ -178,6 +179,16 @@ npm run typecheck
 npm run lint
 npm run format:check
 npm test
+```
+
+Open **local diagnostics** on the launch screen, or **diagnostics** in an open project's top bar (also in the command palette), to preview, copy or download a bug report. Add your reproduction steps and review the text before attaching it. Cuesheet does not upload reports.
+
+The log is at `~/.cuesheet/diagnostics/events.jsonl` (`%USERPROFILE%\.cuesheet\diagnostics\events.jsonl` on Windows), with two rotated copies and a session checkpoint beside it. It records runtime versions, timestamps, run IDs, hashed project/Station identifiers, state transitions, error classes, known OS error codes and path-free stack locations. Prompts, tool payloads, source, diffs, credentials and error messages are excluded. This is a separate diagnostic record; ordinary run history still contains the work you asked the harness to do. A forced kill cannot write a final stack trace; the last persisted context and next-start recovery identify what was interrupted. If the app cannot reopen, those diagnostic files can be inspected locally and attached after review. Logs rotate at 512 KiB, keeping the current file and two older files.
+
+Every client can read `GET /diagnostics` (local path and availability) and `GET /diagnostics/report` (downloadable text); the same routes exist under `/api`. With a standalone daemon running, export from a terminal:
+
+```bash
+curl --fail http://127.0.0.1:7373/diagnostics/report -o cuesheet-diagnostics.txt
 ```
 
 CI runs all five checks on macOS and Windows. Use the [bug report form](https://github.com/npyrz/Cuesheet/issues/new?template=bug_report.yml) for reproducible defects. See the [code of conduct](CODE_OF_CONDUCT.md) and [changelog](CHANGELOG.md).

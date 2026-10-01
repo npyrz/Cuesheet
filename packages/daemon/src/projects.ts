@@ -52,6 +52,7 @@ import { createRunQueue, type RunQueue } from "./queue.js";
 import { reconcileInterruptedRuns } from "./reconcile.js";
 import type { RunExecutor } from "./executor.js";
 import type { StandbyRegistry } from "./standby.js";
+import type { Diagnostics } from "./diagnostics.js";
 import type { ExecutorFactoryDeps } from "./server.js";
 
 export interface ProjectRuntime {
@@ -69,6 +70,7 @@ export interface ProjectRuntime {
 }
 
 export interface ProjectRuntimesOptions {
+  diagnostics?: Diagnostics;
   registry: ProjectRegistry;
   env?: HostEnv;
   /** Every project's events are mirrored here, for the tray and for tests. */
@@ -181,7 +183,10 @@ export function createProjectRuntimes(
     // Mirrored, not shared. A client attaches to this project's bus and gets
     // this project's backlog; the daemon-wide bus still sees everything so the
     // tray can notify on a standby whatever project raised it.
-    const mirror = bus.attach((event) => globalBus.emit(event));
+    const mirror = bus.attach((event) => {
+      options.diagnostics?.observe(project.id, event);
+      globalBus.emit(event);
+    });
 
     const store =
       (await options.storeFactory?.(project)) ??
@@ -209,9 +214,14 @@ export function createProjectRuntimes(
     // observe an unreconciled run before its runtime exists, and this is
     // O(projects actually opened) rather than O(every project ever
     // registered), on every boot, forever.
-    if (reconcile) await reconcileInterruptedRuns({ store });
+    if (reconcile) {
+      const repaired = await reconcileInterruptedRuns({ store });
+      options.diagnostics?.recovered(project.id, repaired);
+    }
 
     const queue = createRunQueue({
+      onError: (operation, error) =>
+        options.diagnostics?.error(operation, error),
       store,
       bus,
       standbys,

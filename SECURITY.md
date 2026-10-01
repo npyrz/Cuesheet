@@ -49,6 +49,12 @@ Check [release status](README.md#project-status) and the
   application encryption layer. The default state root is `~/.cuesheet`
   (`%USERPROFILE%\.cuesheet` on Windows); project configuration may also live
   in a repository. Do not upload an entire profile as a bug attachment.
+- Local diagnostics select runtime metadata rather than copying arbitrary errors
+  or run payloads. Exported reports omit error messages, prompts, diffs, tool
+  input/output and personal paths; project and Station identifiers are hashed.
+  Timestamps, run IDs and stack file basenames/line numbers remain. Hashing is
+  not a promise of anonymity. Review reports before attaching them. The Desk
+  and HTTP endpoint only read local files; there is no automatic report upload.
 - Commons projections put approved memory into runtime context files. Agent
   captures normally await approval; an operator can enable automatic capture.
   A configured Commons remote sends facts through Git, using Git's credentials.

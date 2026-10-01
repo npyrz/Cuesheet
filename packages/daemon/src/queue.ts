@@ -61,6 +61,7 @@ export interface RunQueueOptions {
   bus: EventBus;
   standbys: StandbyRegistry;
   executor: RunExecutor;
+  onError?: (operation: string, error: unknown) => void;
   now?: () => Date;
 }
 
@@ -93,6 +94,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
   function publish(event: RunEvent): void {
     bus.emit(event);
     void store.append(event.runId, event).catch((error: unknown) => {
+      options.onError?.("run-event-write-failed", error);
       console.error(
         `[cuesheetd] could not append event for ${event.runId}:`,
         error,
@@ -212,6 +214,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         },
       });
     } catch (error) {
+      options.onError?.("run-executor-failed", error);
       failure = error;
     } finally {
       standbys.abandonRun(
@@ -288,6 +291,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         try {
           await runOne(next.run);
         } catch (error) {
+          options.onError?.("run-store-failed", error);
           // `runOne` handles executor failure itself; reaching here means the
           // *store* failed. Losing the queue over it would strand every
           // subsequent run, so log and carry on.

@@ -16,6 +16,8 @@ arrived in that build. Published tags below identify actual installers.
 - Signed-release configuration and desktop updater with explicit restart confirmation. **Credentials and installed-update acceptance are still outstanding; existing releases are unsigned.**
 - Contributor and harness guides, a runnable offline harness example, security policy, code of conduct, issue forms, PR template and changelog-based release notes.
 
+- Local crash/error diagnostics with bounded logs, interrupted-run context, path-free stack locations and a Desk preview/copy/download flow. Reports are never uploaded automatically.
+
 ### Fixed
 
 - SQLite schema creation and file-history import now commit together, so a failed import cannot mark an empty database as migrated.

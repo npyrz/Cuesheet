@@ -6,6 +6,7 @@
  * here starts deciding things, it belongs in one of those two files.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel.js";
 import { AddStationPanel } from "./components/AddStationPanel.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
 import { LaunchSurface } from "./components/LaunchSurface.js";
@@ -49,6 +50,7 @@ export function App(): React.JSX.Element {
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
   const [ledger, setLedger] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(false);
 
   const run = selectedRun(state);
   const events = selectedEvents(state);
@@ -93,6 +95,11 @@ export function App(): React.JSX.Element {
 
   const commands = useMemo<Command[]>(
     () => [
+      {
+        id: "diagnostics",
+        label: "Open local diagnostics — review and export a bug report",
+        run: () => setDiagnostics(true),
+      },
       {
         id: "add-station",
         label: "Add a Station…",
@@ -167,21 +174,27 @@ export function App(): React.JSX.Element {
   // nothing on the daemon stops.
   if (desk.project.status !== "open") {
     return (
-      <LaunchSurface
-        projects={desk.projects}
-        load={
-          desk.project.status === "loading"
-            ? LOADING
-            : desk.project.status === "failed"
-              ? { status: "failed", error: desk.project.error }
-              : READY
-        }
-        chooseDirectory={chooseDirectory}
-        onOpen={(root) => void desk.openFolder(root)}
-        onForget={(id) => void desk.forget(id)}
-        onRetry={desk.retry}
-        error={state.error}
-      />
+      <>
+        {diagnostics && (
+          <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
+        )}
+        <LaunchSurface
+          projects={desk.projects}
+          load={
+            desk.project.status === "loading"
+              ? LOADING
+              : desk.project.status === "failed"
+                ? { status: "failed", error: desk.project.error }
+                : READY
+          }
+          chooseDirectory={chooseDirectory}
+          onOpen={(root) => void desk.openFolder(root)}
+          onForget={(id) => void desk.forget(id)}
+          onRetry={desk.retry}
+          error={state.error}
+          onDiagnostics={() => setDiagnostics(true)}
+        />
+      </>
     );
   }
 
@@ -255,6 +268,13 @@ export function App(): React.JSX.Element {
               : "connecting…"}
         </span>
         <span className="spacer" />
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setDiagnostics(true)}
+        >
+          diagnostics
+        </button>
         <button type="button" onClick={() => setAdding(true)}>
           add a station
         </button>
@@ -447,6 +467,9 @@ export function App(): React.JSX.Element {
         canStart={showing && stations.length > 0}
       />
 
+      {diagnostics && (
+        <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
+      )}
       {ledger && (
         <LedgerPanel
           projectId={desk.project.project.id}

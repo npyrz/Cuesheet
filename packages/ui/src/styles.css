@@ -1970,3 +1970,33 @@ main:focus {
     white-space: normal;
   }
 }
+
+.diagnostics-report {
+  width: 100%;
+  padding: var(--space-5) var(--space-6);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+
+.diagnostics-path {
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-copy-error {
+  padding: 0 var(--space-7);
+  color: var(--warn);
+}
+
+.diagnostics .body {
+  gap: var(--space-5);
+}
+
+.diagnostics .body p {
+  margin: 0;
+}
+
+.diagnostics footer {
+  flex-wrap: wrap;
+}

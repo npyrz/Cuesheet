@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 and 55 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance remain. Step 55 adds the contributor/security/harness docs, templates and changelog-backed releases; local error reporting is next |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 and 55–56 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance remain. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Step 55 is done in source; Step 56 is the next independent coding step. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Steps 55–56 are done in source. Phase 13 now awaits the remaining Step 53 profile capture and Step 54 signing/installed-update acceptance. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -125,7 +125,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
 - [ ] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** The mechanism is built, and all four published releases' profiles open with nothing lost on macOS, under both run stores. The original four-profile suite has now passed both release runners. The newly published SQLite release still needs a captured profile; the box stays unticked until that history is covered too
 - [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
-- [ ] Crash and error reporting you can actually act on — local only, no telemetry — **now Step 56**
+- [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; Windows CI remains to run this change
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
 - [x] Repository contribution, security and harness docs, community templates and changelog-backed release notes — **Step 55, done in source**. GitHub private reporting is enabled; new files and issue forms take effect on GitHub when merged/pushed to the relevant branch
 
@@ -1915,11 +1915,50 @@ Build, typecheck, lint, format-check and tests passed on macOS: 71 test files,
 1,109 passed tests and 9 skipped. This change has not yet run on Windows CI.
 
 
-### Step 56 — Errors you can act on, locally
+### Step 56 — Errors you can act on, locally ✅
 
 Crash and error reporting with no telemetry — the constraint the README sets and the Non-goals section defends. A log an operator can find, a crash that names what it was doing, and a bug report that can be pasted rather than reconstructed.
 
-**Done when:** a crash mid-run leaves something a stranger can attach to an issue, and nothing leaves the machine unless they attach it.
+**Done when:** a crash mid-run leaves something a stranger can attach to an issue, and nothing leaves the machine unless they attach it. ✅ Proved with real subprocess crashes on macOS; the same tests run in both CI jobs.
+
+#### What the work settled
+
+**Diagnostics belong to the daemon.** `GET /diagnostics` names the local log and
+its availability; `GET /diagnostics/report` returns a text attachment. Both are
+also served under `/api`. The Desk offers a preview, copy and download on the
+launch surface as well as in an open project and its command palette. A terminal
+can export the same report with curl. The bug form and README explain how to
+find it without reconstructing a profile. Nothing sends a report to a service.
+
+**Crash context survives the process that would have explained it.** The daemon
+synchronously checkpoints run/status/Station transitions, with project and
+Station identifiers hashed, under `~/.cuesheet/diagnostics`. An unclean previous
+session is recorded at the next start; normal run-store reconciliation records
+which runs it marked interrupted. `uncaughtExceptionMonitor` records a fatal
+exception without suppressing Node's exit. Electron renderer/child-process loss
+and startup/shutdown errors use the same sink. A force-kill or native crash has
+no final stack trace: the checkpoint says what was active, not why the OS ended
+it. Current and two rotated 512 KiB logs bound retention. Unwritable diagnostics
+degrade the export to an explicit unavailable response and do not block runs.
+
+**A report selects metadata before anything reaches disk.** It contains versions,
+OS/architecture, timestamps, run IDs, state transitions, error classes, known OS
+error codes and stack file basenames/line numbers. It never copies error messages,
+model output, tool arguments, private paths, prompts or patches from run history.
+That is deliberate: arbitrary exception messages often contain the secret a
+string-redaction pass would miss. Hashed identifiers are not a promise of
+anonymity; the operator previews and reviews the report before attaching it.
+Ordinary run history still contains the work and is not a diagnostic attachment.
+
+**Verification:** automated tests force-kill one real daemon mid-run and crash
+another with an uncaught exception, then restart them and export reports over
+the API. Both preserve the partial events and land the run interrupted. Tests
+also exercise payload exclusion, owner-only file permissions on POSIX, clean
+shutdown, log rotation and unavailable storage. The Desk preview was exercised
+in the browser with an isolated temporary home; clipboard copy and downloaded
+report bytes were verified too. Build, typecheck, lint, format-check and the
+full suite passed on macOS: 72 test files, 1,115 passed tests and 9 skipped.
+Windows execution remains for CI.
 
 ---
 

@@ -98,10 +98,12 @@ import {
   removeLock,
   writeLock,
 } from "./lockfile.js";
+import { createDiagnostics, type Diagnostics } from "./diagnostics.js";
 import { DAEMON_VERSION } from "./version.js";
 import { registerUpdateRoutes, type UpdateService } from "./updates.js";
 
 export interface StartDaemonOptions {
+  diagnostics?: Diagnostics;
   updates?: UpdateService;
   /** `0` binds an ephemeral port — what tests use, so they never collide. */
   port?: number;
@@ -251,6 +253,7 @@ export interface DaemonHandle {
    * makes switching in Step 34 a client action that cannot disturb a run.
    */
   defaultProject: ProjectRuntime | null;
+  diagnostics: Diagnostics;
   close(): Promise<void>;
 }
 
@@ -277,6 +280,7 @@ export async function startDaemon(
     createEventBus({
       replayLimit: options.replayLimit ?? DEFAULT_REPLAY_LIMIT,
     });
+  const diagnostics = options.diagnostics ?? createDiagnostics(env);
   const standbys = createStandbyRegistry();
   const prober = options.prober ?? unprobed;
   const harnessRoles = options.harnessRoles ?? unknownRoles;
@@ -313,6 +317,7 @@ export async function startDaemon(
     registry,
     env,
     migrationLog,
+    diagnostics,
     globalBus: bus,
     standbys,
     reconcile,
@@ -363,6 +368,37 @@ export async function startDaemon(
   const defaultProject = bootstrapped.runtime;
 
   const app = Fastify({ logger: options.logger ?? false });
+  app.addHook("onError", async (_request, _reply, error) => {
+    diagnostics.error("http-error", error);
+  });
+  const diagnosticRoutes = (scope: FastifyInstance): void => {
+    scope.get("/diagnostics", async () => ({
+      path: diagnostics.path,
+      available: diagnostics.available(),
+    }));
+    scope.get("/diagnostics/report", async (_request, reply) => {
+      try {
+        const report = diagnostics.report();
+        return reply
+          .type("text/plain; charset=utf-8")
+          .header(
+            "Content-Disposition",
+            'attachment; filename="cuesheet-diagnostics.txt"',
+          )
+          .header("Cache-Control", "no-store")
+          .send(report);
+      } catch {
+        return reply.code(503).send({
+          error:
+            "Local diagnostics unavailable. Check disk space and permissions.",
+        });
+      }
+    });
+  };
+  diagnosticRoutes(app);
+  await app.register(async (scope) => diagnosticRoutes(scope), {
+    prefix: "/api",
+  });
 
   // Files can change while Cuesheet is not running. Regenerating at boot is
   // the cheap reconciliation point that makes the store the source of truth
@@ -372,6 +408,7 @@ export async function startDaemon(
   try {
     await projector.regenerate();
   } catch (error) {
+    diagnostics.error("commons-projection-failed", error);
     app.log.error(
       `Could not regenerate Commons projections: ${errorText(error)}`,
     );
@@ -451,6 +488,8 @@ export async function startDaemon(
     throw error;
   }
 
+  diagnostics.start();
+
   // The endpoint has to be listening before a CLI health-checks it during
   // `mcp add`. Registration failures degrade recall rather than taking the
   // daemon down; the ordinary context-file projections still work.
@@ -460,6 +499,7 @@ export async function startDaemon(
         { name: "cuesheet-commons", url: `http://${host}:${boundPort}/mcp` },
       ]);
     } catch (error) {
+      diagnostics.error("commons-connector-failed", error);
       app.log.warn(`Could not register Commons MCP: ${errorText(error)}`);
     }
   }
@@ -485,6 +525,7 @@ export async function startDaemon(
     standbys,
     registry,
     projects: runtimes,
+    diagnostics,
     defaultProject,
     async close() {
       if (closed) return;
@@ -492,6 +533,7 @@ export async function startDaemon(
       await runtimes.closeAll();
       await app.close();
       if (writeLockFile) await removeLock(env);
+      diagnostics.close();
     },
   };
 }

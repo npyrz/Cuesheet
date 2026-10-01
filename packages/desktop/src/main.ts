@@ -32,7 +32,7 @@ import {
 } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { EventBus, UpdateStatus } from "@cuesheet/daemon";
+import type { Diagnostics, EventBus, UpdateStatus } from "@cuesheet/daemon";
 import { autoUpdater } from "electron-updater";
 import { createDesktopUpdates, type DesktopUpdates } from "./updates.js";
 import {
@@ -97,6 +97,7 @@ interface DaemonConnection {
   close(): Promise<void>;
 }
 
+let diagnostics: Diagnostics | undefined;
 let daemon: DaemonConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -123,9 +124,16 @@ let activeProject: ActiveProject | null = null;
  * every client can find the daemon, and the app is a client.
  */
 async function connectDaemon(): Promise<DaemonConnection> {
-  const { startDaemon, harnessRuntime, PortInUseError, findRunningDaemon } =
-    await import("@cuesheet/daemon");
+  const {
+    startDaemon,
+    harnessRuntime,
+    PortInUseError,
+    findRunningDaemon,
+    createDiagnostics,
+  } = await import("@cuesheet/daemon");
 
+  const { hostEnv } = await import("@cuesheet/core");
+  diagnostics = createDiagnostics(hostEnv());
   try {
     // The library's defaults are inert so its own tests stay offline and
     // free. `harnessRuntime()` is where the app opts into real harnesses —
@@ -133,6 +141,7 @@ async function connectDaemon(): Promise<DaemonConnection> {
     // cannot drift.
     const handle = await startDaemon({
       ...harnessRuntime(),
+      diagnostics,
       ...(updates && { updates }),
     });
     return {
@@ -453,6 +462,7 @@ async function boot(): Promise<void> {
     // that process has no updater for this shell. The API reports unavailable.
     if (!daemon.owned) updates = undefined;
   } catch (error) {
+    diagnostics?.error("desktop-start-failed", error);
     await app.whenReady();
     dialog.showErrorBox(
       "Cuesheet could not start",
@@ -462,6 +472,12 @@ async function boot(): Promise<void> {
     return;
   }
 
+  app.on("render-process-gone", (_event, _contents, details) => {
+    diagnostics?.error(`renderer-${details.reason}`, new Error());
+  });
+  app.on("child-process-gone", (_event, details) => {
+    diagnostics?.error(`child-process-${details.reason}`, new Error());
+  });
   ipcMain.handle(CHOOSE_DIRECTORY_CHANNEL, chooseDirectory);
   ipcMain.on(ACTIVE_PROJECT_CHANNEL, (_event, payload: unknown) => {
     setActiveProject(parseActiveProject(payload));
@@ -707,6 +723,7 @@ if (!app.requestSingleInstanceLock()) {
         }
       })
       .catch((error: unknown) => {
+        diagnostics?.error("desktop-shutdown-failed", error);
         console.error("[cuesheet] unclean daemon shutdown:", error);
       })
       .finally(() => app.quit());
