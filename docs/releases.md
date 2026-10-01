@@ -112,18 +112,20 @@ The browser can control an updater supplied by a signed desktop-owned daemon.
 
 Source checks and installed acceptance are separate evidence. The current
 published set has five captured profiles. The 2026-09-30 audit found no signing
-secrets/variables or local signing identity; latest release run
-[36806837821](https://github.com/npyrz/Cuesheet/actions/runs/36806837821) refused
-macOS packaging for missing credentials. Its Windows checks also exposed two
-5s test-budget failures, now addressed with explicit 30s ceilings for profile
-replay and Commons Git/API work. Step 56's crash tests passed on that Windows
-runner. A passing CI job alone does not close signed-install acceptance.
+secrets/variables or local signing identity. [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503)
+passed all five checks on macOS and Windows for source commit `bbd62c6`,
+including all five profiles and the crash tests. Explicit 30s ceilings for
+profile replay and Commons Git/API work resolved the older Windows 5s budget
+failures. [Release run 36807984200](https://github.com/npyrz/Cuesheet/actions/runs/36807984200)
+also passed those checks on both platforms, then refused packaging for missing
+Apple/Windows credentials and published nothing. A passing CI job alone does
+not close signed-install acceptance.
 
 Record the following here or in the plan when actual signed builds exist:
 
 | Evidence | Required observation | Current state |
 |---|---|---|
-| Both CI platforms | All five checks on the final source commit | Updated profile/timeout checks awaiting CI |
+| Both CI platforms | All five checks on the final source commit | Passed on `bbd62c6`; CI run 36808020503 |
 | Signing configuration | Apple and Windows credentials installed in Actions | Missing |
 | Signed build A and B | Two increasing versions, all installers/manifests/blockmaps verified | Not produced |
 | macOS arm64 and x64 install/update | Downloaded/quarantined install opens and updates without terminal work; Gatekeeper observed | Not exercised |
