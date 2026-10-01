@@ -22,6 +22,8 @@ arrived in that build. Published tags below identify actual installers.
 
 ### Fixed
 
+- Stop-run integration test waits for the harness cancellation boundary, preventing a file-visibility race from hanging CI.
+
 - Signing is opt-in for convenience installers; the default release workflow no longer fails merely because signing credentials are absent.
 
 - SQLite schema creation and file-history import now commit together, so a failed import cannot mark an empty database as migrated.

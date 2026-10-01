@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–53 and 55–56 done** — a working terminal client; runs in a per-project SQLite store; and all five published releases' state preserved on this build, replayed from captured profiles on macOS and Windows, including SQLite/WAL. Step 54 is revised for clone-and-run distribution: release checks and a stopped-checkout update script are built; the updated Windows CI check remains. Signing is optional for prebuilt installers. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 now targets source checkout updates, as clarified by the maintainer; local implementation is built and updated Windows CI acceptance remains; Steps 55–56 are done in source. Phase 13 now awaits Step 54's source-update verification on both CI platforms. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 now targets source checkout updates, as clarified by the maintainer. Phase 13's source criteria passed both CI platforms on `68c1290` on 2026-10-01. The `codex/phase-13-readiness` branch still needs merging into `beta`; a local stop-test fixture fix should be pushed and verified first. This is a source-control boundary, not a release claim: package versions remain `0.1.0-alpha` until preparing the named `v0.5.0-beta` release. No beta tag or release was published in this audit.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -124,7 +124,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
 - [x] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** All five published releases have captured profiles and pass replay on macOS and Windows in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503). File-origin history opens under both stores; SQLite history opens losslessly under SQLite, and incompatible file selection refuses without touching the database
-- [ ] Source checkout updates from published release tags — **Step 54 revised on 2026-09-30 by maintainer clarification.** Clone-and-run distribution does not require signing. App/browser/CLI checks and a stopped-checkout update script are built; updated CI acceptance remains
+- [x] Source checkout updates from published release tags — **Step 54 revised on 2026-09-30 by maintainer clarification.** Clone-and-run distribution does not require signing. App/browser/CLI checks and a stopped-checkout update script pass both CI platforms on `68c1290` in [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986)
 - [ ] Optional prebuilt installer signing and notarization — separate distribution hardening, no longer a Phase 13 prerequisite
 - [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; the tests pass on macOS and Windows CI
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
@@ -1822,7 +1822,7 @@ Apple/Windows signing credentials; it published nothing.
 - **The Desk's own browser storage** (the remembered project, a collapsed panel) is per-viewer convenience, and it is not covered.
 - **Each new publication needs its own capture.** The first SQLite release is now captured. Step 54 originally made signing mandatory; the maintainer subsequently clarified source distribution and made installer signing opt-in. With the revised default unsigned packaging path, every new release must be captured with `scripts/capture-profile.mjs`. The floor test in `profiles.test.ts` names the releases covered by this audit; it cannot notice a newer one, because the network is not a test dependency.
 
-### Step 54 — Published releases and source checkout updates ◐ *(built; updated CI acceptance remains)*
+### Step 54 — Published releases and source checkout updates ✅
 
 **Scope revised by the maintainer on 2026-09-30:** people clone the repository,
 build it and use Cuesheet as an app, CLI or browser. An included script checks
@@ -1835,7 +1835,7 @@ rather than silently counting a different result as proof of it.
 browser and CLI; an included script updates a stopped, clean checkout to the
 exact release and rebuilds it without discarding user data; local changes,
 divergence and downgrades are refused; and failed installation/build can recover
-the previous checkout. The updated source suite must pass macOS and Windows CI.
+the previous checkout. The updated source suite must pass macOS and Windows CI. ✅ Verified on source commit `68c1290` in [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986), 2026-10-01.
 
 #### Source distribution implementation
 
@@ -1872,9 +1872,22 @@ A CLI integration check proves no active project is needed. All five checks
 pass locally: 73 test files, 1,130 passed tests and 9 skipped. The live GitHub
 check reports this development checkout ahead of the current release without
 downgrading it. The Desk update dialog and retry control were exercised against
-an isolated daemon with an available-release fixture. Updated Windows CI is
-still required before marking this revised step complete; signing credentials
-are no longer the blocker. These changes remain local and uncommitted.
+an isolated daemon with an available-release fixture. On 2026-10-01, [release run 36875660969](https://github.com/npyrz/Cuesheet/actions/runs/36875660969)
+passed all five checks and unsigned packaging on Windows for `68c1290`:
+1,134 passed tests and 5 skipped, including all eleven source-update tests.
+macOS passed build/typecheck/lint/format but failed the older partial-diff stop
+test. Its fake harness could receive abort after its file became visible and
+before subscribing, stranding the test and teardown. The fixture now signals
+readiness at its cancellation boundary and checks an already-aborted signal;
+the test waits on that condition instead of polling the file. This test fix is
+local and uncommitted; build, typecheck, lint, format-check and all 1,130 local
+tests pass after the fix (9 skipped). The separate CI run was canceled by a higher-priority
+request in its concurrency group. Its retry, [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986),
+passed all five checks on both platforms for the same source commit `68c1290`.
+That completes the revised source-update acceptance and Phase 13's source
+criteria. The earlier Release failure remains recorded; push the local fixture
+fix and verify its checks before merging. No new release was published, and all
+five currently published releases still have captured profiles.
 
 #### Earlier signed-installer work (retained as optional capability)
 

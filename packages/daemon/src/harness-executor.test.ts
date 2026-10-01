@@ -318,18 +318,27 @@ describe("stopping a run mid-flight", () => {
     await spawnRun("git", ["add", "-A"], { cwd: workspace });
     await spawnRun("git", ["commit", "-qm", "init"], { cwd: workspace });
 
-    // Writes first, then blocks until aborted and rejects — the throwing path.
+    // File visibility precedes resolution of workspace.write(), so polling the
+    // file can send stop before this fixture subscribes to abort. Wait for the
+    // harness's actual cancellation boundary instead of a filesystem side effect.
+    let readyToStop!: () => void;
+    const waitingForAbort = new Promise<void>((resolve) => {
+      readyToStop = resolve;
+    });
     const writeThenHang: Harness = {
       ...createMockHarness({ standby: false }),
       id: "mock",
       async run(ctx) {
         await ctx.workspace.write("partial-work.txt", "half a thought\n");
         await new Promise<never>((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () => {
+          const onAbort = () => {
             const error = new Error("The run was stopped.");
             error.name = "AbortError";
             reject(error);
-          });
+          };
+          if (ctx.signal.aborted) onAbort();
+          else ctx.signal.addEventListener("abort", onAbort, { once: true });
+          readyToStop();
         });
         return {};
       },
@@ -344,16 +353,12 @@ describe("stopping a run mid-flight", () => {
     ).json()) as { runId: string };
 
     await waitForStatus(url, runId, "running");
-    // Wait for the write to actually land, so the diff is not empty by timing.
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      try {
-        await readFile(path.join(workspace, "partial-work.txt"), "utf8");
-        break;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-    }
-    await post(`${url}/runs/${runId}/stop`);
+    await waitingForAbort;
+    expect(
+      await readFile(path.join(workspace, "partial-work.txt"), "utf8"),
+    ).toBe("half a thought\n");
+    const stopped = await post(`${url}/runs/${runId}/stop`);
+    expect(stopped.status).toBe(200);
 
     const stored = await waitForRun(url, runId);
     expect(stored.run.status).toBe("stopped");

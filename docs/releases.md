@@ -75,8 +75,15 @@ of dirty/divergent/ahead/running states, API errors, HTTP access and restoration
 of the previous checkout after a failed build. All five checks pass locally (1,130 tests passed, 9 skipped), and the Desk
 dialog/retry was exercised with an isolated available-release fixture. The live
 GitHub check correctly refuses a downgrade from this development checkout.
-Updated Windows CI acceptance is pending; do not claim it until that suite
-runs there. Evidence is recorded in `PLAN-STEP.MD`. Every new published release
+[Release run 36875660969](https://github.com/npyrz/Cuesheet/actions/runs/36875660969)
+on 2026-10-01 passed all five checks and unsigned packaging on Windows for
+`68c1290` (1,134 passed tests, 5 skipped). macOS failed an older stop-test
+fixture race, now fixed locally. The canceled standalone CI run was retried;
+[CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986)
+passed all five checks on both platforms for `68c1290`, completing Step 54's
+source acceptance. Push and verify the local fixture fix before merging; the
+earlier Release failure remains recorded. Phase 13's source criteria are met,
+but the named beta release has not been cut. Evidence is in `PLAN-STEP.MD`. Every new published release
 still needs its own captured state profile for Step 53.
 
 ## Optional signed installers
