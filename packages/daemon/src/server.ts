@@ -49,7 +49,10 @@ import {
 } from "@cuesheet/core";
 import { createEventBus, DEFAULT_REPLAY_LIMIT, type EventBus } from "./bus.js";
 import { type RunDetailResponse, type RunStore } from "./store.js";
-import type { RunStoreBackend } from "./store-backend.js";
+import {
+  RunStoreRequiresSqliteError,
+  type RunStoreBackend,
+} from "./store-backend.js";
 import { RunsSchemaTooNewError } from "./store-sqlite.js";
 import { type RunExecutor } from "./executor.js";
 import {
@@ -674,7 +677,7 @@ async function openDefault(
   try {
     return await runtimes.get(project.id);
   } catch (error) {
-    if (!isNewerStateError(error)) throw error;
+    if (!isRefusedStateError(error)) throw error;
     report.problems.push(
       `Project "${project.name}" was not opened: ${errorText(error)}`,
     );
@@ -682,10 +685,12 @@ async function openDefault(
   }
 }
 
-/** State written by a newer Cuesheet — refused, never read or written. */
-function isNewerStateError(error: unknown): boolean {
+/** Unsupported state or storage selection — refused before history changes. */
+function isRefusedStateError(error: unknown): boolean {
   return (
-    error instanceof ConfigTooNewError || error instanceof RunsSchemaTooNewError
+    error instanceof ConfigTooNewError ||
+    error instanceof RunsSchemaTooNewError ||
+    error instanceof RunStoreRequiresSqliteError
   );
 }
 
@@ -1203,8 +1208,8 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       runtime = await runtimes.get(id);
     } catch (error) {
       // 409: the project exists and the request was fine; its files belong
-      // to a newer build. Anything else is still a 500, as before.
-      if (!isNewerStateError(error)) throw error;
+      // to a newer build or require SQLite. Other failures remain 500s.
+      if (!isRefusedStateError(error)) throw error;
       reply.code(409).send({ error: errorText(error) });
       return null;
     }

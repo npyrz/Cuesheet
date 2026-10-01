@@ -17,10 +17,26 @@
  * gets an error instead, because that request was a decision and answering a
  * decision with a different one quietly is how trust goes.
  */
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import { hostEnv, runsDir, type HostEnv } from "@cuesheet/core";
 import type { RunIdFactory } from "./ids.js";
 import { createFileRunStore, type RunStore } from "./store.js";
-import { openSqliteRunStore, sqliteAvailable } from "./store-sqlite.js";
+import {
+  openSqliteRunStore,
+  sqliteAvailable,
+  RUNS_DB_FILENAME,
+} from "./store-sqlite.js";
+
+/** A file backend cannot read the database, including newer SQLite-only runs. */
+export class RunStoreRequiresSqliteError extends Error {
+  constructor() {
+    super(
+      "This project's run history is in SQLite. Use CUESHEET_RUN_STORE=sqlite with Node 22.13 or newer, or reopen it in Cuesheet's desktop app. Switching this history to files is not supported; the database has been left untouched.",
+    );
+    this.name = "RunStoreRequiresSqliteError";
+  }
+}
 
 export type RunStoreBackend = "sqlite" | "files";
 
@@ -63,12 +79,24 @@ export async function openRunStore(
   const asked = options.backend ?? resolveRunStoreBackend();
   const backend = asked ?? DEFAULT_RUN_STORE_BACKEND;
 
-  const fileStore = (): RunStore =>
-    createFileRunStore({
+  const fileStore = async (): Promise<RunStore> => {
+    // Existing directories are the pre-import snapshot, not a mirror. Once
+    // SQLite writes a run, reading only those directories hides history.
+    // Refuse before opening a file store; never overwrite a database or
+    // synthesize a partial export to make switching appear lossless.
+    const database = await stat(join(root, RUNS_DB_FILENAME)).catch(
+      (error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      },
+    );
+    if (database) throw new RunStoreRequiresSqliteError();
+    return createFileRunStore({
       root,
       ...(options.newId !== undefined && { newId: options.newId }),
       ...(options.now !== undefined && { now: options.now }),
     });
+  };
 
   if (backend === "files") return fileStore();
 

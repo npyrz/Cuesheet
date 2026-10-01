@@ -1,4 +1,4 @@
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -69,6 +69,19 @@ describe("openRunStore", () => {
     // Not a crippled store: it simply cannot answer this one cheaply, so it
     // does not claim to, and `reconcile` keeps its bounded scan.
     expect(store.unfinished).toBeUndefined();
+  });
+
+  it("refuses file selection over SQLite history and leaves the database untouched", async () => {
+    const sqlite = await openRunStore({ root, backend: "sqlite" });
+    await sqlite.create({ prompt: "history", workspace: root });
+    await sqlite.close?.();
+    const file = path.join(root, RUNS_DB_FILENAME);
+    const before = await readFile(file);
+    await expect(openRunStore({ root, backend: "files" })).rejects.toThrow(
+      "history is in SQLite",
+    );
+    expect(await readFile(file)).toEqual(before);
+    expect(await readdir(root)).toEqual([RUNS_DB_FILENAME]);
   });
 
   it("hands both backends the same run id factory and clock", async () => {

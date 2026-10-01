@@ -33,6 +33,7 @@ export interface LaunchSurfaceProps {
   onForget: (id: string) => void;
   onRetry: () => void;
   error?: string | null;
+  onUpdates?: () => void;
   onDiagnostics?: () => void;
 }
 
@@ -44,6 +45,7 @@ export function LaunchSurface({
   onForget,
   onRetry,
   error,
+  onUpdates,
   onDiagnostics,
 }: LaunchSurfaceProps): React.JSX.Element {
   const recents = describeRecents(projects);
@@ -142,6 +144,11 @@ export function LaunchSurface({
           )
         )}
 
+        {onUpdates && (
+          <button type="button" className="ghost" onClick={onUpdates}>
+            check for updates
+          </button>
+        )}
         {onDiagnostics && (
           <button type="button" className="ghost" onClick={onDiagnostics}>
             local diagnostics

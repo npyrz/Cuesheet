@@ -8,6 +8,9 @@
  * decide for itself. A standalone daemon has no such nuance: print the reason
  * and stop.
  */
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
+import { createSourceUpdates } from "./source-updates.js";
 import { hostEnv } from "@cuesheet/core";
 import { createDiagnostics } from "./diagnostics.js";
 import { startDaemon } from "./server.js";
@@ -21,7 +24,16 @@ async function main(): Promise<void> {
     // The standalone daemon runs real harnesses. `startDaemon`'s own defaults
     // are the inert ones its tests rely on; this is where the app's behaviour
     // is chosen, not in the library.
-    handle = await startDaemon({ diagnostics, ...harnessRuntime() });
+    const updates = createSourceUpdates({
+      root: nodePath.resolve(
+        nodePath.dirname(fileURLToPath(import.meta.url)),
+        "../../..",
+      ),
+    });
+    handle = await startDaemon({ diagnostics, updates, ...harnessRuntime() });
+    void updates.check();
+    const timer = setInterval(() => void updates.check(), 4 * 60 * 60 * 1000);
+    timer.unref();
   } catch (error) {
     diagnostics.error("daemon-start-failed", error);
     if (error instanceof PortInUseError) {

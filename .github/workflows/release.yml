@@ -1,4 +1,5 @@
-# Signed installers for every pushed commit. Missing credentials fail closed.
+# Optional unsigned convenience installers for every pushed commit.
+# Source checkouts update from the release tag; signing is an opt-in installer path.
 #
 # A push to `main` becomes a production release and is marked Latest. A push
 # to any other branch becomes a prerelease. Releases need tags even when the
@@ -54,7 +55,7 @@ jobs:
 
       - name: Build
         env:
-          CUESHEET_SIGNED_RELEASE: "true"
+          CUESHEET_SIGNED_RELEASE: ${{ vars.CUESHEET_SIGNED_RELEASE }}
         run: npm run build
 
       - name: Typecheck
@@ -79,10 +80,16 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
-        run: npx electron-builder --config electron-builder.release.mjs ${{ matrix.builder }} --publish never
+        shell: bash
+        run: |
+          if [ "${{ vars.CUESHEET_SIGNED_RELEASE }}" = "true" ]; then
+            npx electron-builder --config electron-builder.release.mjs ${{ matrix.builder }} --publish never
+          else
+            npx electron-builder ${{ matrix.builder }} --publish never
+          fi
 
       - name: Verify macOS signatures and notarization tickets
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && vars.CUESHEET_SIGNED_RELEASE == 'true'
         shell: bash
         run: |
           for app in packages/desktop/release/mac*/Cuesheet.app; do
@@ -92,7 +99,7 @@ jobs:
           done
 
       - name: Verify Windows installer and application signatures
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && vars.CUESHEET_SIGNED_RELEASE == 'true'
         shell: pwsh
         run: |
           $files = @(Get-ChildItem packages/desktop/release/*.exe)
@@ -104,6 +111,7 @@ jobs:
           }
 
       - name: Require update manifests
+        if: vars.CUESHEET_SIGNED_RELEASE == 'true'
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then

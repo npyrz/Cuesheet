@@ -45,7 +45,7 @@ import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CONFIG_VERSION,
   createProjectRegistry,
@@ -64,6 +64,19 @@ import {
 } from "./store-sqlite.js";
 import type { RunStoreBackend } from "./store-backend.js";
 
+// A profile replay boots twice and reads every run over HTTP. Windows CI
+// exceeded 5s under concurrent Git work; this remains a finite hang ceiling.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
+const { relocateProfileDatabase } = (await import(
+  new URL("../../../scripts/profile-sqlite.mjs", import.meta.url).href
+)) as {
+  relocateProfileDatabase: (
+    file: string,
+    replace: (text: string, json: boolean) => string,
+  ) => Promise<void>;
+};
+
 const PROFILES = fileURLToPath(new URL("./fixtures/profiles", import.meta.url));
 const TOKEN = "{{HOME}}";
 
@@ -71,6 +84,7 @@ interface ManifestRun {
   id: string;
   status: string;
   events: number;
+  eventLog?: unknown[];
   diff: string | null;
   run: Run;
 }
@@ -80,6 +94,8 @@ interface ManifestProject {
   id: string | null;
   name: string | null;
   root: string | null;
+  /** Absent on the original file profiles captured before SQLite shipped. */
+  store?: RunStoreBackend;
   stations: unknown[];
   runs: ManifestRun[];
 }
@@ -109,7 +125,7 @@ let daemon: DaemonHandle | null = null;
 afterEach(async () => {
   await daemon?.close();
   daemon = null;
-  if (home) await rm(home, { recursive: true, force: true });
+  if (home) await rm(home, { recursive: true, force: true, maxRetries: 10 });
   home = null;
 });
 
@@ -176,6 +192,13 @@ async function restore(dir: string, homeDir: string): Promise<void> {
       await restore(full, homeDir);
       continue;
     }
+    if (entry.name === RUNS_DB_FILENAME) {
+      await relocateProfileDatabase(full, (text, json) =>
+        text.split(TOKEN).join(json ? escaped(homeDir) : homeDir),
+      );
+      continue;
+    }
+    if (/^runs\.db-(wal|shm)$/.test(entry.name)) continue;
     const text = await readFile(full, "utf8");
     if (!text.includes(TOKEN)) continue;
     const quoted = /\.(json|jsonl|toml)$/.test(entry.name);
@@ -269,6 +292,7 @@ async function readProject(handle: DaemonHandle, id: string) {
     runs.push({
       run: stored.run,
       events: stored.events.length,
+      eventLog: stored.events,
       diff: await diffOf(handle, `${scope}/runs/${run.id}/diff`),
     });
   }
@@ -277,12 +301,39 @@ async function readProject(handle: DaemonHandle, id: string) {
 
 describe.each(profiles)("the %s profile", (name) => {
   it.each(backends)(
-    "opens on this build with nothing lost (%s store)",
+    "preserves history or refuses an incompatible backend (%s store)",
     async (backend) => {
       const materialized = await materialize(name);
       home = materialized.home;
       const { env, manifest } = materialized;
 
+      const sqliteProjects = manifest.projects.filter(
+        (project) => project.store === "sqlite",
+      );
+      if (backend === "files" && sqliteProjects.length > 0) {
+        // A file backend cannot read a SQLite-only history. The safe result
+        // is a project-scoped refusal, never an empty or stale run list.
+        const databases = await Promise.all(
+          sqliteProjects.map(async (project) => {
+            const file = path.join(
+              projectRunsDir(project.id!, env),
+              RUNS_DB_FILENAME,
+            );
+            return { file, bytes: await readFile(file) };
+          }),
+        );
+        const refused = await boot(env, backend);
+        for (const project of sqliteProjects) {
+          const response = await fetch(
+            `${refused.url}/projects/${project.id}/runs`,
+          );
+          expect(response.status).toBe(409);
+          expect(await response.text()).toContain("history is in SQLite");
+        }
+        for (const { file, bytes } of databases)
+          expect(await readFile(file)).toEqual(bytes);
+        return;
+      }
       const first = await boot(env, backend);
       const pairs = await pairProjects(first, manifest, home);
       const seen = new Map<string, Awaited<ReturnType<typeof readProject>>>();
@@ -300,6 +351,10 @@ describe.each(profiles)("the %s profile", (name) => {
           const got = now.runs.find((r) => r.run.id === want.id)!;
           const label = `${want.id} (${want.status})`;
           expect(got.events, `${label} events`).toBe(want.events);
+          if (want.eventLog)
+            expect(got.eventLog, `${label} event content`).toEqual(
+              want.eventLog,
+            );
           expect(got.diff, `${label} diff`).toBe(want.diff);
 
           if (NON_TERMINAL.has(want.status)) {
@@ -335,7 +390,10 @@ describe.each(profiles)("the %s profile", (name) => {
         ...(alpha ? ["config-move", "runs-move"] : []),
         ...(backend === "sqlite"
           ? pairs
-              .filter(({ expected }) => expected.runs.length > 0)
+              .filter(
+                ({ expected }) =>
+                  expected.runs.length > 0 && expected.store !== "sqlite",
+              )
               .map(() => "runs-import")
           : []),
       ];
@@ -380,6 +438,7 @@ it("carries a profile for every release the repository has published", () => {
       "build-35749614938-150f136",
       "build-35765620187-4cf40ba",
       "build-35811098632-8a7d891",
+      "build-36170856000-bb9ab14",
     ]),
   );
 });

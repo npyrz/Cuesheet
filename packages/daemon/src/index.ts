@@ -57,6 +57,7 @@ export {
   openRunStore,
   resolveRunStoreBackend,
   DEFAULT_RUN_STORE_BACKEND,
+  RunStoreRequiresSqliteError,
   RUN_STORE_ENV_VAR,
 } from "./store-backend.js";
 export type { RunStoreBackend, OpenRunStoreOptions } from "./store-backend.js";
@@ -182,3 +183,10 @@ export type { UpdateService, UpdateStatus } from "./updates.js";
 
 export { createDiagnostics } from "./diagnostics.js";
 export type { Diagnostics } from "./diagnostics.js";
+
+export {
+  createSourceUpdates,
+  inspectSourceUpdate,
+  applySourceUpdate,
+} from "./source-updates.js";
+export type { SourceUpdateOptions } from "./source-updates.js";

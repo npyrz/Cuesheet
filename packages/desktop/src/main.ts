@@ -31,7 +31,7 @@ import {
   Tray,
 } from "electron";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Diagnostics, EventBus, UpdateStatus } from "@cuesheet/daemon";
 import { autoUpdater } from "electron-updater";
 import { createDesktopUpdates, type DesktopUpdates } from "./updates.js";
@@ -130,6 +130,7 @@ async function connectDaemon(): Promise<DaemonConnection> {
     PortInUseError,
     findRunningDaemon,
     createDiagnostics,
+    createSourceUpdates,
   } = await import("@cuesheet/daemon");
 
   const { hostEnv } = await import("@cuesheet/core");
@@ -142,7 +143,15 @@ async function connectDaemon(): Promise<DaemonConnection> {
     const handle = await startDaemon({
       ...harnessRuntime(),
       diagnostics,
-      ...(updates && { updates }),
+      ...(updates
+        ? { updates }
+        : !app.isPackaged
+          ? {
+              updates: createSourceUpdates({
+                root: resolve(__dirname, "../../.."),
+              }),
+            }
+          : {}),
     });
     return {
       port: handle.port,
@@ -458,8 +467,8 @@ async function boot(): Promise<void> {
       });
     }
     daemon = await connectDaemon();
-    // Attaching to another process gives us no right to stop its runs, and
-    // that process has no updater for this shell. The API reports unavailable.
+    // Attaching gives us no right to stop another process's runs. Its source
+    // release checker remains available through the same API.
     if (!daemon.owned) updates = undefined;
   } catch (error) {
     diagnostics?.error("desktop-start-failed", error);
@@ -506,7 +515,7 @@ async function boot(): Promise<void> {
   );
   if (daemon.bus !== null) watchForNotifications(daemon.bus);
   await createWindow(daemon.port);
-  if (updates) {
+  if (updates || !app.isPackaged) {
     const check = () => {
       if (daemon && !quitting) {
         void fetch(`${daemon.url}/updates/check`, { method: "POST" }).catch(
@@ -526,7 +535,11 @@ async function showUpdates(): Promise<void> {
     const read = async () =>
       (await (await fetch(`${daemon!.url}/updates`)).json()) as UpdateStatus;
     let status = await read();
-    if (status.phase === "idle" || status.phase === "error") {
+    if (
+      status.phase === "idle" ||
+      status.phase === "error" ||
+      status.phase === "available"
+    ) {
       await fetch(`${daemon.url}/updates/check`, { method: "POST" });
       status = await read();
       const deadline = Date.now() + 10_000;

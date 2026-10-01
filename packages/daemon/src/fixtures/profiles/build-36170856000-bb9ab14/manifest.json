@@ -1,0 +1,1149 @@
+{
+  "tag": "build-36170856000-bb9ab14",
+  "capturedWith": "v25.2.1",
+  "daemonVersion": "0.1.0-alpha",
+  "home": "{{HOME}}",
+  "workspaces": [
+    "code/api",
+    "code/web"
+  ],
+  "projects": [
+    {
+      "id": "web-594447",
+      "name": "web",
+      "store": "sqlite",
+      "root": "{{HOME}}/code/web",
+      "stations": [
+        {
+          "id": "front",
+          "harness": "mock",
+          "role": "engineer",
+          "workspace": "{{HOME}}/code/web",
+          "paths": [
+            "src/**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "20261001T025055255Z-0003",
+          "status": "failed",
+          "stationIds": [
+            "front"
+          ],
+          "events": 22,
+          "eventLog": [
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.255Z",
+              "runId": "20261001T025055255Z-0003",
+              "status": "queued"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.255Z",
+              "runId": "20261001T025055255Z-0003",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Reading the brief: Fix the header\n",
+              "at": "2026-10-01T02:50:55.255Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "tool",
+              "name": "list",
+              "input": {
+                "path": "."
+              },
+              "at": "2026-10-01T02:50:55.255Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "denial",
+              "reason": "Path is the workspace root itself, not a file inside it.",
+              "path": ".",
+              "at": "2026-10-01T02:50:55.256Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 120,
+              "tokensOut": 0,
+              "at": "2026-10-01T02:50:55.256Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "denial",
+              "reason": "Path escapes the workspace ({{HOME}}/code/web).",
+              "path": "../outside-the-workspace.txt",
+              "at": "2026-10-01T02:50:55.256Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "standby",
+              "at": "2026-10-01T02:50:55.256Z",
+              "runId": "20261001T025055255Z-0003",
+              "standbyId": "sb_muoxt508_5",
+              "ask": "Write cuesheet-mock.md in the workspace?"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.256Z",
+              "runId": "20261001T025055255Z-0003",
+              "status": "standby"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Planning the change.\n",
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "text",
+              "chunk": "Brief: Fix the header\n",
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "text",
+              "chunk": "Editing one file.\n",
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "text",
+              "chunk": "Done.\n",
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "tool",
+              "name": "write",
+              "input": {
+                "path": "cuesheet-mock.md"
+              },
+              "at": "2026-10-01T02:50:55.308Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "denial",
+              "reason": "Path is outside the Station's allowed paths (src/**).",
+              "path": "cuesheet-mock.md",
+              "at": "2026-10-01T02:50:55.309Z",
+              "runId": "20261001T025055255Z-0003",
+              "stationId": "front"
+            },
+            {
+              "t": "error",
+              "at": "2026-10-01T02:50:55.348Z",
+              "runId": "20261001T025055255Z-0003",
+              "message": "Leash denied cuesheet-mock.md: Path is outside the Station's allowed paths (src/**)."
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.349Z",
+              "runId": "20261001T025055255Z-0003",
+              "status": "failed"
+            }
+          ],
+          "diff": null,
+          "run": {
+            "id": "20261001T025055255Z-0003",
+            "kind": "prompt",
+            "status": "failed",
+            "prompt": "Fix the header",
+            "stationIds": [
+              "front"
+            ],
+            "workspace": "{{HOME}}/code/web",
+            "createdAt": "2026-10-01T02:50:55.255Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 96
+            },
+            "startedAt": "2026-10-01T02:50:55.255Z",
+            "finishedAt": "2026-10-01T02:50:55.349Z",
+            "error": "Leash denied cuesheet-mock.md: Path is outside the Station's allowed paths (src/**)."
+          }
+        }
+      ]
+    },
+    {
+      "id": "api-5a7418",
+      "name": "api",
+      "store": "sqlite",
+      "root": "{{HOME}}/code/api",
+      "stations": [
+        {
+          "id": "builder",
+          "harness": "mock",
+          "role": "engineer",
+          "workspace": "{{HOME}}/code/api",
+          "paths": [
+            "**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        },
+        {
+          "id": "critic",
+          "harness": "mock",
+          "role": "reviewer",
+          "workspace": "{{HOME}}/code/api",
+          "paths": [
+            "**"
+          ],
+          "deny": [
+            ".git/**"
+          ]
+        }
+      ],
+      "runs": [
+        {
+          "id": "20261001T025055524Z-0005",
+          "status": "queued",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 1,
+          "eventLog": [
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.524Z",
+              "runId": "20261001T025055524Z-0005",
+              "status": "queued"
+            }
+          ],
+          "diff": null,
+          "run": {
+            "id": "20261001T025055524Z-0005",
+            "kind": "prompt",
+            "status": "queued",
+            "prompt": "Queued behind it",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-10-01T02:50:55.524Z",
+            "cost": {
+              "tokensIn": 0,
+              "tokensOut": 0
+            }
+          }
+        },
+        {
+          "id": "20261001T025055471Z-0004",
+          "status": "standby",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 9,
+          "eventLog": [
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.471Z",
+              "runId": "20261001T025055471Z-0004",
+              "status": "queued"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Reading the brief: Parked on a question\n",
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "stationId": "builder"
+            },
+            {
+              "t": "tool",
+              "name": "list",
+              "input": {
+                "path": "."
+              },
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path is the workspace root itself, not a file inside it.",
+              "path": ".",
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 120,
+              "tokensOut": 0,
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path escapes the workspace ({{HOME}}/code/api).",
+              "path": "../outside-the-workspace.txt",
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "stationId": "builder"
+            },
+            {
+              "t": "standby",
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "standbyId": "sb_muoxt568_6",
+              "ask": "Write cuesheet-mock.md in the workspace?"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.472Z",
+              "runId": "20261001T025055471Z-0004",
+              "status": "standby"
+            }
+          ],
+          "diff": null,
+          "run": {
+            "id": "20261001T025055471Z-0004",
+            "kind": "prompt",
+            "status": "standby",
+            "prompt": "Parked on a question",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-10-01T02:50:55.471Z",
+            "cost": {
+              "tokensIn": 0,
+              "tokensOut": 0
+            },
+            "startedAt": "2026-10-01T02:50:55.472Z"
+          }
+        },
+        {
+          "id": "20261001T025055074Z-0002",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 26,
+          "eventLog": [
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.074Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "queued"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.074Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Reading the brief: Ship the limiter\n",
+              "at": "2026-10-01T02:50:55.074Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "tool",
+              "name": "list",
+              "input": {
+                "path": "."
+              },
+              "at": "2026-10-01T02:50:55.074Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path is the workspace root itself, not a file inside it.",
+              "path": ".",
+              "at": "2026-10-01T02:50:55.074Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 120,
+              "tokensOut": 0,
+              "at": "2026-10-01T02:50:55.074Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path escapes the workspace ({{HOME}}/code/api).",
+              "path": "../outside-the-workspace.txt",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "standby",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "standbyId": "sb_muoxt4v7_3",
+              "ask": "Write cuesheet-mock.md in the workspace?"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "standby"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Planning the change.\n",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "text",
+              "chunk": "Brief: Ship the limiter\n",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "text",
+              "chunk": "Editing one file.\n",
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.075Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "text",
+              "chunk": "Done.\n",
+              "at": "2026-10-01T02:50:55.076Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:55.076Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "tool",
+              "name": "write",
+              "input": {
+                "path": "cuesheet-mock.md"
+              },
+              "at": "2026-10-01T02:50:55.076Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "file",
+              "path": "cuesheet-mock.md",
+              "op": "write",
+              "at": "2026-10-01T02:50:55.076Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 40,
+              "usd": 0.0012,
+              "at": "2026-10-01T02:50:55.076Z",
+              "runId": "20261001T025055074Z-0002",
+              "stationId": "builder"
+            },
+            {
+              "t": "standby",
+              "at": "2026-10-01T02:50:55.149Z",
+              "runId": "20261001T025055074Z-0002",
+              "standbyId": "sb_muoxt4x9_4",
+              "ask": "Gate \"review\" held this run. 0 of 1 required approval (0 reviews recorded). Override and continue?"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.149Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "standby"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.179Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "running"
+            },
+            {
+              "t": "done",
+              "at": "2026-10-01T02:50:55.217Z",
+              "runId": "20261001T025055074Z-0002",
+              "result": {
+                "status": "done",
+                "cost": {
+                  "tokensIn": 120,
+                  "tokensOut": 136,
+                  "usd": 0.0012
+                },
+                "durationMs": 143,
+                "stations": [
+                  {
+                    "stationId": "builder",
+                    "harness": "mock",
+                    "vendor": "cuesheet",
+                    "cost": {
+                      "tokensIn": 120,
+                      "tokensOut": 136,
+                      "usd": 0.0012
+                    },
+                    "durationMs": 39
+                  }
+                ],
+                "diff": {
+                  "filesChanged": 1,
+                  "insertions": 5,
+                  "deletions": 0
+                },
+                "gates": [
+                  {
+                    "gate": "review",
+                    "outcome": "hold",
+                    "reasons": [
+                      "0 of 1 required approval (0 reviews recorded)."
+                    ],
+                    "overridden": true
+                  }
+                ]
+              }
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.217Z",
+              "runId": "20261001T025055074Z-0002",
+              "status": "done"
+            }
+          ],
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..b35b61f\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Ship the limiter\n+\n+Written by the mock harness at 2026-10-01T02:50:55.076Z.\n",
+          "run": {
+            "id": "20261001T025055074Z-0002",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Ship the limiter",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-10-01T02:50:55.074Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 136,
+              "usd": 0.0012
+            },
+            "cuesheetId": "ship",
+            "startedAt": "2026-10-01T02:50:55.074Z",
+            "finishedAt": "2026-10-01T02:50:55.217Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 136,
+                "usd": 0.0012
+              },
+              "durationMs": 143,
+              "stations": [
+                {
+                  "stationId": "builder",
+                  "harness": "mock",
+                  "vendor": "cuesheet",
+                  "cost": {
+                    "tokensIn": 120,
+                    "tokensOut": 136,
+                    "usd": 0.0012
+                  },
+                  "durationMs": 39
+                }
+              ],
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              },
+              "gates": [
+                {
+                  "gate": "review",
+                  "outcome": "hold",
+                  "reasons": [
+                    "0 of 1 required approval (0 reviews recorded)."
+                  ],
+                  "overridden": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "20261001T025054969Z-0001",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 13,
+          "eventLog": [
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "status": "queued"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Reading the brief: Rename the handler\n",
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "stationId": "builder"
+            },
+            {
+              "t": "tool",
+              "name": "list",
+              "input": {
+                "path": "."
+              },
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path is the workspace root itself, not a file inside it.",
+              "path": ".",
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 120,
+              "tokensOut": 0,
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path escapes the workspace ({{HOME}}/code/api).",
+              "path": "../outside-the-workspace.txt",
+              "at": "2026-10-01T02:50:54.969Z",
+              "runId": "20261001T025054969Z-0001",
+              "stationId": "builder"
+            },
+            {
+              "t": "standby",
+              "at": "2026-10-01T02:50:54.970Z",
+              "runId": "20261001T025054969Z-0001",
+              "standbyId": "sb_muoxt4sa_2",
+              "ask": "Write cuesheet-mock.md in the workspace?"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.970Z",
+              "runId": "20261001T025054969Z-0001",
+              "status": "standby"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.021Z",
+              "runId": "20261001T025054969Z-0001",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Declined — stopping without edits.\n",
+              "at": "2026-10-01T02:50:55.022Z",
+              "runId": "20261001T025054969Z-0001",
+              "stationId": "builder"
+            },
+            {
+              "t": "done",
+              "at": "2026-10-01T02:50:55.065Z",
+              "runId": "20261001T025054969Z-0001",
+              "result": {
+                "status": "done",
+                "cost": {
+                  "tokensIn": 120,
+                  "tokensOut": 0
+                },
+                "durationMs": 96,
+                "stations": [
+                  {
+                    "stationId": "builder",
+                    "harness": "mock",
+                    "vendor": "cuesheet",
+                    "cost": {
+                      "tokensIn": 120,
+                      "tokensOut": 0
+                    },
+                    "durationMs": 54
+                  }
+                ],
+                "diff": {
+                  "filesChanged": 1,
+                  "insertions": 5,
+                  "deletions": 0
+                }
+              }
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:55.065Z",
+              "runId": "20261001T025054969Z-0001",
+              "status": "done"
+            }
+          ],
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..da2c69a\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Add a rate limiter\n+\n+Written by the mock harness at 2026-10-01T02:50:54.865Z.\n",
+          "run": {
+            "id": "20261001T025054969Z-0001",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Rename the handler",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-10-01T02:50:54.969Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 0
+            },
+            "startedAt": "2026-10-01T02:50:54.969Z",
+            "finishedAt": "2026-10-01T02:50:55.065Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 0
+              },
+              "durationMs": 96,
+              "stations": [
+                {
+                  "stationId": "builder",
+                  "harness": "mock",
+                  "vendor": "cuesheet",
+                  "cost": {
+                    "tokensIn": 120,
+                    "tokensOut": 0
+                  },
+                  "durationMs": 54
+                }
+              ],
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              }
+            }
+          }
+        },
+        {
+          "id": "20261001T025054810Z-0000",
+          "status": "done",
+          "stationIds": [
+            "builder"
+          ],
+          "events": 23,
+          "eventLog": [
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.810Z",
+              "runId": "20261001T025054810Z-0000",
+              "status": "queued"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.811Z",
+              "runId": "20261001T025054810Z-0000",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Reading the brief: Add a rate limiter\n",
+              "at": "2026-10-01T02:50:54.811Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "tool",
+              "name": "list",
+              "input": {
+                "path": "."
+              },
+              "at": "2026-10-01T02:50:54.811Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path is the workspace root itself, not a file inside it.",
+              "path": ".",
+              "at": "2026-10-01T02:50:54.812Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 120,
+              "tokensOut": 0,
+              "at": "2026-10-01T02:50:54.812Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "denial",
+              "reason": "Path escapes the workspace ({{HOME}}/code/api).",
+              "path": "../outside-the-workspace.txt",
+              "at": "2026-10-01T02:50:54.812Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "standby",
+              "at": "2026-10-01T02:50:54.812Z",
+              "runId": "20261001T025054810Z-0000",
+              "standbyId": "sb_muoxt4nw_1",
+              "ask": "Write cuesheet-mock.md in the workspace?"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.812Z",
+              "runId": "20261001T025054810Z-0000",
+              "status": "standby"
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.864Z",
+              "runId": "20261001T025054810Z-0000",
+              "status": "running"
+            },
+            {
+              "t": "text",
+              "chunk": "Planning the change.\n",
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "text",
+              "chunk": "Brief: Add a rate limiter\n",
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "text",
+              "chunk": "Editing one file.\n",
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "text",
+              "chunk": "Done.\n",
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 24,
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "tool",
+              "name": "write",
+              "input": {
+                "path": "cuesheet-mock.md"
+              },
+              "at": "2026-10-01T02:50:54.865Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "file",
+              "path": "cuesheet-mock.md",
+              "op": "write",
+              "at": "2026-10-01T02:50:54.867Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "cost",
+              "tokensIn": 0,
+              "tokensOut": 40,
+              "usd": 0.0012,
+              "at": "2026-10-01T02:50:54.867Z",
+              "runId": "20261001T025054810Z-0000",
+              "stationId": "builder"
+            },
+            {
+              "t": "done",
+              "at": "2026-10-01T02:50:54.947Z",
+              "runId": "20261001T025054810Z-0000",
+              "result": {
+                "status": "done",
+                "cost": {
+                  "tokensIn": 120,
+                  "tokensOut": 136,
+                  "usd": 0.0012
+                },
+                "durationMs": 136,
+                "stations": [
+                  {
+                    "stationId": "builder",
+                    "harness": "mock",
+                    "vendor": "cuesheet",
+                    "cost": {
+                      "tokensIn": 120,
+                      "tokensOut": 136,
+                      "usd": 0.0012
+                    },
+                    "durationMs": 98
+                  }
+                ],
+                "diff": {
+                  "filesChanged": 1,
+                  "insertions": 5,
+                  "deletions": 0
+                }
+              }
+            },
+            {
+              "t": "status",
+              "at": "2026-10-01T02:50:54.947Z",
+              "runId": "20261001T025054810Z-0000",
+              "status": "done"
+            }
+          ],
+          "diff": "diff --git a/cuesheet-mock.md b/cuesheet-mock.md\nnew file mode 100644\nindex 0000000..da2c69a\n--- /dev/null\n+++ b/cuesheet-mock.md\n@@ -0,0 +1,5 @@\n+# Mock run\n+\n+Add a rate limiter\n+\n+Written by the mock harness at 2026-10-01T02:50:54.865Z.\n",
+          "run": {
+            "id": "20261001T025054810Z-0000",
+            "kind": "prompt",
+            "status": "done",
+            "prompt": "Add a rate limiter",
+            "stationIds": [
+              "builder"
+            ],
+            "workspace": "{{HOME}}/code/api",
+            "createdAt": "2026-10-01T02:50:54.810Z",
+            "cost": {
+              "tokensIn": 120,
+              "tokensOut": 136,
+              "usd": 0.0012
+            },
+            "startedAt": "2026-10-01T02:50:54.811Z",
+            "finishedAt": "2026-10-01T02:50:54.947Z",
+            "result": {
+              "status": "done",
+              "cost": {
+                "tokensIn": 120,
+                "tokensOut": 136,
+                "usd": 0.0012
+              },
+              "durationMs": 136,
+              "stations": [
+                {
+                  "stationId": "builder",
+                  "harness": "mock",
+                  "vendor": "cuesheet",
+                  "cost": {
+                    "tokensIn": 120,
+                    "tokensOut": 136,
+                    "usd": 0.0012
+                  },
+                  "durationMs": 98
+                }
+              ],
+              "diff": {
+                "filesChanged": 1,
+                "insertions": 5,
+                "deletions": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "commons": {
+    "facts": [
+      {
+        "id": "rate-limits-live-in-middleware",
+        "title": "Rate limits live in middleware",
+        "tags": [
+          "captured"
+        ],
+        "projects": [
+          "api-5a7418"
+        ],
+        "provenance": {
+          "station": "builder",
+          "run": "20261001T025055074Z-0002",
+          "at": "2026-10-01T02:50:55.425Z"
+        },
+        "body": "Rate limits live in middleware, learned during a run."
+      },
+      {
+        "id": "tabs-not-spaces",
+        "title": "Tabs, not spaces",
+        "tags": [
+          "style"
+        ],
+        "projects": [],
+        "provenance": {
+          "at": "2026-10-01T02:50:55.360Z"
+        },
+        "body": "The API repository indents with tabs."
+      }
+    ],
+    "pending": [
+      {
+        "id": "memory-3f1ae58e-22a8-4e89-9b3e-790b4ac58cc6",
+        "suggestedId": "integration-tests-need-redis",
+        "title": "Integration tests need Redis",
+        "body": "Integration tests need Redis, learned during a run.",
+        "tags": [
+          "captured"
+        ],
+        "projects": [
+          "api-5a7418"
+        ],
+        "provenance": {
+          "station": "builder",
+          "run": "20261001T025055074Z-0002",
+          "at": "2026-10-01T02:50:55.426Z"
+        }
+      }
+    ]
+  }
+}

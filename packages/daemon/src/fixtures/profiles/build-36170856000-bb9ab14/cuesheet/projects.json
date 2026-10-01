@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "lastOpenedId": "web-594447",
+  "projects": [
+    {
+      "id": "api-5a7418",
+      "name": "api",
+      "root": "{{HOME}}/code/api",
+      "addedAt": "2026-10-01T02:50:54.743Z",
+      "lastOpenedAt": "2026-10-01T02:50:54.743Z"
+    },
+    {
+      "id": "web-594447",
+      "name": "web",
+      "root": "{{HOME}}/code/web",
+      "addedAt": "2026-10-01T02:50:55.232Z",
+      "lastOpenedAt": "2026-10-01T02:50:55.232Z"
+    }
+  ]
+}

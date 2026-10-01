@@ -6,6 +6,7 @@
  * here starts deciding things, it belongs in one of those two files.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { UpdatesPanel } from "./components/UpdatesPanel.js";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel.js";
 import { AddStationPanel } from "./components/AddStationPanel.js";
 import { CommandPalette, type Command } from "./components/CommandPalette.js";
@@ -50,6 +51,7 @@ export function App(): React.JSX.Element {
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
   const [ledger, setLedger] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
 
   const run = selectedRun(state);
@@ -95,6 +97,11 @@ export function App(): React.JSX.Element {
 
   const commands = useMemo<Command[]>(
     () => [
+      {
+        id: "updates",
+        label: "Check for Cuesheet updates",
+        run: () => setUpdatesOpen(true),
+      },
       {
         id: "diagnostics",
         label: "Open local diagnostics — review and export a bug report",
@@ -175,6 +182,7 @@ export function App(): React.JSX.Element {
   if (desk.project.status !== "open") {
     return (
       <>
+        {updatesOpen && <UpdatesPanel onClose={() => setUpdatesOpen(false)} />}
         {diagnostics && (
           <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
         )}
@@ -192,6 +200,7 @@ export function App(): React.JSX.Element {
           onForget={(id) => void desk.forget(id)}
           onRetry={desk.retry}
           error={state.error}
+          onUpdates={() => setUpdatesOpen(true)}
           onDiagnostics={() => setDiagnostics(true)}
         />
       </>
@@ -268,6 +277,13 @@ export function App(): React.JSX.Element {
               : "connecting…"}
         </span>
         <span className="spacer" />
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setUpdatesOpen(true)}
+        >
+          updates
+        </button>
         <button
           type="button"
           className="ghost"
@@ -467,6 +483,7 @@ export function App(): React.JSX.Element {
         canStart={showing && stations.length > 0}
       />
 
+      {updatesOpen && <UpdatesPanel onClose={() => setUpdatesOpen(false)} />}
       {diagnostics && (
         <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
       )}

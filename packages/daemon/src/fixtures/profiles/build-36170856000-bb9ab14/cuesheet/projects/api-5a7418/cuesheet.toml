@@ -1,0 +1,21 @@
+[[station]]
+id = "builder"
+harness = "mock"
+role = "engineer"
+workspace = "{{HOME}}/code/api"
+paths = [ "**" ]
+deny = [ ".git/**" ]
+
+[gate.review]
+require = "1-of-1"
+
+[cuesheet.ship]
+cues = [{ station = "builder", action = "build" }, { gate = "review" }]
+
+[[station]]
+id = "critic"
+harness = "mock"
+role = "reviewer"
+workspace = "{{HOME}}/code/api"
+paths = [ "**" ]
+deny = [ ".git/**" ]

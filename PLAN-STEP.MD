@@ -62,12 +62,12 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ◐ **Steps 51–52 and 55–56 done, Step 53 built** — a working terminal client; runs in a per-project SQLite store; and four published releases' state opening on this build with nothing lost, replayed from captured profiles. Step 53's original four-profile suite passed both release runners; its newly published SQLite profile still needs capture. Step 54's signing/updater code is built; credentials and installed acceptance remain. Steps 55–56 add the contributor/security/harness docs, templates, changelog-backed releases and local crash/error reports |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53 passed both release runners on 2026-09-25 (the newly published SQLite profile still needs capture). Step 54 is built locally but blocked on signing credentials and installed-update acceptance; Steps 55–56 are done in source. Phase 13 now awaits the remaining Step 53 profile capture and Step 54 signing/installed-update acceptance. This is a source-control boundary, not a release claim: package versions stay on `0.1.0-alpha` until Phase 13 closes the remaining beta bar and earns `v0.5.0-beta`.
+**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 now targets source checkout updates, as clarified by the maintainer. Phase 13's source criteria passed both CI platforms on `68c1290` on 2026-10-01. The `codex/phase-13-readiness` branch still needs merging into `beta`; a local stop-test fixture fix should be pushed and verified first. This is a source-control boundary, not a release claim: package versions remain `0.1.0-alpha` until preparing the named `v0.5.0-beta` release. No beta tag or release was published in this audit.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
 
@@ -77,7 +77,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
 
-**Current state:** development is on the beta track in Phase 13; the latest named milestone remains `v0.1.0-alpha` (later per-commit development prereleases also exist). “Working on beta” means closing the checklist below. It does not make an unsigned, migration-incomplete build a beta release.
+**Current state:** development is on the beta track in Phase 13; the latest named milestone remains `v0.1.0-alpha` (later per-commit development prereleases also exist). “Working on beta” means closing the checklist below. It does not make an unverified or migration-incomplete build a beta release.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
@@ -87,7 +87,7 @@ The sequencing is the plan's, not the README's. That table numbers features (M2,
 |---|---|---|---|
 | 🟠 **Pre-alpha** | `0.0.x` | No installer. Runs from a checkout. Shapes and contracts are still moving; expect to delete state between runs. | You, and nobody else. |
 | 🟡 **Alpha** | `0.1.x` | Installable, unsigned. One harness, one station at a time, no gates. Config may break without migration. Run records may be discarded on upgrade. | People who will read a changelog and tolerate a wipe. |
-| 🔵 **Beta** | `0.5.x` | Feature-complete against the README's core thesis. Signed. Config format frozen with migrations. No data loss, ever. | Strangers, daily, on real work. |
+| 🔵 **Beta** | `0.5.x` | Feature-complete against the README's core thesis. Source checkout updates verified; signing optional for installers. Config format frozen with migrations. No data loss, ever. | Strangers, daily, on real work. |
 | 🟢 **1.0** | `1.0.0` | The README is true as written, minus the sections it marks optional. Security posture documented and reviewed. | Anyone. |
 
 ### Exit criteria
@@ -123,9 +123,10 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
-- [ ] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** The mechanism is built, and all four published releases' profiles open with nothing lost on macOS, under both run stores. The original four-profile suite has now passed both release runners. The newly published SQLite release still needs a captured profile; the box stays unticked until that history is covered too
-- [ ] Code signing + notarization on macOS; signed installer on Windows — **now Step 54**, together with auto-update, which depends on it
-- [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; Windows CI remains to run this change
+- [x] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** All five published releases have captured profiles and pass replay on macOS and Windows in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503). File-origin history opens under both stores; SQLite history opens losslessly under SQLite, and incompatible file selection refuses without touching the database
+- [x] Source checkout updates from published release tags — **Step 54 revised on 2026-09-30 by maintainer clarification.** Clone-and-run distribution does not require signing. App/browser/CLI checks and a stopped-checkout update script pass both CI platforms on `68c1290` in [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986)
+- [ ] Optional prebuilt installer signing and notarization — separate distribution hardening, no longer a Phase 13 prerequisite
+- [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; the tests pass on macOS and Windows CI
 - [x] A `cuesheet` CLI that does what the README prints — **Step 51, done**
 - [x] Repository contribution, security and harness docs, community templates and changelog-backed release notes — **Step 55, done in source**. GitHub private reporting is enabled; new files and issue forms take effect on GitHub when merged/pushed to the relevant branch
 
@@ -1752,13 +1753,13 @@ The interface was cut for this in Step 10, and the seam has held through everyth
 
 **Half of Step 53 arrived here, and it is the half that prevents damage.** The database carries SQLite's own `user_version`, and a build that finds a version it does not understand refuses to open rather than writing to it. A migration that runs once and is recorded is still Step 53's work; a downgrade quietly corrupting a newer store is the failure that could not wait for it.
 
-### Step 53 — Migrations as a mechanism ◐ *(original CI clause proved; newest release profile outstanding)*
+### Step 53 — Migrations as a mechanism ✅
 
 Step 33 performs one migration. This makes it a system: versioned config, versioned store, a migration that runs once and is recorded, and a refusal to open state written by a *newer* build rather than corrupting it.
 
 **Step 52 already installed two pieces of this**, and the remainder is what the step is now for: the run store is versioned (`user_version`) and refuses a newer one, and the file-store-to-SQLite import is a migration that runs once, detected by that version. Neither is *recorded* anywhere a person can read, config is still unversioned, and nothing runs an old profile in CI.
 
-**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ◐ The original four captured releases passed on both `macos-latest` and `windows-latest` in [release run 36170856000](https://github.com/npyrz/Cuesheet/actions/runs/36170856000), verified on 2026-09-28. That run published `build-36170856000-bb9ab14`, the first SQLite release. Its profile is not captured yet, so the claim about **every** released version remains open; the stale CI blocker is no longer the reason.
+**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ✅ All five published releases, including the first SQLite release `build-36170856000-bb9ab14`, have captured profiles and pass on both `macos-latest` and `windows-latest` in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503), source commit `bbd62c6`, verified on 2026-09-30. Replay includes committed SQLite/WAL state and full events for that release.
 
 #### What the work settled
 
@@ -1780,6 +1781,38 @@ Step 33 performs one migration. This makes it a system: versioned config, versio
 
 **Two things the capture found about the old builds that were worth knowing before trusting a fixture.** A run waiting on a standby is `running` in the alpha's record and `standby` in the betas', and only the event stream agrees between them. The script first waited on the record and hung. The `web` project's run is `failed`, because its Station's leash (`src/**`) refused the mock's write at the workspace root. That is left in rather than tidied up: a failed run is history like any other.
 
+#### Phase 13 acceptance audit, 2026-09-30
+
+The fifth published release, `build-36170856000-bb9ab14`, now has a profile
+captured from its exact tag in a built, isolated worktree. The capture still
+uses that build's HTTP answers as the oracle and ends in SIGKILL. SQLite adds
+one requirement the original file-only script missed: committed rows can still
+be in WAL. Capture recovers them with SQLite, scrubs only the JSON/patch text
+columns, vacuums away old path bytes and checkpoints the WAL. Replay relocates
+those same columns with JSON escaping on Windows; integrity checks protect
+both operations. Database fixtures are explicitly binary in Git attributes.
+No profile record or manifest was hand-written.
+
+The capture also found a real runtime hole. `CUESHEET_RUN_STORE=files` over a
+SQLite-only release showed an empty Desk; over an imported database it could
+show only the older directories. Those directories are a backup, not a mirror.
+The file selection now refuses with a project-scoped 409 before touching the
+database. SQLite-to-files export is not implemented. File-origin profiles still
+open under both choices; the SQLite profile opens losslessly under SQLite and
+is byte-identical after the incompatible choice is refused. This supersedes
+Step 52's historical claim that selecting files afterwards shows all history.
+
+The latest release runner, [36806837821](https://github.com/npyrz/Cuesheet/actions/runs/36806837821),
+ran Step 56's crash tests successfully on Windows. Two older suites exceeded
+Vitest's 5s default: alpha profile replay and a Commons HTTP/Git check. Both now
+have explicit 30s test/hook ceilings; profile cleanup retries Windows file
+locks. These are condition-driven checks, not fixed sleeps. The expanded suite
+and all five checks passed both platforms in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503)
+on source commit `bbd62c6`. All five local checks also pass: 72 test files,
+1,118 passed tests and 9 skipped. Step 53 is now complete. [Release run 36807984200](https://github.com/npyrz/Cuesheet/actions/runs/36807984200)
+passed those checks on both platforms, then refused packaging for the missing
+Apple/Windows signing credentials; it published nothing.
+
 #### What the profiles do not prove, stated so nobody assumes it
 
 - **They were captured on macOS.** CI replays them on Windows, which proves Windows reads them. A profile *written* on Windows differs in path strings, and the test's substitution covers only the home directory: backslash-escaped in JSON and TOML, raw elsewhere. A Windows-captured profile is worth adding the first time a Windows release is cut from a Windows machine.
@@ -1787,22 +1820,82 @@ Step 33 performs one migration. This makes it a system: versioned config, versio
 - **They come from the release's daemon, not its installer.** The Electron app embeds the same daemon over the same `~/.cuesheet`, and nothing the shell adds is state, but it is still a different binary than the one downloaded.
 - **Two formats stay unversioned, on purpose.** The file store's `run.json` has not changed since Step 10, and a Commons fact is a Markdown file a person may edit. Neither has had a breaking change to version against. Each gets a version on its first breaking change, and the profiles are what will say whether the change broke anything.
 - **The Desk's own browser storage** (the remembered project, a collapsed panel) is per-viewer convenience, and it is not covered.
-- **The next push publishes a release this suite has no profile for.** `release.yml` publishes a prerelease for every pushed commit, after the same five checks as CI. The first push of this work will therefore publish the first release that writes `runs.db` and `migrations.jsonl`. Capturing that tag with `scripts/capture-profile.mjs` is the first job after the push, and it is what gives the suite its first SQLite profile. The floor test in `profiles.test.ts` names the releases that existed when this step was written. It cannot notice a newer one, because the network is not a test dependency.
+- **Each new publication needs its own capture.** The first SQLite release is now captured. Step 54 originally made signing mandatory; the maintainer subsequently clarified source distribution and made installer signing opt-in. With the revised default unsigned packaging path, every new release must be captured with `scripts/capture-profile.mjs`. The floor test in `profiles.test.ts` names the releases covered by this audit; it cannot notice a newer one, because the network is not a test dependency.
 
-### Step 54 — Signing, notarization, auto-update ◐ *(built; signing credentials and installed acceptance outstanding)*
+### Step 54 — Published releases and source checkout updates ✅
 
-One chain, not three checkboxes: macOS notarization is a precondition for `electron-updater` working without a Gatekeeper prompt, and an unsigned auto-updater is worse than no auto-updater. Windows SmartScreen reputation accrues only to a signed binary, and only over time, which makes the signing date a dependency for every install after it.
+**Scope revised by the maintainer on 2026-09-30:** people clone the repository,
+build it and use Cuesheet as an app, CLI or browser. An included script checks
+this repository for a release and updates the checkout. Signing and notarization
+are optional for prebuilt installers; they are not required for this distribution.
+This explicitly replaces the original signed-installer/terminal-free done-when,
+rather than silently counting a different result as proof of it.
 
-Step 26 documented the honest unsigned position. This is where that stops being acceptable, because an app that cannot update itself is not one people keep.
+**Done when:** a source checkout checks published releases through the app,
+browser and CLI; an included script updates a stopped, clean checkout to the
+exact release and rebuilds it without discarding user data; local changes,
+divergence and downgrades are refused; and failed installation/build can recover
+the previous checkout. The updated source suite must pass macOS and Windows CI. ✅ Verified on source commit `68c1290` in [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986), 2026-10-01.
 
-**Done when:** a stranger's install updates itself with no terminal, no quarantine flag and no SmartScreen dialog — and a release that fails to notarize fails the pipeline rather than shipping.
+#### Source distribution implementation
 
-**Status, 2026-09-28:** the source integration is built. `gh secret list` and
-`gh variable list` returned no configured entries, and macOS reported zero valid
-signing identities. This is a checked environment blocker, not an assumption.
-No certificate was purchased, no credentials were created, and no release was
-published in this work. The done-when stays unticked until real signed installs
-complete the two-version acceptance in [docs/releases.md](docs/releases.md).
+`npm run update:check` queries public GitHub releases and fetches the exact tag
+from this repository into a private Git ref, comparing commit ancestry rather
+than the source version shared by earlier releases. It changes no checked-out
+source. The daemon supplies the same check at startup and every four hours;
+`GET /updates` and `POST /updates/check` serve every client. App menus, the Desk's
+launcher/project/palette and `npx cuesheet updates` expose it without selecting
+a project. `--tag RELEASE_TAG` opts into a specific published prerelease.
+
+`npm run update` requires the daemon stopped and the checkout clean, then
+fast-forwards, runs `npm ci` and rebuilds all packages. It leaves `~/.cuesheet`
+and ignored local files untouched. A private Git lock serializes updates;
+local commits or edits are never forced away. A failed install/build restores
+and rebuilds the previous revision when the tracked checkout still matches the
+release; changes made meanwhile refuse automatic recovery. Stop Vite as well:
+it has no daemon lock. Restart the app/daemon after the script finishes. The
+HTTP installer endpoint refuses source updates because rebuilding a live daemon
+or Vite tree is not a safe installation path.
+
+Signing is now opt-in via Actions variable `CUESHEET_SIGNED_RELEASE=true`.
+The default release workflow builds unsigned convenience installers and retains
+its five source checks. Explicitly signed builds still require valid credentials,
+platform verification and notarization; their updater remains separate.
+
+**Verification:** eleven new source-update tests use real Git and npm against two fixture release
+commits in a path with spaces. They exercise checking without source mutation,
+fast-forward/rebuild, preserved local state, ignored-file collision refusal,
+local edit/untracked/running/concurrent-update refusal,
+divergence/downgrade refusal, failed-build rollback/rebuild, coalesced HTTP checks
+and API errors, including repositories with only prereleases or no releases.
+A CLI integration check proves no active project is needed. All five checks
+pass locally: 73 test files, 1,130 passed tests and 9 skipped. The live GitHub
+check reports this development checkout ahead of the current release without
+downgrading it. The Desk update dialog and retry control were exercised against
+an isolated daemon with an available-release fixture. On 2026-10-01, [release run 36875660969](https://github.com/npyrz/Cuesheet/actions/runs/36875660969)
+passed all five checks and unsigned packaging on Windows for `68c1290`:
+1,134 passed tests and 5 skipped, including all eleven source-update tests.
+macOS passed build/typecheck/lint/format but failed the older partial-diff stop
+test. Its fake harness could receive abort after its file became visible and
+before subscribing, stranding the test and teardown. The fixture now signals
+readiness at its cancellation boundary and checks an already-aborted signal;
+the test waits on that condition instead of polling the file. This test fix is
+local and uncommitted; build, typecheck, lint, format-check and all 1,130 local
+tests pass after the fix (9 skipped). The separate CI run was canceled by a higher-priority
+request in its concurrency group. Its retry, [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986),
+passed all five checks on both platforms for the same source commit `68c1290`.
+That completes the revised source-update acceptance and Phase 13's source
+criteria. The earlier Release failure remains recorded; push the local fixture
+fix and verify its checks before merging. No new release was published, and all
+five currently published releases still have captured profiles.
+
+#### Earlier signed-installer work (retained as optional capability)
+
+The original acceptance required a stranger's installer to update with no
+terminal, quarantine flag or SmartScreen dialog and to fail publication if
+notarization failed. The audit found no signing credentials or identities; that
+installed acceptance was not completed and is not being claimed here. The
+source-distribution requirement above supersedes it by explicit user direction.
 
 #### What the work settled
 
@@ -1912,14 +2005,15 @@ redirected away from the CLI documentation, so it now points to the verified
 OpenAI Codex repository. GitHub's issue form link correctly requires sign-in.
 Both issue forms parse with unique field ids and required evidence fields.
 Build, typecheck, lint, format-check and tests passed on macOS: 71 test files,
-1,109 passed tests and 9 skipped. This change has not yet run on Windows CI.
+1,109 passed tests and 9 skipped. The later Phase 13 audit passed all five checks
+on both macOS and Windows in CI run 36808020503, including these tests.
 
 
 ### Step 56 — Errors you can act on, locally ✅
 
 Crash and error reporting with no telemetry — the constraint the README sets and the Non-goals section defends. A log an operator can find, a crash that names what it was doing, and a bug report that can be pasted rather than reconstructed.
 
-**Done when:** a crash mid-run leaves something a stranger can attach to an issue, and nothing leaves the machine unless they attach it. ✅ Proved with real subprocess crashes on macOS; the same tests run in both CI jobs.
+**Done when:** a crash mid-run leaves something a stranger can attach to an issue, and nothing leaves the machine unless they attach it. ✅ Proved with real subprocess crashes on macOS and Windows in CI run 36808020503.
 
 #### What the work settled
 
@@ -1958,7 +2052,9 @@ shutdown, log rotation and unavailable storage. The Desk preview was exercised
 in the browser with an isolated temporary home; clipboard copy and downloaded
 report bytes were verified too. Build, typecheck, lint, format-check and the
 full suite passed on macOS: 72 test files, 1,115 passed tests and 9 skipped.
-Windows execution remains for CI.
+The later Phase 13 audit verified these diagnostics tests passing on Windows
+in release run 36806837821; that run failed on two older suites' 5s budgets,
+not the crash tests.
 
 ---
 

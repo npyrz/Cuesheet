@@ -26,6 +26,7 @@ class CliError extends Error {}
 const HELP = `Usage: cuesheet <command> [options]
 
 Commands:
+  updates                          Check for a published Cuesheet release
   projects                         List registered projects
   project add [path]               Register a project (default: current directory)
   stations [--project ID]          List Stations and cuesheets
@@ -61,6 +62,7 @@ export async function runCli(
     if (
       command !== "project" &&
       ![
+        "updates",
         "projects",
         "answer",
         "stations",
@@ -74,6 +76,21 @@ export async function runCli(
     }
     const api = await connect(env, variables, fetcher);
 
+    if (command === "updates") {
+      noPositionals(parsed);
+      if (parsed.project !== undefined || parsed.cuesheet !== undefined)
+        throw new CliError("Usage: cuesheet updates");
+      await request(api, "/updates/check", fetcher, { method: "POST" });
+      const deadline = Date.now() + 60_000;
+      let status: { phase: string; message?: string };
+      do {
+        status = await request(api, "/updates", fetcher);
+        if (status.phase !== "checking") break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      } while (Date.now() < deadline);
+      write(status.message ?? status.phase);
+      return status.phase === "error" || status.phase === "unavailable" ? 1 : 0;
+    }
     if (command === "project" && parsed.positionals[0] === "add") {
       if (
         parsed.project !== undefined ||
