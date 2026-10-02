@@ -73,7 +73,16 @@ export const GateRefSchema = z.object({
   gate: Identifier,
 });
 
-export const CueStepSchema = z.union([GateRefSchema, CueSchema]);
+/**
+ * `{ hook = "format" }` — Step 61. A hook is a cue kind for the reason a gate
+ * is: cues were already an ordered list, and "run this after that Station" is
+ * a position in it.
+ */
+export const HookRefSchema = z.object({
+  hook: Identifier,
+});
+
+export const CueStepSchema = z.union([GateRefSchema, HookRefSchema, CueSchema]);
 
 export const CuesheetSchema = z.object({
   cues: z.array(CueStepSchema).min(1),
@@ -122,6 +131,31 @@ export const GateSchema = z
     never_review: z.array(z.string().min(1)).optional(),
     /** Parsed and kept for M7's hotfix gate; nothing reads it yet. */
     merges: z.boolean().optional(),
+  })
+  .loose();
+
+/**
+ * `[hook.format]` — a command the daemon runs at a cue, Step 61.
+ *
+ * `command` is an **argv array**, never a string, and is spawned without a
+ * shell: the same `cross-spawn` path the harnesses use, so `npx` resolves as
+ * the `.cmd` shim it is on Windows and nothing in the run's data can be
+ * reinterpreted as shell syntax. Someone who wants a pipeline writes
+ * `["sh", "-c", "…"]` and owns its quoting.
+ *
+ * The command is the operator's, from their own config — like a git hook, it
+ * is trusted and **not leashed**. A leash constrains an agent; a formatter
+ * the operator chose to run is not one.
+ *
+ * `on_failure` defaults to `"fail"`. A formatter that exited non-zero, or
+ * never started, must not look like a formatter that ran — the same rule that
+ * makes an unconfigured gate stop the run rather than pass it.
+ */
+export const HookSchema = z
+  .object({
+    command: z.array(z.string().min(1)).min(1),
+    timeout_seconds: z.number().int().min(1).max(3600).default(300),
+    on_failure: z.enum(["fail", "continue"]).default("fail"),
   })
   .loose();
 
@@ -218,6 +252,7 @@ export const ConfigSchema = z.object({
   desk: DeskSchema.default({}),
   station: z.array(StationSchema).default([]),
   gate: z.record(Identifier, GateSchema).default({}),
+  hook: z.record(Identifier, HookSchema).default({}),
   cuesheet: z.record(Identifier, CuesheetSchema).default({}),
   // `prefault` rather than `default`: an absent `[limits]` table has to be run
   // *through* the schema so the field defaults inside it apply. `.default({})`
@@ -234,6 +269,8 @@ export type Desk = z.infer<typeof DeskSchema>;
 export type Station = z.infer<typeof StationSchema>;
 export type Cue = z.infer<typeof CueSchema>;
 export type GateRef = z.infer<typeof GateRefSchema>;
+export type HookRef = z.infer<typeof HookRefSchema>;
+export type Hook = z.infer<typeof HookSchema>;
 export type CueStep = z.infer<typeof CueStepSchema>;
 export type Cuesheet = z.infer<typeof CuesheetSchema>;
 export type Gate = z.infer<typeof GateSchema>;
@@ -244,6 +281,15 @@ export type Config = z.infer<typeof ConfigSchema>;
 
 export function isGateRef(step: CueStep): step is GateRef {
   return "gate" in step;
+}
+
+export function isHookRef(step: CueStep): step is HookRef {
+  return "hook" in step;
+}
+
+/** A cue that names a Station — neither a gate nor a hook. */
+export function isStationCue(step: CueStep): step is Cue {
+  return !isGateRef(step) && !isHookRef(step);
 }
 
 // ── Deferred tables ─────────────────────────────────────────────────────────
@@ -427,6 +473,7 @@ export function parseConfig(
     "desk",
     "station",
     "gate",
+    "hook",
     "cuesheet",
     "limits",
     "commons",
@@ -520,6 +567,17 @@ function lint(config: Config): ConfigWarning[] {
           warnings.push({
             table: "cuesheet",
             message: `Cuesheet "${name}" references unknown gate "${step.gate}"; add a [gate.${step.gate}] table or the run will stop there.`,
+          });
+        }
+        continue;
+      }
+      if (isHookRef(step)) {
+        // Same standing as an unknown gate: the run stops at the cue, so say
+        // so now rather than twenty minutes in.
+        if (config.hook[step.hook] === undefined) {
+          warnings.push({
+            table: "cuesheet",
+            message: `Cuesheet "${name}" references unknown hook "${step.hook}"; add a [hook.${step.hook}] table or the run will stop there.`,
           });
         }
         continue;

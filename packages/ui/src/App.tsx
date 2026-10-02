@@ -159,10 +159,7 @@ export function App(): React.JSX.Element {
       },
       ...(state.stations?.cuesheets ?? []).map((sheet) => ({
         id: `cuesheet-${sheet.id}`,
-        label:
-          sheet.gates.length === 0
-            ? `Run the “${sheet.id}” cuesheet`
-            : `Run the “${sheet.id}” cuesheet — gate: ${sheet.gates.join(", ")}`,
+        label: `Run the “${sheet.id}” cuesheet${cuesheetChecks(sheet)}`,
         run: (prompt: string) => {
           if (prompt !== "") void desk.start(prompt, sheet.id);
         },
@@ -507,4 +504,17 @@ export function App(): React.JSX.Element {
       )}
     </div>
   );
+}
+
+/**
+ * What a cuesheet does between its Stations, for its palette entry: the gates
+ * that can hold it and the hooks that run in it. Empty when it has neither.
+ */
+function cuesheetChecks(sheet: { gates: string[]; hooks?: string[] }): string {
+  const hooks = sheet.hooks ?? [];
+  const parts = [
+    ...(sheet.gates.length > 0 ? [`gate: ${sheet.gates.join(", ")}`] : []),
+    ...(hooks.length > 0 ? [`hook: ${hooks.join(", ")}`] : []),
+  ];
+  return parts.length === 0 ? "" : ` — ${parts.join("; ")}`;
 }

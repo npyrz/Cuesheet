@@ -57,6 +57,13 @@ a helper such as `observe.ts` or `spawn.ts`.
 | `writeConnectors(connectors)` | Register URL or stdio MCP connectors while preserving unrelated user configuration. Be repeatable. A documented no-op is allowed when unsupported. |
 | `run(ctx)` | Resolve a `RunResult`, streaming events as work arrives. Honor abort and role permissions. Return `{}` when the adapter can fill all fields. |
 | `confinement(role)` | Optional declaration of the runtime's actual sandbox: `read-only`, `workspace-write`, or `none`. Omission means unknown. A prompt asking for read-only behavior is not a sandbox. |
+| `connectsMcp` | Optional `true` when a run can call the MCP servers `writeConnectors` registered. The daemon then puts run provenance (project, Station, run) in the brief so `memory_write` can attribute a capture. Omission means no. |
+
+Cuesheet does not feature-detect on `id` or `vendor`. When the daemon needs to
+know whether a runtime can do something, the interface gains a specific,
+optional member for that one question — as `confinement` and `connectsMcp`
+did — rather than a general `capabilities` list. A third-party harness gets
+any behaviour a built-in one gets by declaring the same member.
 
 The structural checker validates shape, not truthfulness. The registry itself
 does not validate every registration; call `harnessContractViolations(harness)`

@@ -156,6 +156,9 @@ export function createCodexHarness(options: CodexOptions = {}): Harness {
     },
 
     contextFiles,
+    // Its `writeConnectors` registers the daemon's MCP server with the CLI,
+    // so a run can call the memory tools and needs their provenance.
+    connectsMcp: true,
 
     async writeConnectors(connectors: readonly Connector[]): Promise<void> {
       const binPath = await which(bin);

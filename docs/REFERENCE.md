@@ -194,9 +194,15 @@ skip_if_diff_under = 20
 always_review      = ["src/auth/**", "infra/**"]
 never_review       = ["**/package-lock.json", "vendor/**"]
 
+[hook.format]
+command         = ["npx", "prettier", "--write", "."]
+timeout_seconds = 300      # default
+on_failure      = "fail"   # default; or "continue"
+
 [cuesheet.ship]
 cues = [
   { station = "opus", action = "implement" },
+  { hook = "format" },
   { station = "codex-review", action = "review", mode = "adversarial" },
   { gate = "default" },
   { station = "local-worker", action = "commit-message" },
@@ -387,6 +393,34 @@ and its key, which Cuesheet does not hold.
 A failed Gate ends the current run as `held`; a hold is terminal. Continuing
 after a hold means starting a new run, preserving the original decision in
 history.
+
+## Hooks
+
+A `{ hook = "name" }` cue runs `[hook.name]`'s command at that point in the
+cuesheet — after an engineer to format its work, before a review so the
+reviewer reads formatted code, at the end to run tests. The daemon runs it, so
+it runs the same way after a Station on any harness, including local models
+with no hook system of their own.
+
+- `command` is an argument list, run without a shell; on Windows `npx` and
+  other `.cmd` shims resolve as they do for harness CLIs. For pipes or
+  redirection, write `["sh", "-c", "..."]` (or the platform's shell) yourself.
+- It runs in the run's workspace. It is your command from your config, so it is
+  **not** constrained by any Station's leash.
+- Standard input is one JSON object: `runId`, `hook`, `after` (the Station it
+  followed), `status`, and `diff` — the run's own change so far as a patch, or
+  `null` outside a git repository. `CUESHEET_RUN_ID`, `CUESHEET_HOOK` and
+  `CUESHEET_AFTER` are set in its environment.
+- Its output streams into the run as text from `hook:<name>`.
+- A non-zero exit, a timeout (`timeout_seconds`, default 300) or a command that
+  cannot start fails the run, naming the exit code and the last lines of
+  stderr. `on_failure = "continue"` records the failure and carries on.
+- A cue naming a hook that is not configured stops the run there; the loader
+  warns about it first.
+- Each hook's outcome is on the run's `result.hooks` for a run that finishes.
+  A run that a hook failed carries the reason in `error` instead.
+- What a hook writes is part of the run: it appears in the run's diff and is
+  undone by a rewind.
 
 ## Rewind
 

@@ -104,8 +104,31 @@ describe("describeStations", () => {
     // catches the two drifting apart.
     const response = await describeStations(loaded(), unprobed);
     expect(response.cuesheets).toEqual([
-      { id: "ship", stationIds: ["opus", "sonnet"], gates: ["default"] },
+      {
+        id: "ship",
+        stationIds: ["opus", "sonnet"],
+        gates: ["default"],
+        hooks: [],
+      },
     ]);
+  });
+
+  it("reports hook cues apart from Station cues", async () => {
+    // A hook cue has no `station`, and treating "not a gate" as "a Station"
+    // would list `undefined` as a Station id — which is what the type system
+    // caught the moment hook cues existed.
+    const hooked = parseConfig(
+      `${TOML}\n[hook.format]\ncommand = ["npx", "prettier", "--write", "."]\n` +
+        `[cuesheet.fmt]\ncues = [{ station = "opus", action = "implement" }, { hook = "format" }]\n`,
+      "/ws/cuesheet.toml",
+    );
+    const response = await describeStations(hooked, unprobed);
+    expect(response.cuesheets).toContainEqual({
+      id: "fmt",
+      stationIds: ["opus"],
+      gates: [],
+      hooks: ["format"],
+    });
   });
 
   it("reports a cuesheet with no gate as having none", async () => {
@@ -118,6 +141,7 @@ describe("describeStations", () => {
       id: "solo",
       stationIds: ["opus"],
       gates: [],
+      hooks: [],
     });
   });
 

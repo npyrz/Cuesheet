@@ -18,6 +18,8 @@ arrived in that build. Published tags below identify actual installers.
 - Optional signed-release configuration and installer updater with explicit restart confirmation. **Its credentials and installed-update acceptance are still outstanding; source checkout updates do not require them.**
 - Contributor and harness guides, a runnable offline harness example, security policy, code of conduct, issue forms, PR template and changelog-based release notes.
 
+- Hook cues: `{ hook = "format" }` runs `[hook.format]`'s command between Stations — the same way after any harness — with the run's id, status and own change on stdin. A failing hook fails the run unless `on_failure = "continue"`. Harnesses can declare `connectsMcp`; the daemon no longer decides which runtimes get Commons provenance by their id.
+
 - Rewind: `cuesheet rewind RUN_ID` and `POST /projects/:id/runs/:runId/rewind` undo a finished run's own changes, all or nothing, refusing with the conflicting paths named when files have moved since. Runs now record their own change separately from the workspace diff, which also contains uncommitted work from before the run. Run history moves to SQLite schema 2; older builds refuse to open an upgraded database.
 
 - Repo map: `[repo_map] mode = "projection"` adds a byte-stable map of the workspace's files and exported symbols to the project's context files, rebuilt at run start, parsed with WebAssembly tree-sitter grammars (no native module). Off by default; `GET /projects/:id/repo-map` previews it with an estimated token cost.

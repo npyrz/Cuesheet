@@ -39,6 +39,7 @@ import {
   gateSkip,
   hostEnv,
   isGateRef,
+  isHookRef,
   neverReviewRule,
   parseVerdict,
   REVIEW_INSTRUCTIONS,
@@ -50,6 +51,7 @@ import {
   type Gate,
   type GateParticipant,
   type GateReport,
+  type HookReport,
   type Fact,
   type HostEnv,
   type LoadedConfig,
@@ -65,6 +67,7 @@ import {
 import type { ExecutionContext, RunExecutor } from "./executor.js";
 import { ZERO_COST } from "./executor.js";
 import { renderProjection } from "./projections.js";
+import { runHook } from "./hooks.js";
 
 export interface HarnessExecutorOptions {
   registry: HarnessRegistry;
@@ -137,11 +140,14 @@ export function createHarnessExecutor(
 
     // The "before" half of the run's own change — Step 60. After the context
     // refresh above, so the daemon's own rewrite of `CLAUDE.md` is not
-    // attributed to the run, and skipped for a run whose Stations cannot
-    // write, for the reason `runDiff` gives.
+    // attributed to the run, and skipped for a run that cannot write, for the
+    // reason `runDiff` gives. A hook can write even when every Station is a
+    // read-only seat — a formatter after a worker — so a run with one counts
+    // as writing.
     const workspace = runWorkspace(ctx, stations, env);
+    const writes = runCanWrite(steps);
     const before =
-      workspace === undefined || stations.every(cannotWrite)
+      workspace === undefined || !writes
         ? null
         : await snapshotWorkspace({ cwd: workspace });
 
@@ -161,6 +167,9 @@ export function createHarnessExecutor(
     // `readdir` was designed to avoid.
     const stationCosts: StationCost[] = [];
     const gates: GateReport[] = [];
+    const hooks: HookReport[] = [];
+    // The Station the next hook follows, for its input and its report.
+    let lastStation: string | undefined;
     // Files a reviewer was not shown since the last gate, so the gate's report
     // can say its verdicts were over less than the whole change. The open
     // question Phase 14 left — "whether elision can be honest" — answered by
@@ -180,6 +189,79 @@ export function createHarnessExecutor(
       for (const [index, step] of steps.entries()) {
         if (ctx.signal.aborted) {
           status = "stopped";
+          break;
+        }
+
+        if (step.kind === "hook") {
+          const hook = loaded.config.hook[step.name];
+          if (hook === undefined || workspace === undefined) {
+            // Never skipped quietly, for the reason an unknown gate is not:
+            // "the formatter did not run" must not look like "it ran".
+            status = "failed";
+            error =
+              hook === undefined
+                ? `This cuesheet references hook "${step.name}", which is not configured. Add a [hook.${step.name}] table.`
+                : `Hook "${step.name}" has no workspace to run in.`;
+            emitError(ctx, error);
+            break;
+          }
+
+          // The run's own change so far — the same snapshot pair rewind uses
+          // — so a hook reading the patch sees only what this run did.
+          let diff: string | null = null;
+          if (before !== null) {
+            const now = await snapshotWorkspace({ cwd: workspace });
+            diff =
+              now === null
+                ? null
+                : await diffSnapshots({ cwd: workspace, before, after: now });
+          }
+          const stationId = `hook:${step.name}`;
+          const outcome = await runHook({
+            hook,
+            cwd: workspace,
+            signal: ctx.signal,
+            input: {
+              runId: ctx.run.id,
+              hook: step.name,
+              ...(lastStation !== undefined && { after: lastStation }),
+              status: "running",
+              diff,
+            },
+            onLine: (line) =>
+              ctx.emit({
+                t: "text",
+                at: new Date().toISOString(),
+                runId: ctx.run.id,
+                stationId,
+                chunk: `${line}\n`,
+              }),
+          });
+
+          if (ctx.signal.aborted) {
+            hooks.push(outcome.report);
+            status = "stopped";
+            break;
+          }
+          if (outcome.report.outcome === "ok") {
+            hooks.push(outcome.report);
+            continue;
+          }
+          if (hook.on_failure === "continue") {
+            hooks.push({ ...outcome.report, continued: true });
+            ctx.emit({
+              t: "text",
+              at: new Date().toISOString(),
+              runId: ctx.run.id,
+              stationId,
+              chunk: `${outcome.error ?? `Hook "${step.name}" failed`}; on_failure = "continue", so the run goes on.\n`,
+            });
+            continue;
+          }
+          hooks.push(outcome.report);
+          status = "failed";
+          error = outcome.error ?? `Hook "${step.name}" failed.`;
+          emitError(ctx, error);
           break;
         }
 
@@ -371,6 +453,7 @@ export function createHarnessExecutor(
         const stepStarted = Date.now();
         const outcome = await runStation(ctx, harness, station, env, brief);
         lastResult = outcome.result;
+        lastStation = station.id;
         addCost(cost, outcome.result.cost);
         participants.push({
           stationId: station.id,
@@ -425,7 +508,7 @@ export function createHarnessExecutor(
     // Computed before the failure throw below, deliberately: a run that failed
     // halfway usually did write something first, and that partial work is the
     // most useful thing on the page when you are working out what went wrong.
-    const diff = await runDiff(ctx, stations, lastResult, env);
+    const diff = await runDiff(ctx, stations, lastResult, env, writes);
     if (diff) ctx.recordDiff(diff.patch);
 
     // The "after" half, on every path a run can end by — a failed or stopped
@@ -473,6 +556,7 @@ export function createHarnessExecutor(
             verdicts: lastResult.verdicts,
           }),
       ...(gates.length > 0 && { gates }),
+      ...(hooks.length > 0 && { hooks }),
       // A Hold's reason. `failed` throws instead, and the queue reads that
       // message off the thrown value.
       ...(status === "held" && error !== undefined && { error }),
@@ -512,10 +596,10 @@ async function commonsPrefix(
   // approval inbox can therefore always answer where a capture came from.
   // Prepended so a review brief still ends with its strict verdict format;
   // putting connector metadata after that contract makes it less final.
-  if (
-    options.projectId !== undefined &&
-    (harness.id === "claude-code" || harness.id === "codex")
-  ) {
+  // Asked of the harness rather than decided by its id — Step 61's answer to
+  // the capability question, and this check was the one place the daemon
+  // broke that rule before there was a rule.
+  if (options.projectId !== undefined && harness.connectsMcp === true) {
     assembled =
       `<Cuesheet memory context>\n` +
       `For memory_search, normally use project ${options.projectId}. ` +
@@ -636,11 +720,12 @@ async function runDiff(
   stations: readonly Station[],
   lastResult: RunResult | undefined,
   env: HostEnv,
+  writes: boolean,
 ): Promise<{
   patch: string;
   stat: NonNullable<RunResultSummary["diff"]>;
 } | null> {
-  if (stations.length > 0 && stations.every(cannotWrite)) return null;
+  if (stations.length > 0 && !writes) return null;
 
   const workspace =
     ctx.run.workspace ||
@@ -686,7 +771,22 @@ function cannotWrite(station: Station): boolean {
 const TRANSCRIPT_LIMIT = 1_000_000;
 
 type PlannedStep =
-  { kind: "station"; station: Station } | { kind: "gate"; name: string };
+  | { kind: "station"; station: Station }
+  | { kind: "gate"; name: string }
+  | { kind: "hook"; name: string };
+
+/**
+ * Whether anything in the run can change the workspace: a Station in a
+ * writing seat, or a hook — which is the operator's own command and writes
+ * whatever it writes.
+ */
+function runCanWrite(steps: readonly PlannedStep[]): boolean {
+  return steps.some(
+    (step) =>
+      step.kind === "hook" ||
+      (step.kind === "station" && !cannotWrite(step.station)),
+  );
+}
 
 /**
  * The run, as an ordered list of things to do.
@@ -698,8 +798,8 @@ type PlannedStep =
  *
  * Cues naming a Station that no longer exists are dropped rather than failing
  * the run; the config loader already warns, and a deleted Station should not
- * cost you the other steps. A *gate* cue is never dropped, because silently
- * skipping a safety check is the one thing this design cannot do.
+ * cost you the other steps. A *gate* or *hook* cue is never dropped, because
+ * silently skipping a check is the one thing this design cannot do.
  */
 function planSteps(
   loaded: LoadedConfig,
@@ -719,6 +819,12 @@ function planSteps(
     for (const cue of sheet.cues) {
       if (isGateRef(cue)) {
         steps.push({ kind: "gate", name: cue.gate });
+        continue;
+      }
+      // Kept even when it names nothing configured, like a gate: the loop
+      // fails the run there rather than letting it pass unformatted.
+      if (isHookRef(cue)) {
+        steps.push({ kind: "hook", name: cue.hook });
         continue;
       }
       const station = byId.get(cue.station);

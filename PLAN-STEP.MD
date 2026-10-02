@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60–61 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2220,7 +2220,7 @@ So the step first had to make the record it was supposed to read. The executor n
 - **A record of the rewind on the run.** Rewinding changes the workspace, not the run, and appending events to a finished run's log is a new kind of write nothing else does. Worth deciding with the Desk button, since that is where "this run was rewound" would be read.
 - **Attribution beyond the snapshot.** Edits the operator makes *while* a run is going land between the two snapshots and are attributed to the run. Distinguishing them needs a filesystem watcher or per-write recording through the workspace facade, and the facade only sees writes made through it — a shelled-out `sed` is invisible, as Step 36 recorded.
 
-### Step 61 — Hooks as cues, and the capability question
+### Step 61 — Hooks as cues, and the capability question ✅
 
 A `hook` cue kind: run a command after a Station finishes, with the run's id, diff and status on stdin. Formatters, test runs, a notification, a commit.
 
@@ -2229,6 +2229,37 @@ The seam is the one Gates went through — cues were already an ordered list, an
 **And here is the honest part, which should not be softened in the work:** the same trick does not extend to everything. `Harness` has `probe`, `usage`, `contextFiles`, `writeConnectors` and `run`, and **nothing that expresses what a runtime can do**. There is no seam for "this one supports plan mode", "this one can resume a session", "this one enforces a sandbox itself". Adding `capabilities` to the interface would be the first change to it since Step 13 — additive, but a change — and the alternative is feature-detecting on `vendor`, which re-couples the daemon to the harnesses the interface exists to keep it away from. **Decide it here, deliberately, rather than discovering it while writing the third harness.**
 
 **Done when:** a hook cue runs the project's formatter after every engineer step regardless of which vendor ran it, and the capability question is answered in writing — either `capabilities` is on the interface or there is a recorded reason it is not.
+
+- [x] **A hook cue runs the project's formatter after every engineer step regardless of which vendor ran it.** `hooks.test.ts`: two engineers on two harnesses with different `vendor`s, each followed by `{ hook = "format" }`. The formatter is a real program in its own process — a Node script, run through `process.execPath` — that upper-cases the workspace's `.txt` files and logs its stdin. Both files come out formatted; the run records two `ok` hook reports, one after each engineer; and each invocation was handed the run's id and the run's own change *so far* (the first sees only the first engineer's file).
+- [x] **The capability question is answered in writing.** Below. The answer is "no `capabilities` bag", and the reason is recorded — together with the one place the daemon was already breaking the rule, which is now fixed.
+
+#### The capability question: no bag, a typed member per question, and never `id` or `vendor`
+
+The step was written as though `Harness` could say nothing about what a runtime supports. By the time it was reached that was no longer quite true, and how it had stopped being true is the answer. `roles` says which seats a runtime can fill (Step 13). `contextFiles` being empty says it reads no context file, which is what makes the daemon inline Commons facts into an `ollama` brief (Step 47). And `confinement?(role)` (Step 42) is exactly the third example the plan gave — *"this one enforces a sandbox itself"* — added as one optional method answering one question, with a type that can say "unknown".
+
+So the decision is the pattern those three already follow, made a rule:
+
+- **When the daemon starts branching on what a runtime can do, the interface gains a specific, optional, typed member for that one question.** Optional so a third-party harness written before it keeps working and means "no" or "unknown" by omission; typed so the answer can carry more than a boolean when it needs to, as `Confinement` does.
+- **No `capabilities: string[]` or flags object.** A bag invites strings nobody checks, drifts between harnesses silently, and makes "what does the daemon actually depend on?" unanswerable from the interface. A member is only added when something reads it, so the interface stays the list of things that matter.
+- **Never feature-detect on `id` or `vendor`.** `vendor` is load-bearing for `distinct_vendors` and for nothing else.
+
+**The rule was already broken once, and fixing it is part of the answer.** A search for feature detection found one in the daemon: Step 49's memory provenance — the block that tells a run which project, Station and run a `memory_write` belongs to — was gated on `harness.id === "claude-code" || harness.id === "codex"`. A third-party harness that registered the MCP connector perfectly could never be told whose run it was, and nothing in the interface said why. Nothing tested that block, which is how it survived. It is now `connectsMcp?: boolean` on `Harness`, declared by `claude-code` and `codex`, and two tests pin it from both sides using a harness whose vendor is neither. (The Desk's first-run check of `"mock"` is about the demo harness specifically, not a capability, and stays.)
+
+Plan mode and session resume, the plan's other two examples, have **no** member yet, deliberately: nothing in the daemon branches on them. Whichever step first needs one adds it, the way `confinement` arrived.
+
+#### What the work settled
+
+- **`command` is an argv array, never a string, and no shell is involved.** The same `cross-spawn` path as the harness CLIs, so `npx` works as the `.cmd` shim it is on Windows and nothing from the run can be reinterpreted as shell syntax. A string `command` is a config error rather than something split on spaces; anyone who wants a pipeline writes `["sh", "-c", "…"]` and owns its quoting.
+- **A hook is trusted and not leashed.** The leash constrains an agent; a formatter the operator put in their own config is not one, any more than a git hook is. Stated in the reference rather than left to be noticed.
+- **`on_failure` defaults to `"fail"`.** A formatter that exited non-zero, timed out, or never started must not look like one that ran — the same rule that makes an unconfigured gate stop a run. The error names the exit code and the last lines of stderr; a command that is not on PATH says "could not start" and names it. A hook cue naming no `[hook.*]` table stops the run at the cue, and the loader warns first.
+- **The hook is handed the run's *own* change, not the workspace's.** Step 60's snapshot pair, computed at the cue. A hook that reformats "what the run touched" therefore cannot reach the operator's uncommitted work by reading its input.
+- **What a hook writes is part of the run.** It lands between the run's snapshots, so it is in the run's diff, reviewed by a later gate, and undone by a rewind. A run whose only writer is a hook — a formatter after a read-only worker — now counts as writing, where before the worker-only guard would have dropped its diff.
+- **Hook cues are third-class cues, and the type system found the consumers.** `stations.ts` and the executor's plan both read "not a gate" as "a Station"; adding `HookRefSchema` to the union made both fail to typecheck. `isStationCue` now says what they meant. `GET /stations` lists a cuesheet's `hooks`, and the CLI and the Desk palette show them beside its gates.
+
+#### What this step deliberately did not build
+
+- **A hook's report on a run the hook failed.** A failure is *thrown* to the queue, which has nowhere to put a summary, so `result.hooks` exists only for runs that finished; a failed one carries the hook, exit code and stderr in `error`. Gates have the same limitation today. Both would move with a change to how the queue records a failure's partial summary — not something to change for one kind of cue.
+- **Hooks keyed to events** ("after every engineer", "on hold") rather than placed as cues. The done-when is met by position, and an event-keyed hook is a second scheduling model beside the cuesheet's one. Worth it only when someone has a cuesheet where placing the cue by hand is the problem.
 
 ### Step 62 — What your context already costs
 
@@ -2263,7 +2294,7 @@ Most of this table has now been claimed by Phases 8–13, which is what the seam
 | ~~Commons, MCP recall~~ | 🔵 beta | `contextFiles` already on the interface | Phase 12 |
 | **Projects** | 🔵 beta | **No seam — this is the one nothing was cut for.** `cwd`, `loadConfig` and the store root each assume exactly one, which is why it is a phase and not a step | Phase 8 |
 | ~~Cache-aware accounting~~ | ⚪ post-1.0 | **No seam — `Cost` was three fields and none of them was a cache.** Additive to widen, but a `core` type change rather than a harness one, which is why it could not simply arrive with a new harness | Step 57, done inside Step 39 |
-| Hooks, rewind, plan mode | ⚪ post-1.0 | Cues, for the first two — a hook is a cue kind exactly as a gate was. **Not for the third:** `Harness` has no way to say what a runtime supports | Steps 60–61 |
+| ~~Hooks, rewind~~, plan mode | ⚪ post-1.0 | Cues, for hooks — a hook is a cue kind exactly as a gate was; the run store, for rewind. **Plan mode** waits for its own typed `Harness` member, the rule Step 61 wrote down — the interface turned out to have grown capability members one question at a time all along | Steps 60–61; plan mode still deferred |
 | Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) | still deferred |
 | Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change | still deferred |
 | Caller, On-Call | ⚪ post-1.0 | Both are cuesheets + a trigger over the existing queue | still deferred |

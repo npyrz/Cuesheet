@@ -279,6 +279,23 @@ export interface Harness {
    * `claude-code` — so the claim travels from whoever can actually make it.
    */
   confinement?(role: Role): Confinement;
+  /**
+   * Whether a run of this harness can call the MCP servers that
+   * `writeConnectors` registered — the daemon's Commons memory tools — Step 61.
+   *
+   * The daemon puts run provenance (project, Station, run) in the brief only
+   * for a runtime that can use it. Until this existed, that was decided by
+   * `harness.id === "claude-code" || harness.id === "codex"`: feature
+   * detection on an id, which meant a third-party harness that registered the
+   * connector perfectly could never be told whose run it was, and nothing in
+   * this interface would have said why. Optional; absent means "no".
+   *
+   * This is the shape the capability question was answered with: a typed
+   * member per capability the daemon actually branches on, added when it
+   * starts branching — never a `capabilities` bag, and never a check on `id`
+   * or `vendor`. See Step 61 in `PLAN-STEP.MD`.
+   */
+  readonly connectsMcp?: boolean;
 }
 
 /** Re-exported so a harness module needs one import, as in the README. */

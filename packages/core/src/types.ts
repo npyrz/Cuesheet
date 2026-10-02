@@ -172,6 +172,23 @@ export interface GateReport {
   elided?: string[];
 }
 
+/**
+ * What one hook cue did — Step 61. Kept on the run summary for the reason
+ * `GateReport` is: a hook that succeeded changes no status, and without this
+ * "did the formatter run?" would have no answer a month later.
+ */
+export interface HookReport {
+  hook: string;
+  /** The Station whose step it followed, when one did. */
+  after?: string;
+  outcome: "ok" | "failed" | "timed-out" | "not-started";
+  /** `null` when the process never exited on its own. */
+  exitCode: number | null;
+  durationMs: number;
+  /** Failed, but `on_failure = "continue"` let the run go on. */
+  continued?: boolean;
+}
+
 /** What a `done` event carries: enough to render a run row without a re-read. */
 export interface RunResultSummary {
   status: RunStatus;
@@ -184,6 +201,8 @@ export interface RunResultSummary {
   verdicts?: Verdict[];
   /** Every Gate the run passed through, in cue order. */
   gates?: GateReport[];
+  /** Every hook the run ran, in cue order. Absent before Step 61. */
+  hooks?: HookReport[];
   /**
    * Why the run ended this way, when the status alone does not say it.
    *

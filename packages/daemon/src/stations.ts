@@ -12,6 +12,8 @@
  */
 import {
   isGateRef,
+  isHookRef,
+  isStationCue,
   writePosture,
   BUILTIN_HARNESS_IDS,
   type Confinement,
@@ -120,6 +122,8 @@ export interface CuesheetView {
   stationIds: string[];
   /** The gates this cuesheet runs, in order. */
   gates: string[];
+  /** Hook cues, in order — Step 61. */
+  hooks: string[];
 }
 
 /**
@@ -224,9 +228,10 @@ export async function describeStations(
       // `flatMap` rather than filter-then-cast: `isGateRef` is a type guard,
       // and casting past it would survive a change to `CueStep` in silence.
       stationIds: sheet.cues.flatMap((cue) =>
-        isGateRef(cue) ? [] : [cue.station],
+        isStationCue(cue) ? [cue.station] : [],
       ),
       gates: sheet.cues.filter(isGateRef).map((cue) => cue.gate),
+      hooks: sheet.cues.filter(isHookRef).map((cue) => cue.hook),
     })),
     warnings: [...loaded.warnings, ...seatWarnings(configured, rolesOf)],
     limits: loaded.config.limits,

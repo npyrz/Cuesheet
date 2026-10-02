@@ -734,3 +734,44 @@ ${when}
     expect(body.routing?.[0]).toContain("cannot stand in for");
   });
 });
+
+/**
+ * Step 61: memory provenance is decided by what the harness declares, not by
+ * its id. Before, only ids `claude-code` and `codex` got it, so a third-party
+ * harness that registered the MCP connector could never be told whose run it
+ * was. Nothing tested that block at all, which is how the id check survived.
+ */
+describe("memory provenance in the brief", () => {
+  async function briefFor(connectsMcp: boolean | undefined): Promise<string> {
+    const briefs: string[] = [];
+    const harness: Harness = {
+      ...createMockHarness({ standby: false }),
+      // Not a built-in id, on purpose.
+      id: "mock",
+      vendor: "third-party",
+      ...(connectsMcp !== undefined && { connectsMcp }),
+      async run(ctx) {
+        briefs.push(ctx.brief);
+        return { status: "done" };
+      },
+    };
+    const url = await bootProject(
+      harnessRuntime({ registry: createHarnessRegistry([harness]) }),
+    );
+    const response = await post(`${url}/runs`, { prompt: "remember this" });
+    const { runId } = (await response.json()) as { runId: string };
+    await waitForRun(url, runId);
+    return briefs[0] ?? "";
+  }
+
+  it("is given to a harness that declares it connects to MCP", async () => {
+    const brief = await briefFor(true);
+    expect(brief).toContain("<Cuesheet memory context>");
+    expect(brief).toContain("station fake");
+    expect(brief.endsWith("remember this")).toBe(true);
+  });
+
+  it("is not given to one that does not say", async () => {
+    expect(await briefFor(undefined)).toBe("remember this");
+  });
+});

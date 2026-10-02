@@ -369,3 +369,53 @@ describe("the config version", () => {
     },
   );
 });
+
+describe("hook cues (Step 61)", () => {
+  const station = `
+[[station]]
+id = "opus"
+harness = "claude-code"
+role = "engineer"
+workspace = "/tmp/api"
+`;
+
+  it("parses a hook table with its defaults, and the cue that names it", () => {
+    const { config, warnings } = parseConfig(`${station}
+[hook.format]
+command = ["npx", "prettier", "--write", "."]
+
+[cuesheet.ship]
+cues = [{ station = "opus", action = "implement" }, { hook = "format" }]
+`);
+    expect(config.hook["format"]).toEqual({
+      command: ["npx", "prettier", "--write", "."],
+      timeout_seconds: 300,
+      on_failure: "fail",
+    });
+    expect(config.cuesheet["ship"]?.cues[1]).toEqual({ hook: "format" });
+    expect(warnings).toEqual([]);
+  });
+
+  it("refuses a command written as a string, because nothing is run through a shell", () => {
+    expect(() =>
+      parseConfig(`${station}
+[hook.format]
+command = "npx prettier --write ."
+`),
+    ).toThrow(ConfigError);
+  });
+
+  it("warns about a cue naming a hook that does not exist", () => {
+    const { warnings } = parseConfig(`${station}
+[cuesheet.ship]
+cues = [{ station = "opus", action = "implement" }, { hook = "nope" }]
+`);
+    expect(
+      warnings.some((w) => w.message.includes('unknown hook "nope"')),
+    ).toBe(true);
+    // And does not mistake it for a Station cue.
+    expect(warnings.some((w) => w.message.includes("unknown station"))).toBe(
+      false,
+    );
+  });
+});

@@ -167,7 +167,12 @@ export async function runCli(
       noPositionals(parsed);
       const view = await request<{
         stations: { station: { id: string; harness: string; role: string } }[];
-        cuesheets: { id: string; stationIds: string[]; gates: string[] }[];
+        cuesheets: {
+          id: string;
+          stationIds: string[];
+          gates: string[];
+          hooks?: string[];
+        }[];
       }>(api, `${scope}/stations`, fetcher);
       for (const { station } of view.stations) {
         write(`${station.id}\t${station.role}\t${station.harness}`);
@@ -175,7 +180,12 @@ export async function runCli(
       for (const sheet of view.cuesheets) {
         write(
           `cuesheet ${sheet.id}\t${sheet.stationIds.join(" → ")}` +
-            (sheet.gates.length > 0 ? `\tgate: ${sheet.gates.join(", ")}` : ""),
+            (sheet.gates.length > 0
+              ? `\tgate: ${sheet.gates.join(", ")}`
+              : "") +
+            ((sheet.hooks ?? []).length > 0
+              ? `\thook: ${(sheet.hooks ?? []).join(", ")}`
+              : ""),
         );
       }
       return 0;

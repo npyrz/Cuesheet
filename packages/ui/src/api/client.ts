@@ -69,6 +69,8 @@ export interface CuesheetView {
   id: string;
   stationIds: string[];
   gates: string[];
+  /** Hook cues, in order. Absent from daemons before Step 61. */
+  hooks?: string[];
 }
 
 /** `GET /runs/:id` — note that the patch is *not* here; see `fetchDiff`. */
