@@ -132,6 +132,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
     // summary is the `done` event's payload. Stats go on the wire, the patch
     // goes to disk.
     let patch: string | null = null;
+    let rewind: string | null = null;
 
     try {
       // `active` — and so the controller `stop` and `shutdown` reach for — is
@@ -152,6 +153,9 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         signal: controller.signal,
         recordDiff(text) {
           patch = text;
+        },
+        recordRewind(text) {
+          rewind = text;
         },
         emit(event) {
           if (event.t === "cost") {
@@ -245,6 +249,9 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         // A run that died still gets whatever diff it managed to produce. The
         // partial work is usually the most useful thing on the page.
         ...(patch !== null && { diff: patch }),
+        // And can be undone: a run that failed halfway is the mess a rewind
+        // exists for.
+        ...(rewind !== null && { rewind }),
         ...(status === "failed" && { error: message }),
       });
       emitStatus(run.id, status);
@@ -272,6 +279,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         result: resolved,
         cost: resolved.cost,
         ...(patch !== null && { diff: patch }),
+        ...(rewind !== null && { rewind }),
         // A run that ended without throwing can still have something to say:
         // a Gate's Hold is the case, and "held" with no reason on the record
         // is the half of the feature people would actually complain about.

@@ -14,6 +14,7 @@ import websocket from "@fastify/websocket";
 import { stat } from "node:fs/promises";
 import type { ContextFile } from "@cuesheet/harness";
 import type { Connector } from "@cuesheet/harness";
+import { rewindPatch } from "@cuesheet/harness";
 import {
   addStation,
   buildLedger,
@@ -37,6 +38,7 @@ import {
   expandHome,
   hostEnv,
   isProjectId,
+  isTerminalStatus,
   legacyProjectRoot,
   loadConfig,
   migrateLegacyConfig,
@@ -817,6 +819,25 @@ async function recordQuietly(
   }
 }
 
+/**
+ * One rewind at a time per project.
+ *
+ * Two requests for the same run would both pass `git apply --check` and then
+ * race to write the same files; serialised, the second sees the first's
+ * result and answers "already rewound". Per project rather than global, so a
+ * rewind in one repository never waits on another.
+ */
+const rewinds = new Map<string, Promise<unknown>>();
+function rewindLock<T>(projectId: string, task: () => Promise<T>): Promise<T> {
+  const previous = rewinds.get(projectId) ?? Promise.resolve();
+  const next = previous.then(task, task);
+  rewinds.set(
+    projectId,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -1528,8 +1549,94 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // `hasDiff` is enough to decide whether to offer the button; the bytes
     // come from `/runs/:runId/diff` when someone actually asks for them.
     const { diff, ...rest } = stored;
-    const detail: RunDetailResponse = { ...rest, hasDiff: diff !== undefined };
+    const detail: RunDetailResponse = {
+      ...rest,
+      hasDiff: diff !== undefined,
+      hasRewind: (await runtime.store.getRewind(runId)) !== null,
+    };
     return detail;
+  });
+
+  /**
+   * Undo a run from its record — Step 60.
+   *
+   * Reverse-applies `rewind.patch`, the run's *own* change, never
+   * `diff.patch`: that one is the workspace's whole dirty state when the run
+   * ended, and reversing it would take the operator's uncommitted edits and
+   * every earlier run's work with it. Atomic, and refused with the paths named
+   * when the tree has moved under the patch.
+   *
+   * `{ "dryRun": true }` checks and writes nothing, which is what a client
+   * asks before offering the button.
+   *
+   * Refused while any run in the project is active. A rewind rewrites files,
+   * and doing that under a running agent is two writers in one workspace —
+   * the failure Step 11's one-at-a-time queue exists to prevent.
+   */
+  app.post("/projects/:id/runs/:runId/rewind", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const runId = (request.params as { runId: string }).runId;
+    if (!isRunId(runId))
+      return reply.code(400).send({ error: "Malformed run id." });
+    const body = request.body;
+    const dryRun =
+      body !== null &&
+      typeof body === "object" &&
+      (body as Record<string, unknown>)["dryRun"] === true;
+
+    const stored = await runtime.store.get(runId);
+    if (!stored) return reply.code(404).send({ error: "No such run." });
+    if (!isTerminalStatus(stored.run.status)) {
+      return reply.code(409).send({
+        error: "That run has not finished. Stop it first, then rewind it.",
+      });
+    }
+    const active = runtime.queue.activeRunId();
+    if (active !== null) {
+      return reply.code(409).send({
+        error: `Run ${active} is in progress in this project. Rewind once it has finished, so nothing writes to the workspace underneath it.`,
+      });
+    }
+
+    const patch = await runtime.store.getRewind(runId);
+    if (patch === null) {
+      return reply.code(409).send({
+        error:
+          "That run did not record a change of its own, so there is nothing to reverse. " +
+          "Runs from before rewind existed, runs outside a git repository, and runs " +
+          "whose Stations cannot write record none.",
+      });
+    }
+    const workspace = stored.run.workspace
+      ? expandHome(stored.run.workspace, env)
+      : "";
+    if (patch === "" || workspace === "") {
+      return { outcome: "rewound", paths: [], dryRun };
+    }
+
+    const result = await rewindLock(runtime.project.id, () =>
+      rewindPatch({ cwd: workspace, patch, dryRun }),
+    );
+    switch (result.outcome) {
+      case "rewound":
+        return { outcome: "rewound", paths: result.paths, dryRun };
+      case "already-rewound":
+        return reply.code(409).send({
+          outcome: "already-rewound",
+          error:
+            "The workspace already looks the way it did before that run; it has been rewound.",
+          paths: result.paths,
+        });
+      case "conflict":
+        return reply.code(409).send({
+          outcome: "conflict",
+          error: `Nothing was changed: ${result.conflicts.length === 1 ? "this file has" : "these files have"} changed since the run, so its patch no longer reverses cleanly — ${result.conflicts.join(", ")}.`,
+          conflicts: result.conflicts,
+        });
+      case "unavailable":
+        return reply.code(409).send({ error: result.reason });
+    }
   });
 
   /**

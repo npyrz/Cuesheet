@@ -1,9 +1,17 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { diffWorkspace, EMPTY_DIFF, isGitRepo, parseNumstat } from "./git.js";
+import {
+  diffSnapshots,
+  diffWorkspace,
+  EMPTY_DIFF,
+  isGitRepo,
+  parseNumstat,
+  rewindPatch,
+  snapshotWorkspace,
+} from "./git.js";
 import { run } from "./spawn.js";
 
 let repo: string;
@@ -97,4 +105,156 @@ describe("isGitRepo", () => {
     const bare = await mkdtemp(path.join(tmpdir(), "cuesheet-nogit-"));
     expect(await isGitRepo(bare)).toBe(false);
   }, 30_000);
+});
+
+/**
+ * Step 60. Every case here is the operator's real situation in miniature: a
+ * workspace that was already dirty before the run, which is the case the
+ * old `diff.patch` got wrong.
+ */
+describe("snapshots and rewind", () => {
+  /**
+   * File text with line endings normalised. A rewind writes through git, so
+   * it restores content the way git checks it out: on a machine with
+   * `core.autocrlf=true` — Windows, including the one this was written on — a
+   * file the run touched comes back CRLF even if it had been LF. That is
+   * `git checkout -- file` semantics, chosen over forcing the setting off,
+   * which would disagree with blobs the operator's own index already cached.
+   */
+  async function read(file: string): Promise<string | null> {
+    const text = await readFile(path.join(repo, file), "utf8").catch(
+      () => null,
+    );
+    return text === null ? null : text.replaceAll("\r\n", "\n");
+  }
+
+  /** What a run does: snapshot, change things, snapshot, diff. */
+  async function runChanges(change: () => Promise<void>): Promise<string> {
+    const before = await snapshotWorkspace({ cwd: repo });
+    await change();
+    const after = await snapshotWorkspace({ cwd: repo });
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    const patch = await diffSnapshots({
+      cwd: repo,
+      before: before as string,
+      after: after as string,
+    });
+    return patch ?? "";
+  }
+
+  it("captures only what happened between the snapshots", async () => {
+    // Dirt from before the run: an edit and an untracked file.
+    await writeFile(path.join(repo, "README.md"), "hello\nmine\n", "utf8");
+    await writeFile(path.join(repo, "notes.txt"), "my notes\n", "utf8");
+
+    const patch = await runChanges(async () => {
+      await writeFile(path.join(repo, "made.ts"), "export {};\n", "utf8");
+    });
+
+    expect(patch).toContain("made.ts");
+    expect(patch).not.toContain("notes.txt");
+    expect(patch).not.toContain("mine");
+  });
+
+  it("leaves the operator's index exactly as it was", async () => {
+    await writeFile(path.join(repo, "staged.txt"), "staged\n", "utf8");
+    await git("add", "staged.txt");
+    const before = await run("git", ["diff", "--cached", "--name-only"], {
+      cwd: repo,
+    });
+
+    await snapshotWorkspace({ cwd: repo });
+    await writeFile(path.join(repo, "untracked.txt"), "x\n", "utf8");
+    await snapshotWorkspace({ cwd: repo });
+
+    const after = await run("git", ["diff", "--cached", "--name-only"], {
+      cwd: repo,
+    });
+    expect(after.stdout).toBe(before.stdout);
+    const status = await run("git", ["status", "--porcelain"], { cwd: repo });
+    expect(status.stdout).toContain("?? untracked.txt");
+  });
+
+  it("undoes a run and only the run, keeping earlier dirt", async () => {
+    await writeFile(path.join(repo, "README.md"), "hello\nmine\n", "utf8");
+    const patch = await runChanges(async () => {
+      await writeFile(path.join(repo, "README.md"), "hello\nmine\nrun\n");
+      await writeFile(path.join(repo, "made.ts"), "export {};\n", "utf8");
+    });
+    // The workspace diff marks new files intent-to-add, as a run's diff
+    // would have; the rewind must clean that up too.
+    await diffWorkspace({ cwd: repo });
+
+    const result = await rewindPatch({ cwd: repo, patch });
+    expect(result).toEqual({
+      outcome: "rewound",
+      paths: ["README.md", "made.ts"],
+    });
+    expect(await read("README.md")).toBe("hello\nmine\n");
+    expect(await read("made.ts")).toBeNull();
+    const status = await run("git", ["status", "--porcelain"], { cwd: repo });
+    expect(status.stdout.trim()).toBe("M README.md");
+  });
+
+  it("refuses when the tree moved under the patch, naming the paths, and changes nothing", async () => {
+    const patch = await runChanges(async () => {
+      await writeFile(path.join(repo, "README.md"), "hello\nrun\n", "utf8");
+      await writeFile(path.join(repo, "kept.ts"), "export {};\n", "utf8");
+    });
+    // The operator edits the run's file afterwards.
+    await writeFile(path.join(repo, "README.md"), "rewritten\n", "utf8");
+
+    const result = await rewindPatch({ cwd: repo, patch });
+    expect(result).toEqual({ outcome: "conflict", conflicts: ["README.md"] });
+    // All or nothing: the file that *could* have been reverted was not.
+    expect(await read("kept.ts")).toBe("export {};\n");
+    expect(await read("README.md")).toBe("rewritten\n");
+  });
+
+  it("says a second rewind is a second rewind, not a conflict", async () => {
+    const patch = await runChanges(async () => {
+      await writeFile(path.join(repo, "README.md"), "hello\nrun\n", "utf8");
+    });
+    expect((await rewindPatch({ cwd: repo, patch })).outcome).toBe("rewound");
+    expect((await rewindPatch({ cwd: repo, patch })).outcome).toBe(
+      "already-rewound",
+    );
+  });
+
+  it("checks without writing on a dry run", async () => {
+    const patch = await runChanges(async () => {
+      await writeFile(path.join(repo, "README.md"), "hello\nrun\n", "utf8");
+    });
+    const result = await rewindPatch({ cwd: repo, patch, dryRun: true });
+    expect(result.outcome).toBe("rewound");
+    expect(await read("README.md")).toBe("hello\nrun\n");
+  });
+
+  it("reverses a binary change and a deletion", async () => {
+    await writeFile(path.join(repo, "logo.bin"), Buffer.from([0, 1, 2, 255]));
+    await git("add", "logo.bin");
+    await git("commit", "-qm", "logo");
+    const patch = await runChanges(async () => {
+      await writeFile(path.join(repo, "logo.bin"), Buffer.from([9, 9, 0, 9]));
+      await rm(path.join(repo, "README.md"));
+    });
+
+    expect((await rewindPatch({ cwd: repo, patch })).outcome).toBe("rewound");
+    expect([...(await readFile(path.join(repo, "logo.bin")))]).toEqual([
+      0, 1, 2, 255,
+    ]);
+    expect(await read("README.md")).toBe("hello\n");
+  });
+
+  it("has nothing to snapshot outside a repository", async () => {
+    const plain = await realpath(
+      await mkdtemp(path.join(tmpdir(), "cuesheet-plain-")),
+    );
+    expect(await snapshotWorkspace({ cwd: plain })).toBeNull();
+    expect(
+      (await rewindPatch({ cwd: plain, patch: "diff --git a/x b/x\n" }))
+        .outcome,
+    ).toBe("unavailable");
+  });
 });

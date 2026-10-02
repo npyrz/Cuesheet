@@ -54,6 +54,22 @@ export interface ExecutionContext {
    * the end rather than merging.
    */
   recordDiff(patch: string): void;
+  /**
+   * Hand over the run's **own** change, to be written to `rewind.patch` —
+   * Step 60.
+   *
+   * Not the same thing as `recordDiff`, and the difference is the step's main
+   * finding. `diff.patch` is the workspace's whole dirty state when the run
+   * ended: this run's work plus anything uncommitted before it. That is the
+   * right thing to show a reviewer and the wrong thing to reverse, because
+   * reversing it undoes the operator's own uncommitted edits and every earlier
+   * run's along with this one. This is the diff between snapshots taken
+   * before the first Station and after the last — only what happened during
+   * the run — in `git diff --binary` form so it can be applied in reverse.
+   *
+   * Last call wins, as with `recordDiff`.
+   */
+  recordRewind(patch: string): void;
 }
 
 export type RunExecutor = (ctx: ExecutionContext) => Promise<RunResultSummary>;

@@ -52,8 +52,16 @@ export type {
   LineReader,
 } from "./spawn.js";
 
-export { diffWorkspace, isGitRepo, parseNumstat, EMPTY_DIFF } from "./git.js";
-export type { GitDiffOptions } from "./git.js";
+export {
+  diffWorkspace,
+  diffSnapshots,
+  isGitRepo,
+  parseNumstat,
+  rewindPatch,
+  snapshotWorkspace,
+  EMPTY_DIFF,
+} from "./git.js";
+export type { GitDiffOptions, RewindResult } from "./git.js";
 
 export {
   createMockHarness,

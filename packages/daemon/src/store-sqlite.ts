@@ -184,6 +184,19 @@ export const RUNS_SCHEMA_MIGRATIONS: readonly RunsSchemaMigration[] = [
   ) WITHOUT ROWID;
 `,
   },
+  {
+    // Step 60: a run's own change, kept apart from `diffs` because the two
+    // are different documents — `diffs` is the workspace's dirty state when
+    // the run ended, this is only what the run did — and a rewind must never
+    // be able to read one as the other.
+    to: 2,
+    sql: `
+  CREATE TABLE rewinds (
+    run_id  TEXT PRIMARY KEY,
+    patch   TEXT NOT NULL
+  ) WITHOUT ROWID;
+`,
+  },
 ];
 
 /**
@@ -254,7 +267,9 @@ export async function openSqliteRunStore(
   // the import is decided by `found`, and reading the directories first means
   // the transaction below is one uninterrupted run of statements.
   const legacy =
-    found === 0 ? await readFileRuns(root) : { runs: [], unreadable: 0 };
+    found === 0
+      ? await readFileRuns(root)
+      : { runs: [], rewinds: new Map<string, string>(), unreadable: 0 };
 
   // Schema, import and version in one transaction, before a statement is
   // prepared against tables that may not exist yet. Step 52 set `user_version` in autocommit *before* importing, so
@@ -270,7 +285,7 @@ export async function openSqliteRunStore(
       for (const step of RUNS_SCHEMA_MIGRATIONS) {
         if (step.to > found) db.exec(step.sql);
       }
-      importFileRuns(db, legacy.runs);
+      importFileRuns(db, legacy.runs, legacy.rewinds);
       db.exec(`PRAGMA user_version = ${String(RUNS_SCHEMA_VERSION)}`);
       db.exec("COMMIT");
     } catch (error) {
@@ -307,6 +322,11 @@ export async function openSqliteRunStore(
         "ON CONFLICT(run_id) DO UPDATE SET patch = excluded.patch",
     ),
     selectDiff: db.prepare("SELECT patch FROM diffs WHERE run_id = ?"),
+    upsertRewind: db.prepare(
+      "INSERT INTO rewinds (run_id, patch) VALUES (?, ?) " +
+        "ON CONFLICT(run_id) DO UPDATE SET patch = excluded.patch",
+    ),
+    selectRewind: db.prepare("SELECT patch FROM rewinds WHERE run_id = ?"),
   };
 
   function writeRun(run: Run): void {
@@ -386,6 +406,9 @@ export async function openSqliteRunStore(
         if (input.diff !== undefined) {
           statements.upsertDiff.run(runId, input.diff);
         }
+        if (input.rewind !== undefined) {
+          statements.upsertRewind.run(runId, input.rewind);
+        }
         writeRun(next);
         db.exec("COMMIT");
       } catch (error) {
@@ -405,6 +428,11 @@ export async function openSqliteRunStore(
         ...(diff !== null && { diff }),
       };
       return stored;
+    },
+
+    async getRewind(runId) {
+      const row = statements.selectRewind.get(runId);
+      return row ? String(row["patch"]) : null;
     },
 
     async getDiff(runId) {
@@ -444,6 +472,8 @@ function readUserVersion(db: DatabaseSync): number {
 /** What {@link readFileRuns} found in a runs root. */
 interface FileRuns {
   runs: StoredRun[];
+  /** `rewind.patch` by run id, for the runs that wrote one. */
+  rewinds: Map<string, string>;
   unreadable: number;
 }
 
@@ -462,11 +492,14 @@ async function readFileRuns(root: string): Promise<FileRuns> {
   const directories = (await readdir(root).catch(() => [])).filter(isRunId);
 
   const runs: StoredRun[] = [];
+  const rewinds = new Map<string, string>();
   for (const run of existing) {
     const record = await files.get(run.id);
     if (record) runs.push(record);
+    const rewind = await files.getRewind(run.id);
+    if (rewind !== null) rewinds.set(run.id, rewind);
   }
-  return { runs, unreadable: directories.length - runs.length };
+  return { runs, rewinds, unreadable: directories.length - runs.length };
 }
 
 /**
@@ -495,7 +528,11 @@ async function readFileRuns(root: string): Promise<FileRuns> {
  *   take. The cost is disk that is now written twice; the alternative is a
  *   one-way door.
  */
-function importFileRuns(db: DatabaseSync, runs: readonly StoredRun[]): void {
+function importFileRuns(
+  db: DatabaseSync,
+  runs: readonly StoredRun[],
+  rewinds: ReadonlyMap<string, string>,
+): void {
   if (runs.length === 0) return;
   const insertRun = db.prepare(
     "INSERT INTO runs (id, created_at, status, terminal, doc) VALUES (?, ?, ?, ?, ?)",
@@ -505,6 +542,9 @@ function importFileRuns(db: DatabaseSync, runs: readonly StoredRun[]): void {
   );
   const insertDiff = db.prepare(
     "INSERT INTO diffs (run_id, patch) VALUES (?, ?)",
+  );
+  const insertRewind = db.prepare(
+    "INSERT INTO rewinds (run_id, patch) VALUES (?, ?)",
   );
   for (const record of runs) {
     const { run } = record;
@@ -519,5 +559,7 @@ function importFileRuns(db: DatabaseSync, runs: readonly StoredRun[]): void {
       insertEvent.run(run.id, JSON.stringify(event));
     }
     if (record.diff !== undefined) insertDiff.run(run.id, record.diff);
+    const rewind = rewinds.get(run.id);
+    if (rewind !== undefined) insertRewind.run(run.id, rewind);
   }
 }

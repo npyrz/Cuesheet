@@ -7,6 +7,9 @@
  * the same answer, and it is separate from `spawn.ts` because *what* to ask
  * git is a different problem from how to start a process safely.
  */
+import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { run, which } from "./spawn.js";
 import type { DiffResult } from "./types.js";
 import type { DiffStat } from "@cuesheet/core";
@@ -107,4 +110,230 @@ export function parseNumstat(text: string): DiffStat {
   }
 
   return { filesChanged, insertions, deletions };
+}
+
+/**
+ * A content-addressed snapshot of the working tree — Step 60.
+ *
+ * Why this exists at all: {@link diffWorkspace} answers "what is dirty", which
+ * is everything uncommitted — this run's work, the run before it, and the
+ * operator's own edits. That was always true and only became a defect when
+ * something wanted to *undo* a run from its record: reverse-applying the
+ * dirty diff undoes far more than the run did.
+ *
+ * Two snapshots, one before the first Station and one after the last, diff to
+ * exactly the run's own change. Each is a tree object written through a
+ * **temporary index**, so the operator's real index — staged work, intent-to-
+ * add markers and all — is never touched, and no ref or commit is created in
+ * their repository. The trees are unreferenced objects that `git gc` will
+ * eventually prune, which is fine: the patch between them is computed at once
+ * and kept in Cuesheet's own store.
+ *
+ * The real index is copied in first, so `git add -A` can use its stat cache
+ * rather than re-hashing every file in the tree. `.gitignore` applies, so a
+ * run's writes to ignored files are not captured and cannot be rewound.
+ *
+ * `null` outside a repository, or if git refuses — a snapshot is what makes a
+ * rewind possible, never a reason to fail a run.
+ */
+export async function snapshotWorkspace(
+  options: GitDiffOptions,
+): Promise<string | null> {
+  const { cwd } = options;
+  if (!(await isGitRepo(cwd))) return null;
+  const timeoutMs = options.timeoutMs ?? 60_000;
+
+  const scratch = await mkdtemp(join(tmpdir(), "cuesheet-snapshot-"));
+  try {
+    const index = join(scratch, "index");
+    const real = await run("git", ["rev-parse", "--git-path", "index"], {
+      cwd,
+      timeoutMs,
+    });
+    if (real.code === 0) {
+      // A repository with nothing ever staged has no index yet; an empty
+      // temporary one is then the right starting point.
+      await copyFile(resolve(cwd, real.stdout.trim()), index).catch(
+        () => undefined,
+      );
+    }
+    const common = {
+      cwd,
+      timeoutMs,
+      env: { ...process.env, GIT_INDEX_FILE: index },
+      ...(options.signal !== undefined && { signal: options.signal }),
+    };
+    const added = await run("git", ["add", "-A"], common);
+    if (added.code !== 0) return null;
+    const tree = await run("git", ["write-tree"], common);
+    const id = tree.stdout.trim();
+    return tree.code === 0 && id !== "" ? id : null;
+  } catch {
+    return null;
+  } finally {
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * The patch from one snapshot to another: exactly what happened between.
+ *
+ * `--binary`, because reversing a binary change needs its full content, and
+ * `--no-renames` so every section names one path — a rename is two paths in
+ * one header, and a conflict report wants one path per file.
+ */
+export async function diffSnapshots(
+  options: GitDiffOptions & { before: string; after: string },
+): Promise<string | null> {
+  if (options.before === options.after) return "";
+  const result = await run(
+    "git",
+    [
+      "diff",
+      "--binary",
+      "--no-color",
+      "--no-renames",
+      "--no-ext-diff",
+      options.before,
+      options.after,
+    ],
+    {
+      cwd: options.cwd,
+      timeoutMs: options.timeoutMs ?? 60_000,
+      ...(options.signal !== undefined && { signal: options.signal }),
+    },
+  );
+  return result.code === 0 ? result.stdout : null;
+}
+
+export type RewindResult =
+  | { outcome: "rewound"; paths: string[] }
+  | { outcome: "already-rewound"; paths: string[] }
+  | { outcome: "conflict"; conflicts: string[] }
+  | { outcome: "unavailable"; reason: string };
+
+/**
+ * Reverse-apply a run's own patch to its workspace, or refuse.
+ *
+ * **All or nothing.** `git apply` without `--reject` checks every hunk before
+ * writing any, so a rewind that cannot finish leaves the tree exactly as it
+ * was. A half-reverted tree is worse than a bad commit, because the bad commit
+ * is at least in the log.
+ *
+ * Refusals name the paths, file by file. Parsing `git apply`'s stderr would be
+ * shorter and wrong on a machine with a different `LANG` — the reason
+ * `parseNumstat` exists — so when the whole patch will not reverse, each
+ * file's section is checked alone and the ones that fail are named. Only on
+ * the failure path; a clean rewind costs one check and one apply.
+ *
+ * "Already rewound" is told apart from "conflict" by checking whether the
+ * patch would apply *forwards*: if it would, the tree is where it was before
+ * the run, which is what a second rewind of the same run looks like.
+ *
+ * The working tree only. The index is left alone except for files the run
+ * *created*: the rewind deletes them, and their intent-to-add marker from
+ * {@link diffWorkspace} would otherwise show up as a deletion in `git status`.
+ */
+export async function rewindPatch(options: {
+  cwd: string;
+  patch: string;
+  /** Check only; write nothing. */
+  dryRun?: boolean;
+  timeoutMs?: number;
+}): Promise<RewindResult> {
+  const { cwd } = options;
+  if (!(await isGitRepo(cwd))) {
+    return {
+      outcome: "unavailable",
+      reason: `${cwd} is not a git repository, so the patch cannot be applied there.`,
+    };
+  }
+  const sections = splitSections(options.patch);
+  const paths = sections.map((section) => section.path);
+  if (sections.length === 0) return { outcome: "rewound", paths: [] };
+
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  const scratch = await mkdtemp(join(tmpdir(), "cuesheet-rewind-"));
+  try {
+    const apply = async (text: string, args: string[]): Promise<boolean> => {
+      const file = join(scratch, "patch");
+      await writeFile(file, text, "utf8");
+      const result = await run("git", ["apply", ...args, file], {
+        cwd,
+        timeoutMs,
+      });
+      return result.code === 0;
+    };
+
+    if (!(await apply(options.patch, ["-R", "--check"]))) {
+      if (await apply(options.patch, ["--check"])) {
+        return { outcome: "already-rewound", paths };
+      }
+      const conflicts: string[] = [];
+      for (const section of sections) {
+        if (!(await apply(section.text, ["-R", "--check"]))) {
+          conflicts.push(section.path);
+        }
+      }
+      // Every section can reverse alone while the whole cannot. Still a
+      // refusal, and then every path is the honest answer.
+      return {
+        outcome: "conflict",
+        conflicts: conflicts.length > 0 ? conflicts : paths,
+      };
+    }
+
+    if (options.dryRun === true) return { outcome: "rewound", paths };
+    if (!(await apply(options.patch, ["-R"]))) {
+      // Checked a moment ago and something moved in between. Still atomic.
+      return { outcome: "conflict", conflicts: paths };
+    }
+
+    const created = sections
+      .filter((section) => section.created)
+      .map((section) => section.path);
+    if (created.length > 0) {
+      await run(
+        "git",
+        ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", ...created],
+        { cwd, timeoutMs },
+      ).catch(() => undefined);
+    }
+    return { outcome: "rewound", paths };
+  } finally {
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Per-file sections of a `--no-renames` patch: the text, the path, and
+ * whether the run created the file.
+ *
+ * Not `core`'s `splitPatch`, which serves a reviewer and decodes quoted paths
+ * for globbing. The harness depends on `core` for types only, and this needs
+ * nothing but the `diff --git` boundary.
+ */
+function splitSections(
+  patch: string,
+): { path: string; text: string; created: boolean }[] {
+  const sections: { path: string; text: string; created: boolean }[] = [];
+  let current = "";
+  const flush = (): void => {
+    if (current === "") return;
+    const plus = /^\+\+\+ "?b\/(.*?)"?\t?\r?$/m.exec(current);
+    const minus = /^--- "?a\/(.*?)"?\t?\r?$/m.exec(current);
+    const header = /^diff --git "?a\/.*?"? "?b\/(.*?)"?\r?$/m.exec(current);
+    sections.push({
+      path: plus?.[1] ?? minus?.[1] ?? header?.[1] ?? "",
+      text: current,
+      created: /^new file mode /m.test(current),
+    });
+    current = "";
+  };
+  for (const line of patch.split(/(?<=\n)/)) {
+    if (line.startsWith("diff --git ")) flush();
+    current += line;
+  }
+  flush();
+  return sections;
 }

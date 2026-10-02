@@ -388,6 +388,35 @@ A failed Gate ends the current run as `held`; a hold is terminal. Continuing
 after a hold means starting a new run, preserving the original decision in
 history.
 
+## Rewind
+
+`cuesheet rewind RUN_ID` (or `POST .../runs/:runId/rewind`) undoes what one run
+changed in its workspace.
+
+It does not reverse the run's `diff.patch`. That patch is the workspace's whole
+uncommitted state when the run ended — your own edits and earlier runs' work
+included — and reversing it would undo all of them. Instead, each run in a git
+repository snapshots the workspace before its first Station and after its
+last, through a temporary index that never touches yours, and records the
+difference as `rewind.patch`. Rewind reverses exactly that.
+
+- **All or nothing.** If any file the run touched has changed since, nothing is
+  written, and the refusal names those files. A rewind that already happened
+  is reported as such rather than as a conflict.
+- **Refused while a run is active** in the same project, and for a run that has
+  not finished.
+- **Not available** for runs recorded before this feature, runs outside a git
+  repository, and runs whose Stations cannot write. The run's
+  `hasRewind` field says which runs can be rewound.
+- Files are restored as git checks them out, so line endings follow your git
+  settings (with `core.autocrlf=true`, text comes back CRLF). Files matched by
+  `.gitignore` are not captured and are not rewound. Edits you make *while* a
+  run is going are attributed to that run.
+- The rewind itself is not added to the run's record.
+
+Run history stores this in SQLite schema version 2. An older Cuesheet build
+refuses to open a database this build has upgraded, rather than write to it.
+
 ## The Commons
 
 The implemented Commons is one local repository at `~/.cuesheet/commons`. Each
@@ -516,6 +545,8 @@ the browser Desk's normal surface through the Vite proxy.
 | `GET` | `/api/projects/:id/runs/:runId` | Read run metadata and events, excluding the patch body. |
 | `GET` | `/api/projects/:id/runs/:runId/diff` | Read the unified diff as plain text. |
 | `POST` | `/api/projects/:id/runs/:runId/stop` | Stop a queued, active, or waiting run. |
+| `POST` | `/api/projects/:id/runs/:runId/rewind` | Reverse a finished run's own change; `{ "dryRun": true }` only checks. See [Rewind](#rewind). |
+| `GET` | `/api/projects/:id/repo-map` | Preview the project's repo map, its size and estimated token cost. |
 | `GET` | `/api/projects/:id/ledger?since=...&until=...` | Read project spend aggregates. |
 | `WS` | `/api/projects/:id/ws` | Replay buffered project events, then stream live events. |
 

@@ -6,6 +6,7 @@
  *   run.json       prompt, stations, status, timestamps, cost totals
  *   events.jsonl   append-only RunEvent log
  *   diff.patch     unified diff, written at the end
+ *   rewind.patch   the run's own change, reversible (Step 60)
  * ```
  *
  * Files, not SQLite, and behind an interface so that stays a decision rather
@@ -83,6 +84,12 @@ export interface RunDetailResponse {
   events: RunEvent[];
   /** Whether `GET /runs/:id/diff` will return a patch. */
   hasDiff: boolean;
+  /**
+   * Whether the run recorded its own change and so can be rewound. False for
+   * every run recorded before Step 60, for a run outside a git repository,
+   * and for one whose Stations could not write.
+   */
+  hasRewind: boolean;
 }
 
 /** Fields a non-terminal transition may set. */
@@ -92,13 +99,17 @@ export interface RunUpdate {
   cost?: Cost;
 }
 
-/** What ends a run. `diff` is the patch text, written to `diff.patch`. */
+/**
+ * What ends a run. `diff` is the patch text, written to `diff.patch`;
+ * `rewind` is the run's own change, written to `rewind.patch` (Step 60).
+ */
 export interface FinishRunInput {
   status: RunStatus;
   result?: RunResultSummary;
   cost?: Cost;
   error?: string;
   diff?: string;
+  rewind?: string;
 }
 
 export interface RunStore {
@@ -114,6 +125,11 @@ export interface RunStore {
    * document most viewings never expand. `null` means the run wrote no patch.
    */
   getDiff(runId: RunId): Promise<string | null>;
+  /**
+   * `rewind.patch`: the run's own change, as recorded for `POST .../rewind`.
+   * `null` when the run recorded none — see `RunDetailResponse.hasRewind`.
+   */
+  getRewind(runId: RunId): Promise<string | null>;
   /** Newest first. */
   list(limit?: number): Promise<Run[]>;
   finish(runId: RunId, input: FinishRunInput): Promise<Run>;
@@ -337,6 +353,13 @@ export function createFileRunStore(
         if (input.diff !== undefined) {
           await writeFile(join(dir(runId), "diff.patch"), input.diff, "utf8");
         }
+        if (input.rewind !== undefined) {
+          await writeFile(
+            join(dir(runId), "rewind.patch"),
+            input.rewind,
+            "utf8",
+          );
+        }
         const finishedAt = now().toISOString();
         return patchRun(runId, (run) => applyRunFinish(run, input, finishedAt));
       });
@@ -353,6 +376,11 @@ export function createFileRunStore(
     async getDiff(runId) {
       if (!isRunId(runId)) return null;
       return (await readOptional(join(dir(runId), "diff.patch"))) ?? null;
+    },
+
+    async getRewind(runId) {
+      if (!isRunId(runId)) return null;
+      return (await readOptional(join(dir(runId), "rewind.patch"))) ?? null;
     },
 
     async list(limit) {

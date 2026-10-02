@@ -195,4 +195,38 @@ describe("the cuesheet CLI", () => {
     ).toBe(1);
     expect(errors[0]).toContain("Unknown option --engineer");
   });
+
+  it("rejects --check anywhere but rewind, before contacting the daemon", async () => {
+    // No daemon is running: the refusal has to come from the parser.
+    expect(await runCli(["runs", "--check"], cliOptions(projectRoot))).toBe(1);
+    expect(errors[0]).toBe("--check only applies to rewind.");
+  });
+
+  it("passes a rewind refusal through in the daemon's words, and exits 1", async () => {
+    // This daemon's default executor writes nothing and records no change,
+    // which is the refusal every pre-Step-60 run also gets.
+    const active = await boot();
+    expect(
+      await runCli(["project", "add", projectRoot], cliOptions(home)),
+    ).toBe(0);
+    const id = output[0]?.split("\t")[0] ?? "";
+    const response = await fetch(`${active.url}/projects/${id}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "nothing" }),
+    });
+    const { runId } = (await response.json()) as { runId: string };
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      const detail = (await (
+        await fetch(`${active.url}/projects/${id}/runs/${runId}`)
+      ).json()) as { run: { finishedAt?: string } };
+      if (detail.run.finishedAt) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(
+      await runCli(["rewind", runId, "--check"], cliOptions(projectRoot)),
+    ).toBe(1);
+    expect(errors.at(-1)).toContain("did not record a change of its own");
+  });
 });

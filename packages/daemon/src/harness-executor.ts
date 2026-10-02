@@ -16,6 +16,8 @@
  */
 import {
   createMeter,
+  diffSnapshots,
+  snapshotWorkspace,
   createWorkspace,
   diffWorkspace,
   type Harness,
@@ -132,6 +134,16 @@ export function createHarnessExecutor(
           : `No configured Station matches ${ctx.run.stationIds.join(", ")}.`,
       );
     }
+
+    // The "before" half of the run's own change — Step 60. After the context
+    // refresh above, so the daemon's own rewrite of `CLAUDE.md` is not
+    // attributed to the run, and skipped for a run whose Stations cannot
+    // write, for the reason `runDiff` gives.
+    const workspace = runWorkspace(ctx, stations, env);
+    const before =
+      workspace === undefined || stations.every(cannotWrite)
+        ? null
+        : await snapshotWorkspace({ cwd: workspace });
 
     const cost: Cost = { ...ZERO_COST };
     let status: RunStatus = "done";
@@ -415,6 +427,23 @@ export function createHarnessExecutor(
     // most useful thing on the page when you are working out what went wrong.
     const diff = await runDiff(ctx, stations, lastResult, env);
     if (diff) ctx.recordDiff(diff.patch);
+
+    // The "after" half, on every path a run can end by — a failed or stopped
+    // run's partial mess is the one most worth undoing. Best effort and short
+    // once aborted, for the shutdown reason `runDiff` gives.
+    if (before !== null && workspace !== undefined) {
+      const timeoutMs = ctx.signal.aborted ? 10_000 : 60_000;
+      const after = await snapshotWorkspace({ cwd: workspace, timeoutMs });
+      const own =
+        after === null
+          ? null
+          : await diffSnapshots({ cwd: workspace, before, after, timeoutMs });
+      // An empty patch is still recorded: "this run changed nothing" is a
+      // different answer from "this run predates rewind", and a client
+      // deciding whether to offer the button should be able to tell them
+      // apart.
+      if (own !== null) ctx.recordRewind(own);
+    }
 
     // Re-thrown unchanged so the queue's `isAbort` still sees an `AbortError`
     // and lands the run as `stopped` rather than `failed`.
@@ -850,18 +879,28 @@ function collectVerdicts(
   ];
 }
 
+/** Where the run works, expanded, or `undefined` when nothing says. */
+function runWorkspace(
+  ctx: ExecutionContext,
+  stations: readonly Station[],
+  env: HostEnv,
+): string | undefined {
+  const workspace =
+    ctx.run.workspace ||
+    stations.find((station) => station.workspace)?.workspace;
+  return workspace ? expandHome(workspace, env) : undefined;
+}
+
 /** The workspace diff right now, or `undefined` if there is no reading it. */
 async function workspaceDiff(
   ctx: ExecutionContext,
   stations: readonly Station[],
   env: HostEnv,
 ): Promise<{ patch: string; stat: DiffStat } | undefined> {
-  const workspace =
-    ctx.run.workspace ||
-    stations.find((station) => station.workspace)?.workspace;
-  if (!workspace) return undefined;
+  const workspace = runWorkspace(ctx, stations, env);
+  if (workspace === undefined) return undefined;
   const diff = await diffWorkspace({
-    cwd: expandHome(workspace, env),
+    cwd: workspace,
     timeoutMs: ctx.signal.aborted ? 10_000 : 60_000,
   }).catch(() => null);
   return diff ?? undefined;

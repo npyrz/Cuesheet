@@ -35,6 +35,9 @@ Commands:
   runs [--project ID]              List recent runs
   show <run-id> [--project ID]     Show a run record
   stop <run-id> [--project ID]     Stop a queued or active run
+  rewind <run-id> [--check] [--project ID]
+                                   Undo a finished run's own changes; --check
+                                   only reports whether it would apply
   answer <standby-id> <go|no>      Answer a waiting Gate
 
 Run from a registered project's directory, or pass --project ID.
@@ -70,9 +73,13 @@ export async function runCli(
         "runs",
         "show",
         "stop",
+        "rewind",
       ].includes(command)
     ) {
       throw new CliError(`Unknown command "${command}". Run cuesheet help.`);
+    }
+    if (parsed.check === true && command !== "rewind") {
+      throw new CliError("--check only applies to rewind.");
     }
     const api = await connect(env, variables, fetcher);
 
@@ -212,9 +219,41 @@ export async function runCli(
       return 0;
     }
     if (parsed.positionals.length !== 1 || parsed.cuesheet !== undefined) {
-      throw new CliError(`Usage: cuesheet ${command} <run-id>`);
+      throw new CliError(
+        command === "rewind"
+          ? "Usage: cuesheet rewind <run-id> [--check]"
+          : `Usage: cuesheet ${command} <run-id>`,
+      );
     }
     const runId = encodeURIComponent(parsed.positionals[0] ?? "");
+    if (command === "rewind") {
+      // A refusal — conflict, already rewound, a run still going — arrives as
+      // the daemon's own sentence through `request`, paths included, and
+      // exits 1. Nothing here re-words it.
+      const result = await request<{ paths: string[]; dryRun: boolean }>(
+        api,
+        `${scope}/runs/${runId}/rewind`,
+        fetcher,
+        {
+          method: "POST",
+          body: JSON.stringify({ dryRun: parsed.check === true }),
+        },
+      );
+      const count = result.paths.length;
+      if (count === 0) {
+        write(
+          `${parsed.positionals[0]} changed nothing; there is nothing to rewind.`,
+        );
+        return 0;
+      }
+      write(
+        result.dryRun
+          ? `${parsed.positionals[0]} would rewind cleanly (${count} file${count === 1 ? "" : "s"}):`
+          : `Rewound ${parsed.positionals[0]} (${count} file${count === 1 ? "" : "s"}):`,
+      );
+      for (const path of result.paths) write(`  ${path}`);
+      return 0;
+    }
     if (command === "stop") {
       const { outcome } = await request<{ outcome: string }>(
         api,
@@ -244,6 +283,8 @@ interface Parsed {
   positionals: string[];
   project?: string;
   cuesheet?: string;
+  /** `rewind --check`: ask, write nothing. */
+  check?: boolean;
 }
 
 function parse(args: readonly string[]): Parsed {
@@ -261,6 +302,8 @@ function parse(args: readonly string[]): Parsed {
       if (arg === "--project") parsed.project = value;
       else parsed.cuesheet = value;
       i += 1;
+    } else if (!literal && arg === "--check") {
+      parsed.check = true;
     } else if (!literal && arg.startsWith("--")) {
       throw new CliError(`Unknown option ${arg}.`);
     } else {

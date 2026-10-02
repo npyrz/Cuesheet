@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2182,7 +2182,7 @@ Stations written by the Desk carry absolute paths, which is presumably why nothi
 - **The packaged app was not launched.** The bundle was exercised by a probe built with its exact options; an installer has not been built and opened, so `extraResources` delivering `grammars/` is configured and unit-tested by path, not observed.
 - **Languages beyond TS/JS/Python**, and exports inside `declare module` or namespaces. The map is a table of contents, not an index.
 
-### Step 60 — Rewind, for every harness
+### Step 60 — Rewind, for every harness ✅
 
 `cuesheet rewind <run>` reverse-applies a run's stored patch.
 
@@ -2191,6 +2191,34 @@ Every run record already holds `diff.patch`; this step is mostly the CLI surface
 The rail: refuse when the working tree has moved under the patch rather than applying it partially. A half-reverted tree is worse than a bad commit, because the bad commit is at least in the log.
 
 **Done when:** a run that made a mess is undone from the record, and a rewind that would conflict refuses with the conflicting paths named.
+
+- [x] **A run that made a mess is undone from the record.** `rewind.test.ts`: in a workspace that already holds the operator's uncommitted edit and an untracked file, an engineer edits a tracked file and creates a broken one. `POST .../rewind` reverses both, and the operator's edit and file are exactly as they were. `cuesheet rewind` drives the same route.
+- [x] **A rewind that would conflict refuses with the conflicting paths named.** The operator fixes the broken file by hand; the rewind answers `409` naming `src/broken.ts` and writes nothing — including to `README.md`, which on its own would have reversed cleanly.
+
+Proven with a mock engineer over real `git`, on Windows, through HTTP. No real vendor's run has been rewound yet; nothing in the path depends on which harness wrote the files, which is the point of the step, but that is an argument and not an observation.
+
+#### The record the plan relied on was not the run's
+
+*"Every run record already holds `diff.patch`; this step is mostly the CLI surface"* — and `diff.patch` turned out to be the wrong document. It is `git diff` after `git add -A -N` when the run ends: **everything uncommitted in the workspace**, which is the run's work plus the operator's own edits plus every earlier run's that was never committed. That is a reasonable thing to show a reviewer and has been since Phase 7, whose "Gate reviews the workspace diff" limitation is the same fact seen from the other side. Reversed, it would have undone the operator's work along with the run's, and the "already dirty" workspace it would have done that to is the normal one, not an edge case.
+
+So the step first had to make the record it was supposed to read. The executor now snapshots the workspace before its first Station and after its last — `git add -A` and `git write-tree` against a **temporary index**, seeded from a copy of the real one so git's stat cache spares it re-hashing the tree — and stores `git diff --binary --no-renames before after` as `rewind.patch`, beside `diff.patch` and never instead of it. The operator's index is never touched and no ref or commit is made in their repository: the trees are unreferenced objects that `git gc` may prune, which is fine because the patch between them is already in Cuesheet's store.
+
+#### What the work settled
+
+- **Two documents, two names, two tables.** `diff.patch` keeps meaning what every client already reads it as. `rewind.patch` is new, and in SQLite it is a new `rewinds` table rather than a column on `diffs`, so that nothing can read one as the other. That is schema **2**, added as an entry in `RUNS_SCHEMA_MIGRATIONS` — the first use of Step 53's mechanism for a real change rather than the first version. File-origin history imported into a fresh database carries its `rewind.patch` along.
+- **The profile suite caught the migration as a change, correctly.** The SQLite-era profile expected no `runs-schema` record and got one per project. The fix reads each captured database's own `user_version` before boot and expects a migration exactly where it is below this build's — derived from the profile, as that test's rule requires, and right for a future profile captured at schema 2. No profile was edited.
+- **All or nothing, by `git apply` rather than by care.** Without `--reject`, `git apply` checks every hunk before writing any. The conflict list comes from re-checking each file's section on its own, only after the whole patch has refused — parsing `git apply`'s stderr would be shorter and wrong under a different `LANG`, the same reason `parseNumstat` reads columns.
+- **"Already rewound" is its own answer.** If the patch will not reverse but *will* apply forwards, the tree is where it was before the run. A second press of the button should say that, not report a conflict.
+- **Files the run created leave the index too.** Rewinding deletes them, and the intent-to-add marker the workspace diff left on them would otherwise show as a deletion in `git status`.
+- **Refused while any run in the project is active**, and for a run that has not finished. A rewind writes files; doing that under a running agent is two writers in one workspace, the failure the one-at-a-time queue exists to prevent. Two rewind requests are serialised per project, so the second reads the first's result.
+- **An empty patch is recorded.** "This run changed nothing" and "this run predates rewind" are different answers, and `hasRewind` on the run detail lets a client tell them apart before offering the button.
+- **Line endings follow git, found on this machine.** With `core.autocrlf=true` a rewound text file comes back CRLF even if it was LF, because `git apply` writes through git's conversion — `git checkout -- file` semantics. Forcing the setting off was the alternative and was rejected: the copied index's cached blobs were made under the operator's settings, so the two would disagree file by file. Content is restored; bytes are restored up to line endings. Stated in the reference rather than discovered in a bug report.
+
+#### What this step deliberately did not build
+
+- **A Desk button.** The route is the product; drawing it belongs with the run surface, and it should ask `dryRun` first so it can say *why* it is unavailable before the operator presses it.
+- **A record of the rewind on the run.** Rewinding changes the workspace, not the run, and appending events to a finished run's log is a new kind of write nothing else does. Worth deciding with the Desk button, since that is where "this run was rewound" would be read.
+- **Attribution beyond the snapshot.** Edits the operator makes *while* a run is going land between the two snapshots and are attributed to the run. Distinguishing them needs a filesystem watcher or per-write recording through the workspace facade, and the facade only sees writes made through it — a shelled-out `sed` is invisible, as Step 36 recorded.
 
 ### Step 61 — Hooks as cues, and the capability question
 

@@ -96,9 +96,11 @@ npx cuesheet show RUN_ID --project PROJECT_ID
 The named cuesheet must exist in that project's `cuesheet.toml`; omit
 `--cuesheet ship` to use its first configured Station. `run` queues work and
 prints its id. From inside a registered project, including a subdirectory, the
-`--project` option is optional. `cuesheet stop RUN_ID` stops a run, and
-`cuesheet answer STANDBY_ID go|no` answers a waiting Gate. The terminal client
-uses the running daemon; it does not start a second one.
+`--project` option is optional. `cuesheet stop RUN_ID` stops a run,
+`cuesheet rewind RUN_ID` undoes a finished run's own changes (`--check` only
+reports whether it would apply), and `cuesheet answer STANDBY_ID go|no` answers
+a waiting Gate. The terminal client uses the running daemon; it does not start
+a second one.
 
 ### Install the alpha release
 

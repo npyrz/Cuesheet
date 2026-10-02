@@ -334,6 +334,25 @@ describe.each(profiles)("the %s profile", (name) => {
           expect(await readFile(file)).toEqual(bytes);
         return;
       }
+      // The schema each captured database was written at, read before boot
+      // touches it. Step 60 added schema 2, so every SQLite-era release so
+      // far is at 1 and migrates once; a profile captured from a later
+      // release would be at its own version and migrate accordingly. Read
+      // from the profile rather than assumed, so the expectation stays
+      // derivable from the profile alone.
+      const capturedSchema = new Map<string, number>();
+      if (backend === "sqlite") {
+        const { DatabaseSync } = await import("node:sqlite");
+        for (const project of sqliteProjects) {
+          const db = new DatabaseSync(
+            path.join(projectRunsDir(project.id!, env), RUNS_DB_FILENAME),
+            { readOnly: true },
+          );
+          const row = db.prepare("PRAGMA user_version").get();
+          capturedSchema.set(project.id!, Number(row?.["user_version"] ?? 0));
+          db.close();
+        }
+      }
       const first = await boot(env, backend);
       const pairs = await pairProjects(first, manifest, home);
       const seen = new Map<string, Awaited<ReturnType<typeof readProject>>>();
@@ -395,6 +414,11 @@ describe.each(profiles)("the %s profile", (name) => {
                   expected.runs.length > 0 && expected.store !== "sqlite",
               )
               .map(() => "runs-import")
+          : []),
+        ...(backend === "sqlite"
+          ? [...capturedSchema.values()]
+              .filter((version) => version < RUNS_SCHEMA_VERSION)
+              .map(() => "runs-schema")
           : []),
       ];
       expect(migrations.map((m) => m.kind).sort(), "migrations").toEqual(

@@ -323,6 +323,27 @@ export const RUN_STORE_CONTRACT: readonly RunStoreCheck[] = [
     },
   },
   {
+    name: "keeps a run's own change apart from its workspace diff",
+    async run(store) {
+      // Step 60. Two documents, and a rewind must never read one as the
+      // other: `diff` is the workspace's dirty state, `rewind` what the run did.
+      const created = await store.create({ prompt: "hi", workspace: "/ws" });
+      assert.equal(await store.getRewind(created.id), null);
+      await store.finish(created.id, {
+        status: "done",
+        diff: "whole workspace",
+        rewind: "only the run",
+      });
+      assert.equal(await store.getDiff(created.id), "whole workspace");
+      assert.equal(await store.getRewind(created.id), "only the run");
+      assert.equal(await store.getRewind(MISSING_RUN), null);
+
+      const plain = await store.create({ prompt: "hi", workspace: "/ws" });
+      await store.finish(plain.id, { status: "done", diff: "only a diff" });
+      assert.equal(await store.getRewind(plain.id), null);
+    },
+  },
+  {
     name: "lists runs newest first",
     async run(store) {
       const first = await store.create({ prompt: "a", workspace: "/ws" });
