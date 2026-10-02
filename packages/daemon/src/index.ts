@@ -190,3 +190,12 @@ export {
   applySourceUpdate,
 } from "./source-updates.js";
 export type { SourceUpdateOptions } from "./source-updates.js";
+
+export {
+  createRepoMapper,
+  defaultGrammarsDir,
+  defaultRuntimeWasm,
+  pythonSymbols,
+  scriptSymbols,
+} from "./repomap.js";
+export type { RepoMapper, RepoMapperOptions } from "./repomap.js";

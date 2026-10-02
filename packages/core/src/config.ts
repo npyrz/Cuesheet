@@ -186,6 +186,34 @@ export const CommonsSchema = z
   })
   .loose();
 
+/**
+ * `[repo_map]` — Step 59's symbol index of the workspace.
+ *
+ * **Off unless a project turns it on**, and that default is a decision rather
+ * than caution. `"projection"` writes the map into the project's context files
+ * (`CLAUDE.md`, `AGENTS.md`), which are usually tracked: the map then changes
+ * whenever the repository's shape does, and every such change is a dirty file
+ * in the next run's `git diff` — which is what a Gate's reviewer is handed. The
+ * Commons projection has the same property and is likewise only written once a
+ * project has facts. A project that wants the map says so, and can add its
+ * context files to a gate's `never_review` so the churn is not reviewed.
+ *
+ * Behind MCP recall instead of in the file is the other answer Phase 14 left
+ * open; it is not built, and `mode` is an enum so it can be added without
+ * renaming anything.
+ */
+export const RepoMapSchema = z
+  .object({
+    mode: z.enum(["off", "projection"]).default("off"),
+    /**
+     * The map's ceiling. 24 KB is about six thousand tokens, estimated —
+     * paid on every run by every Station that loads the file, so it is kept
+     * well under a brief's budget.
+     */
+    max_bytes: z.number().int().min(1024).default(24_000),
+  })
+  .loose();
+
 export const ConfigSchema = z.object({
   desk: DeskSchema.default({}),
   station: z.array(StationSchema).default([]),
@@ -197,6 +225,7 @@ export const ConfigSchema = z.object({
   // typecheck and would not carry `warn_at` even if it did.
   limits: LimitsSchema.prefault({}),
   commons: CommonsSchema.prefault({}),
+  repo_map: RepoMapSchema.prefault({}),
 });
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -210,6 +239,7 @@ export type Cuesheet = z.infer<typeof CuesheetSchema>;
 export type Gate = z.infer<typeof GateSchema>;
 export type Limits = z.infer<typeof LimitsSchema>;
 export type CommonsConfig = z.infer<typeof CommonsSchema>;
+export type RepoMapConfig = z.infer<typeof RepoMapSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function isGateRef(step: CueStep): step is GateRef {
@@ -400,6 +430,7 @@ export function parseConfig(
     "cuesheet",
     "limits",
     "commons",
+    "repo_map",
   ]);
 
   for (const key of Object.keys(table)) {

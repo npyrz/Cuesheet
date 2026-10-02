@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 done.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2122,11 +2122,11 @@ The finding that reshaped the step, and it was in the cuesheet the README prints
 - **The Desk does not show `elided` or the estimate yet.** They are on the wire (`GateReport.elided`, `brief.estimatedTokens` on the `202`), and the CLI prints the estimate labelled as one. Drawing them belongs with Step 62's audit, which is the Desk surface about context cost.
 - **No vendor endpoint for exact counts**, by the README's no-credential promise, as the step said.
 
-#### Two existing tests time out under the full suite on this machine
+#### Two existing tests time out under the full suite on this machine — *closed in Step 59*
 
 `gate-run.test.ts`'s "passes when a second vendor approves" and "continues when a human overrides the hold" each take about 1.5–2s alone and exceed vitest's 5s default when all 74 files run in parallel here. **Clean `HEAD` fails the same two the same way**, timed before this step's change was applied, so it is load on this Windows box rather than this step. Recorded here so the next person running the suite locally does not chase it.
 
-### Step 59 — The repo map
+### Step 59 — The repo map ◐ *(built; the measurement that justifies it is not taken)*
 
 A symbol index of the workspace, rendered into the projection as part of the generated block: files, their exported symbols, and where they live. Regenerated on change, stable-ordered.
 
@@ -2137,6 +2137,50 @@ Tooling, and the constraint that picks it: **`web-tree-sitter` (wasm), not the n
 Where it lives is a dependency-direction question with an unobvious answer: `core` owns the map's *format* (it is a type, and `core` owns the vocabulary), the **daemon** builds it, because building it reaches disk and `core` only touches disk through an injected `HostEnv`. It is not a harness's job — a map built per harness is the same work three times, and harnesses never import each other.
 
 **Done when:** a cold run on a mapped repo reaches its first edit in measurably fewer tool calls than the same run unmapped, and regenerating the map twice produces no diff.
+
+- [ ] **A cold run on a mapped repo reaches its first edit in measurably fewer tool calls than the same run unmapped.** Not ticked, and it is the clause the step exists for. It needs paired real runs — the same prompt, the same repository, mapped and unmapped, on a vendor CLI — and those spend an operator's plan. `claude` is installed on the machine this was built on and `codex` is not; no run was made. Until one is, the map is a cost Cuesheet can state (`GET .../repo-map` says it in estimated tokens) and a saving it cannot.
+- [x] **Regenerating the map twice produces no diff.** At three levels: `core/repomap.test.ts` renders the same bytes whatever order files arrive in; `daemon/repomap.test.ts` renders a real repository twice through the real grammars and compares; and `projections.test.ts` boots a daemon, runs twice through HTTP, and compares `CLAUDE.md` byte for byte across the second run — after showing that a file added between runs *does* reach it.
+
+#### The default is off, and that is the answer to Phase 14's first open question
+
+*Whether the map belongs in the context file at all* turned out to have a sharper version than the one written down. The context files are usually **tracked**. A map in `CLAUDE.md` changes whenever the repository's shape does, and every change is a dirty file in the next run's `git diff` — which is what Step 58 just finished making a Gate's reviewer read carefully. On by default, every project with a Gate would start reviewing its own table of contents.
+
+So `[repo_map] mode` is `"off" | "projection"`, defaulting to `off`, which matches how the Commons projection already behaves: it writes nothing until a project has facts. A project that turns the map on has asked for the file, so a map *does* create one. The mitigation is Step 58's, and it composes: put the context files in a gate's `never_review`. The MCP-recall placement is not built; `mode` is an enum so it can arrive without a rename. `GET /projects/:id/repo-map` answers whatever the mode, so an operator can see what the map would cost before paying for it.
+
+#### The bundled app would have had no map, and only running the bundle found it
+
+`web-tree-sitter`'s ESM build calls `createRequire(import.meta.url)` while it initialises. esbuild, bundling into the desktop's CJS main process, empties `import.meta`, so the packaged app's daemon threw on its first map — caught, recorded, and silent, which is the worst kind of missing feature. Build, typecheck, lint, format and test were all green over it: none of them runs the bundle.
+
+It was found by bundling a probe with the desktop's exact esbuild options and running it. `build.mjs` now defines `import.meta.url` as the bundle's own file URL — main only, since the sandboxed preload has no `require` — and the banner restates `"use strict"`, because esbuild puts a banner *above* its own directive and a directive that is not first is just a string. That second one was caught by checking whether the bundle still refuses a `with` statement.
+
+#### What the work settled
+
+- **Grammars are vendored `.wasm`, not npm dependencies.** Each grammar package also ships a native binding and a `node-gyp-build` install script; Cuesheet uses only the wasm, and pulling in the rest would put exactly the native-module risk the plan named back in the tree. `packages/daemon/grammars/README.md` records versions and SHA-256s. The parser runtime is the exception — it must match the inlined `web-tree-sitter` JavaScript exactly, so it is resolved from the pinned dependency and copied beside the grammars by the desktop build.
+- **Three grammars, not four.** Plain JavaScript reads through TSX, a superset of JS plus JSX; the one construct where they disagree, `<T>x` casts, cannot occur in a `.js` file. `.ts` keeps the TypeScript grammar because there it can.
+- **Wasm is handed over as bytes.** What `Language.load` and `Parser.init` do with a *path* depends on what emscripten decides the environment is, and inside a bundle inside an asar that decision is the most likely thing to be wrong. Reading the file ourselves removes the question.
+- **No line numbers.** They are content-derived and therefore technically stable, but one added import shifts every symbol beneath it, and the map would churn — and miss the cache — on edits that changed nothing about the repository's shape.
+- **Grouped by directory.** The first render repeated full paths and overflowed 24 KB on this repository with seven files dropped; grouped, the whole repository is about 21 KB, roughly 5,300 tokens estimated, with nothing dropped. Over the cap, whole directories go from the end of the sorted order — stable as files are edited, which dropping by size would not be.
+- **After the facts, inside the same block.** Prompt caching is prefix-based; the facts change when a person approves one, the map whenever the shape moves. The volatile part goes last.
+- **Rebuilt at run start, not at enqueue.** A run that waited behind another one should see the shape that run left. The executor calls an optional `refreshContext` before its first Station; the daemon supplies a single-project regeneration, and only when that project's mode is on. A failure is swallowed there and reported by the route — a missing map costs an agent some `ls` calls, never the operator their run.
+- **Cheap enough to be the policy.** Cold, this repository maps in about 0.8 s; warm, 0.18 s, because files are re-parsed only when size or mtime moves. Compiled grammars are shared process-wide.
+- **`git ls-files -co --exclude-standard -z`**, so `.gitignore` is git's problem, not a reimplementation; a plain walk skipping `node_modules`, `dist` and dotfiles outside a repository. Python's "exported" is the underscore convention, and `__all__` is deliberately not read — it is a runtime value, and a map that half-evaluates Python is worse than one that states its rule.
+
+#### The Windows test timeouts, closed here
+
+Step 58 recorded two `gate-run.test.ts` tests that timed out under the full suite on this machine and on clean `HEAD`. This step's grammar tests added load and made it four. `gate-run.test.ts`, `repomap.test.ts` and the repo-map projection tests now carry the 30 s budget `commons.test.ts`, `profiles.test.ts` and `source-updates.test.ts` already use for git-heavy suites — a budget, not a wait; every wait inside is still on a condition. The full suite passes locally: 76 files, 1,178 tests.
+
+#### A defect this step found and did not fix: a relative `workspace` is relative to the daemon
+
+The first draft of the projection test configured its Station with `workspace = "."` — the README's own example — and the mock engineer wrote `cuesheet-mock.md` into **the Cuesheet checkout running the suite**, after which the run's diff ran `git add -A -N` there. `createWorkspace` resolves a Station's workspace with `path.resolve`, so a relative one is relative to the daemon's process directory, not to the project whose `cuesheet.toml` named it. With one daemon serving many projects, `workspace = "."` in project B points B's agents at wherever the daemon was started; in a packaged app that is wherever the OS launched it. The leash is no help — it checks containment *within* the resolved workspace, which is already the wrong directory.
+
+Stations written by the Desk carry absolute paths, which is presumably why nothing has hit this. The test now uses an absolute path. The fix — resolving a relative workspace against the directory of the config file that declared it, at load time — changes config semantics and belongs in its own change, not inside a repo-map step.
+
+#### What was not done
+
+- **The measurement**, above.
+- **The relative-workspace defect**, above.
+- **The packaged app was not launched.** The bundle was exercised by a probe built with its exact options; an installer has not been built and opened, so `extraResources` delivering `grammars/` is configured and unit-tested by path, not observed.
+- **Languages beyond TS/JS/Python**, and exports inside `declare module` or namespaces. The map is a table of contents, not an index.
 
 ### Step 60 — Rewind, for every harness
 
@@ -2172,7 +2216,7 @@ This is the smallest step in the phase and probably the most useful one. A 40k-t
 
 ### Open questions to settle in the work, not now
 
-- **Whether the repo map belongs in the context file at all**, or behind the MCP recall server of Step 49. Files are free and always loaded; a map is the single largest thing anyone would put in one. The answer probably differs by repo size, which means it is a setting, which means picking a default.
+- ~~**Whether the repo map belongs in the context file at all**~~ — a setting, as predicted, and the default is `off`: Step 59 found the context files are usually tracked, so an always-on map is churn in every reviewed diff. The MCP placement is not built.
 - **What "maximize tokens" means when the user has a plan, not a bill.** Under a subscription the scarce thing is the 5-hour window, not dollars, and the cheapest run is not the one that finishes soonest. Phase 10's strip and this phase's ledger may want to optimize different quantities.
 - ~~**Whether elision can be honest.**~~ Answered in Step 58: the reviewer is told by name what it did not see, and `GateReport.elided` puts it on the record.
 

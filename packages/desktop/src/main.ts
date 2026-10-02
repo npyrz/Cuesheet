@@ -51,6 +51,7 @@ import {
 } from "./project.js";
 import {
   assetCandidates,
+  grammarsDir,
   trayIconName,
   uiIndexCandidates,
 } from "./resources.js";
@@ -140,9 +141,18 @@ async function connectDaemon(): Promise<DaemonConnection> {
     // free. `harnessRuntime()` is where the app opts into real harnesses —
     // the same one line `cuesheetd`'s `main.ts` uses, so the two embedders
     // cannot drift.
+    const grammars = grammarsDir({
+      packaged: app.isPackaged,
+      dirname: __dirname,
+      resourcesPath: process.resourcesPath,
+    });
     const handle = await startDaemon({
       ...harnessRuntime(),
       diagnostics,
+      repoMap: {
+        grammarsDir: grammars,
+        runtimeWasm: join(grammars, "web-tree-sitter.wasm"),
+      },
       ...(updates
         ? { updates }
         : !app.isPackaged

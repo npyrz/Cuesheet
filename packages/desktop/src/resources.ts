@@ -90,3 +90,22 @@ export function assetCandidates(host: UiEntryHost, file: string): string[] {
 
   return candidates;
 }
+
+/**
+ * Where the repo map's wasm lives: the parser runtime and the grammars, in one
+ * directory — Step 59.
+ *
+ * The daemon's own default resolves beside its package via `import.meta.url`,
+ * which does not survive being bundled into this CJS main process. So
+ * `build.mjs` copies the files to `dist/grammars`, and a packaged app carries
+ * them as `extraResources` — unpacked, for the reason the tray icons are: the
+ * daemon reads them with `readFile`, and an asar is somewhere that works
+ * mostly.
+ */
+export function grammarsDir(host: UiEntryHost): string {
+  const path = host.path ?? nodePath;
+  if (host.packaged && host.resourcesPath !== undefined) {
+    return path.join(host.resourcesPath, "grammars");
+  }
+  return path.join(host.dirname, "grammars");
+}

@@ -26,3 +26,6 @@ packages/daemon/src/fixtures/profiles/**/dot-git/** binary
 *.db binary
 *.db-wal binary
 *.db-shm binary
+
+# Vendored tree-sitter grammars (Step 59).
+*.wasm binary

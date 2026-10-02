@@ -84,6 +84,8 @@ export interface HarnessExecutorOptions {
   projectId?: string;
   /** Facts visible to this project, for runtimes with no context-file support. */
   memoryFacts?: () => Promise<Fact[]>;
+  /** Regenerate this project's context files before the first Station. */
+  refreshContext?: () => Promise<void>;
 }
 
 export class NoStationError extends Error {
@@ -108,6 +110,10 @@ export function createHarnessExecutor(
 
   return async (ctx: ExecutionContext): Promise<RunResultSummary> => {
     const started = Date.now();
+    // Before anything reads the context files. Failure is swallowed on
+    // purpose: the daemon records why, and a stale or missing map costs an
+    // agent some exploration — never the run.
+    await options.refreshContext?.().catch(() => undefined);
     const loaded = options.config();
     const steps = planSteps(loaded, ctx.run);
     // Asked once, before the first step. A cap that arrives mid-run routes the

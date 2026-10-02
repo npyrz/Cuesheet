@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMockHarness,
   createHarnessRegistry,
@@ -26,6 +26,14 @@ import { createFileRunStore, type StoredRun } from "./store.js";
 import { createRunIdFactory } from "./ids.js";
 
 const exec = promisify(execFile);
+
+// Each test boots a daemon and runs several real `git` processes per cue.
+// That is 1–2 s alone and, measured on a Windows machine with the whole suite
+// running in parallel, past vitest's 5 s default — `HEAD` failed the same
+// tests the same way before Step 58 or 59 existed. A budget, not a wait: every
+// wait in this file is still on a condition. The same figure `commons.test.ts`
+// and `profiles.test.ts` use for the same reason.
+vi.setConfig({ testTimeout: 30_000 });
 
 let env: HostEnv;
 let cwd: string;

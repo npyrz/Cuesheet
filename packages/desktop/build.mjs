@@ -16,6 +16,10 @@
  * workspace build order (core → harness → daemon → desktop) matters. npm
  * derives it from the dependency graph in each `package.json`.
  */
+import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const dev = process.argv.includes("--dev");
@@ -53,6 +57,26 @@ await build({
   ...shared,
   entryPoints: ["src/main.ts"],
   outfile: "dist/main.cjs",
+  // A real `import.meta.url` — this bundle's own file URL — because a CJS
+  // bundle otherwise gets an empty `import.meta`, and Step 59 found what
+  // that costs: `web-tree-sitter`'s ESM build calls
+  // `createRequire(import.meta.url)` while initialising, so the bundled
+  // daemon threw on its first repo map and the packaged app quietly had
+  // none. It was caught by bundling a probe with these exact settings and
+  // running it, not by any of the five checks.
+  //
+  // Main only. The preload is sandboxed and has no `require`, so this
+  // banner would break it — and nothing in the preload reads `import.meta`.
+  define: {
+    ...shared.define,
+    "import.meta.url": "__cuesheetImportMetaUrl",
+  },
+  // The directive is repeated here because esbuild puts the banner above its
+  // own `"use strict"`, and a directive that is not first is just a string:
+  // the whole main process would silently run in sloppy mode.
+  banner: {
+    js: '"use strict";const __cuesheetImportMetaUrl = require("node:url").pathToFileURL(__filename).href;',
+  },
 });
 
 await build({
@@ -60,3 +84,30 @@ await build({
   entryPoints: ["src/preload.ts"],
   outfile: "dist/preload.cjs",
 });
+
+/**
+ * The repo map's wasm, beside the bundle — Step 59.
+ *
+ * Bundled, the daemon cannot find its own `grammars/` or resolve
+ * `web-tree-sitter` from `node_modules`: `import.meta.url` is gone, and a
+ * packaged app has no `node_modules` worth resolving from. So both are copied
+ * to `dist/grammars`, which `src/resources.ts` points the daemon at and
+ * `electron-builder.yml` ships as `extraResources`.
+ *
+ * The runtime is resolved from the daemon's own dependency rather than
+ * vendored, because it must match the `web-tree-sitter` JavaScript that
+ * esbuild just inlined — byte for byte, version for version.
+ */
+const here = dirname(fileURLToPath(import.meta.url));
+const daemonDir = join(here, "..", "daemon");
+const grammarsOut = join(here, "dist", "grammars");
+mkdirSync(grammarsOut, { recursive: true });
+for (const file of readdirSync(join(daemonDir, "grammars"))) {
+  if (file.endsWith(".wasm")) {
+    copyFileSync(join(daemonDir, "grammars", file), join(grammarsOut, file));
+  }
+}
+const runtimeWasm = createRequire(join(daemonDir, "package.json")).resolve(
+  "web-tree-sitter/web-tree-sitter.wasm",
+);
+copyFileSync(runtimeWasm, join(grammarsOut, "web-tree-sitter.wasm"));

@@ -18,6 +18,8 @@ arrived in that build. Published tags below identify actual installers.
 - Optional signed-release configuration and installer updater with explicit restart confirmation. **Its credentials and installed-update acceptance are still outstanding; source checkout updates do not require them.**
 - Contributor and harness guides, a runnable offline harness example, security policy, code of conduct, issue forms, PR template and changelog-based release notes.
 
+- Repo map: `[repo_map] mode = "projection"` adds a byte-stable map of the workspace's files and exported symbols to the project's context files, rebuilt at run start, parsed with WebAssembly tree-sitter grammars (no native module). Off by default; `GET /projects/:id/repo-map` previews it with an estimated token cost.
+
 - Brief budgets: `[limits] max_brief_bytes` bounds every brief, a reviewer's diff is cut in whole named files rather than mid-hunk, and Gates take `always_review` / `never_review` path rules. A skipped Gate no longer runs (or bills) its reviewer, and an over-budget prompt is refused before it is queued.
 
 - Local crash/error diagnostics with bounded logs, interrupted-run context, path-free stack locations and a Desk preview/copy/download flow. Reports are never uploaded automatically.

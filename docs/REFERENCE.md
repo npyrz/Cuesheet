@@ -208,6 +208,10 @@ block_at    = 0.97
 when_capped = { opus = "backup-engineer" }
 max_brief_bytes = 200000
 
+[repo_map]
+mode      = "projection"   # default "off"
+max_bytes = 24000
+
 # Deferred workflow tables below: parsed and preserved, not executed today.
 [caller]
 station  = "opus"
@@ -420,6 +424,31 @@ Cuesheet replaces only the content between
 markers remains untouched. Facts are ordered deterministically, and an
 unchanged projection is not rewritten. This byte stability protects both clean
 Git diffs and prompt caching.
+
+### The repo map
+
+With `[repo_map] mode = "projection"`, the project's generated block also
+carries a repo map: every TypeScript, JavaScript and Python file the workspace
+holds (`git ls-files`, so `.gitignore` applies), grouped by directory, with what
+each file exports — or, for Python, its public top-level definitions. It goes
+after the facts, has no line numbers or timestamps, and is ordered by code
+unit, so it changes only when the repository's shape does. It is rebuilt when a
+run starts rather than when it is queued, re-parsing only files whose size or
+modification time changed. Over `max_bytes` (default `24000`), whole
+directories are dropped from the end and counted.
+
+The default is `off` because the map is written into context files that are
+usually tracked: each change to the repository's shape becomes a changed file
+in the next run's diff, and therefore in what a Gate's reviewer reads. Add
+`CLAUDE.md` and `AGENTS.md` to a Gate's `never_review` if that churn should not
+be reviewed. `GET /projects/:id/repo-map` returns the map, its size and an
+estimated token cost whatever the mode, so the cost can be seen before turning
+it on.
+
+Parsing uses `web-tree-sitter` (WebAssembly) and grammar `.wasm` files vendored
+in `packages/daemon/grammars`; there is no native module. A map that cannot be
+built is left out and the reason is reported by that route, without failing a
+run.
 
 Implemented today:
 

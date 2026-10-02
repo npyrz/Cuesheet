@@ -22,6 +22,10 @@ import {
   cappedHarnesses,
   checkBrief,
   checkLimits,
+  estimateTokens,
+  loadConfigFrom,
+  projectConfigSearchPaths,
+  utf8Bytes,
   chooseFallback,
   ConfigError,
   ConfigTooNewError,
@@ -56,6 +60,11 @@ import {
   type RunStoreBackend,
 } from "./store-backend.js";
 import { RunsSchemaTooNewError } from "./store-sqlite.js";
+import {
+  createRepoMapper,
+  type RepoMapper,
+  type RepoMapperOptions,
+} from "./repomap.js";
 import { type RunExecutor } from "./executor.js";
 import {
   createProjectRuntimes,
@@ -190,6 +199,12 @@ export interface StartDaemonOptions {
   commonsInbox?: CommonsInbox;
   /** Context targets declared by the registered harnesses. */
   contextFiles?: () => readonly ContextFile[];
+  /**
+   * Where the repo map's wasm lives (Step 59). The defaults resolve beside
+   * this package, which is right for `cuesheetd` and wrong inside the bundled
+   * Electron main process — so the desktop passes both paths.
+   */
+  repoMap?: RepoMapperOptions;
   /** Register daemon-owned MCP servers in the installed harness runtimes. */
   writeConnectors?: (connectors: readonly Connector[]) => Promise<void>;
   replayLimit?: number;
@@ -226,6 +241,15 @@ export interface ExecutorFactoryDeps {
    * who wired no usage sources.
    */
   capped?: () => Promise<readonly string[]>;
+  /**
+   * Bring this project's generated context up to date before a run reads it.
+   *
+   * Step 59: the repo map is regenerated when a run *starts*, not when it is
+   * queued — a run that waited behind another one should see the shape that
+   * run left behind. Supplied by `startDaemon`, which owns the projector;
+   * absent for a library caller, which then gets no regeneration at all.
+   */
+  refreshContext?: () => Promise<void>;
 }
 
 export interface DaemonHandle {
@@ -311,11 +335,40 @@ export async function startDaemon(
   // Beside the registry and derived from the same `env`, so a test with an
   // isolated home gets an isolated log without asking for one.
   const migrationLog = createMigrationLog({ build: DAEMON_VERSION, env });
+  const repoMapper = createRepoMapper(options.repoMap);
+  // Why a project's last map could not be built, for `GET .../repo-map`. A map
+  // failure never fails a projection or a run — a missing grammar costs the
+  // agent a few `ls` calls, not the operator their work — so without this the
+  // reason would exist only in a log line.
+  const repoMapErrors = new Map<string, string>();
+  const projectRepoMap = async (project: Project): Promise<string | null> => {
+    try {
+      const loaded = await loadConfigFrom(
+        projectConfigSearchPaths(project.root, project.id, env),
+      );
+      const settings = loaded.config.repo_map;
+      if (settings.mode === "off") {
+        repoMapErrors.delete(project.id);
+        return null;
+      }
+      const rendered = await repoMapper.render(
+        project.root,
+        settings.max_bytes,
+      );
+      repoMapErrors.delete(project.id);
+      return rendered.text;
+    } catch (error) {
+      repoMapErrors.set(project.id, errorText(error));
+      diagnostics.error("repo-map-failed", error);
+      return null;
+    }
+  };
   const projector = createCommonsProjector({
     store: commons,
     registry,
     env,
     contextFiles: options.contextFiles ?? (() => []),
+    repoMap: projectRepoMap,
   });
 
   const runtimes = createProjectRuntimes({
@@ -349,6 +402,14 @@ export async function startDaemon(
               (await usage.get()).harnesses,
               deps.config().config.limits,
             ),
+          // Only when this project has asked for a map. Regenerating the
+          // Commons block on every run is otherwise a no-op that still reads
+          // every context file, and runs should not pay for features they
+          // have not turned on.
+          refreshContext: async () => {
+            if (deps.config().config.repo_map.mode === "off") return;
+            await projector.regenerate(deps.projectId);
+          },
         }),
     }),
     ...(options.storeBackend !== undefined && {
@@ -460,6 +521,8 @@ export async function startDaemon(
     commons,
     commonsInbox,
     projector,
+    repoMapper,
+    repoMapErrors,
     env,
     registry,
     runtimes,
@@ -769,6 +832,9 @@ interface RouteDeps {
   commons: CommonsStore;
   commonsInbox: CommonsInbox;
   projector: CommonsProjector;
+  repoMapper: RepoMapper;
+  /** Why each project's last projected map failed, by project id. */
+  repoMapErrors: ReadonlyMap<string, string>;
   env: HostEnv;
   registry: ProjectRegistry;
   runtimes: ProjectRuntimes;
@@ -803,6 +869,8 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     commons,
     commonsInbox,
     projector,
+    repoMapper,
+    repoMapErrors,
     env,
     registry,
     runtimes,
@@ -1482,6 +1550,41 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       return reply.code(404).send({ error: "That run has no diff." });
     }
     return reply.type("text/plain; charset=utf-8").send(diff);
+  });
+
+  /**
+   * The repo map as it would be projected right now — Step 59.
+   *
+   * Built on request rather than read back out of a context file, so it
+   * answers for a project whose mode is `off` too: an operator deciding
+   * whether to turn the map on wants to see what it would cost first. The
+   * token figure is an estimate and is named as one.
+   */
+  app.get("/projects/:id/repo-map", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const settings = runtime.config().config.repo_map;
+    try {
+      const rendered = await repoMapper.render(
+        runtime.project.root,
+        settings.max_bytes,
+      );
+      return {
+        mode: settings.mode,
+        maxBytes: settings.max_bytes,
+        text: rendered.text,
+        bytes: utf8Bytes(rendered.text),
+        estimatedTokens: estimateTokens(rendered.text),
+        omitted: rendered.omitted,
+        ...(repoMapErrors.has(runtime.project.id) && {
+          lastError: repoMapErrors.get(runtime.project.id),
+        }),
+      };
+    } catch (error) {
+      return reply.code(503).send({
+        error: `The repo map could not be built: ${errorText(error)}`,
+      });
+    }
   });
 
   app.post("/projects/:id/runs", async (request, reply) => {

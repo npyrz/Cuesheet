@@ -10,6 +10,7 @@ import {
 } from "./launch.js";
 import {
   assetCandidates,
+  grammarsDir,
   trayIconName,
   uiIndexCandidates,
 } from "./resources.js";
@@ -216,5 +217,30 @@ describe("staysInApp", () => {
 
   it("refuses what is not a URL at all", () => {
     expect(staysInApp("not a url", DEFAULT_DEV_SERVER)).toBe(false);
+  });
+});
+
+describe("grammarsDir", () => {
+  it("is beside the bundle from a checkout, where build.mjs copies it", () => {
+    expect(
+      grammarsDir({
+        packaged: false,
+        dirname: "/repo/packages/desktop/dist",
+        resourcesPath:
+          "/node_modules/electron/dist/Electron.app/Contents/Resources",
+        path: path.posix,
+      }),
+    ).toBe("/repo/packages/desktop/dist/grammars");
+  });
+
+  it("is an unpacked resource once packaged, never inside the asar", () => {
+    const dir = grammarsDir({
+      packaged: true,
+      dirname: "C:\\Program Files\\Cuesheet\\resources\\app.asar\\dist",
+      resourcesPath: "C:\\Program Files\\Cuesheet\\resources",
+      path: path.win32,
+    });
+    expect(dir).toBe("C:\\Program Files\\Cuesheet\\resources\\grammars");
+    expect(dir).not.toContain("app.asar");
   });
 });

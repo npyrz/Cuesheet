@@ -4,6 +4,7 @@ export * from "./config.js";
 export * from "./glob.js";
 export * from "./leash.js";
 export * from "./brief.js";
+export * from "./repomap.js";
 export * from "./roles.js";
 export * from "./setup.js";
 export * from "./limits.js";

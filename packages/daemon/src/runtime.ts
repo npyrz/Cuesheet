@@ -58,7 +58,14 @@ export function harnessRuntime(
   const registry = options.registry ?? defaultHarnessRegistry();
   return {
     registry,
-    executorFactory: ({ config, env, capped, projectId, memoryFacts }) =>
+    executorFactory: ({
+      config,
+      env,
+      capped,
+      projectId,
+      memoryFacts,
+      refreshContext,
+    }) =>
       createHarnessExecutor({
         registry,
         config,
@@ -66,6 +73,7 @@ export function harnessRuntime(
         projectId,
         memoryFacts,
         ...(capped !== undefined && { capped }),
+        ...(refreshContext !== undefined && { refreshContext }),
       }),
     prober: (harness) => registry.probe(harness),
     // `undefined` for a harness nobody registered, which is the answer that

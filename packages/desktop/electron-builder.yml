@@ -53,6 +53,13 @@ extraResources:
       - iconTemplate.png
       - iconTemplate@2x.png
       - tray.ico
+  # The repo map's parser runtime and grammars (Step 59), copied here by
+  # `build.mjs`. Unpacked for the tray icons' reason: the daemon `readFile`s
+  # them, and an asar is where that works mostly.
+  - from: dist/grammars
+    to: grammars
+    filter:
+      - "*.wasm"
 
 asar: true
 # No native modules anywhere in the tree — `ws`'s two optional speedups are
