@@ -5,9 +5,13 @@ import { GateSchema } from "./config.js";
 import {
   describeGate,
   evaluateGate,
+  gateSkip,
+  neverReviewRule,
   parseRequire,
   type GateParticipant,
 } from "./gate.js";
+import type { ChangedFile } from "./brief.js";
+import type { HostEnv } from "./paths.js";
 
 /** Parsed through the schema, so defaults are the ones a user would get. */
 function gate(overrides: Record<string, unknown> = {}): Gate {
@@ -202,6 +206,102 @@ describe("evaluateGate", () => {
 
     expect(result.outcome).toBe("hold");
     expect(result.reasons).toHaveLength(3);
+  });
+});
+
+describe("path rules", () => {
+  const POSIX: HostEnv = { platform: "darwin", homedir: "/Users/op" };
+  const WINDOWS: HostEnv = { platform: "win32", homedir: "C:/Users/op" };
+
+  function file(path: string, lines: number): ChangedFile {
+    return { path, insertions: lines, deletions: 0 };
+  }
+
+  function changes(files: ChangedFile[], env: HostEnv = POSIX) {
+    return {
+      verdicts: [],
+      participants: [ANTHROPIC],
+      diff: {
+        filesChanged: files.length,
+        insertions: files.reduce((sum, f) => sum + f.insertions, 0),
+        deletions: 0,
+      },
+      changes: { files, env },
+    };
+  }
+
+  it("skips a lockfile-only change on a path rule, not a line count", () => {
+    // Forty thousand lines, no `skip_if_diff_under` at all. Only the path
+    // rule can skip this, and it does.
+    const rules = gate({ never_review: ["**/package-lock.json"] });
+    const result = evaluateGate(
+      rules,
+      changes([file("package-lock.json", 40_000)]),
+    );
+    expect(result.outcome).toBe("skipped");
+    expect(result.reasons[0]).toContain("never_review");
+    expect(result.reasons[0]).toContain("package-lock.json");
+  });
+
+  it("reviews a five-line auth change that the line count would wave through", () => {
+    const rules = gate({
+      skip_if_diff_under: 20,
+      always_review: ["src/auth/**"],
+    });
+    const input = changes([file("src/auth/session.ts", 5)]);
+    expect(gateSkip(rules, input)).toBeNull();
+    expect(evaluateGate(rules, input).outcome).toBe("hold");
+  });
+
+  it("does not count never_review lines toward skip_if_diff_under", () => {
+    // A three-line fix that also churned the lockfile is a three-line fix.
+    const rules = gate({
+      skip_if_diff_under: 20,
+      never_review: ["package-lock.json"],
+    });
+    const reason = gateSkip(
+      rules,
+      changes([file("package-lock.json", 5_000), file("src/a.ts", 3)]),
+    );
+    expect(reason).toBe(
+      "Diff is 3 lines outside never_review paths, under the gate's threshold of 20.",
+    );
+  });
+
+  it("does not skip a mixed change on the path rule alone", () => {
+    const rules = gate({ never_review: ["package-lock.json"] });
+    expect(
+      gateSkip(
+        rules,
+        changes([file("package-lock.json", 1), file("src/a.ts", 1)]),
+      ),
+    ).toBeNull();
+  });
+
+  it("lets always_review beat never_review on the same file", () => {
+    // Two rules disagreeing is a config mistake, and the safe reading of a
+    // mistake in a safety check is to look.
+    const rules = gate({
+      always_review: ["infra/**"],
+      never_review: ["**/*.json"],
+    });
+    expect(neverReviewRule(rules, "infra/policy.json", POSIX)).toBeUndefined();
+    expect(gateSkip(rules, changes([file("infra/policy.json", 1)]))).toBeNull();
+  });
+
+  it("folds case on Windows and only there, exactly as the leash does", () => {
+    const rules = gate({
+      always_review: ["src/auth/**"],
+      skip_if_diff_under: 20,
+    });
+    const shouted = [file("SRC/Auth/session.ts", 1)];
+    expect(gateSkip(rules, changes(shouted, WINDOWS))).toBeNull();
+    expect(gateSkip(rules, changes(shouted, POSIX))).not.toBeNull();
+  });
+
+  it("does not skip an empty diff on a path rule — there is nothing to say", () => {
+    const rules = gate({ never_review: ["**/*.lock"] });
+    expect(gateSkip(rules, changes([]))).toBeNull();
   });
 });
 

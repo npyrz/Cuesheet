@@ -25,16 +25,27 @@ import {
 } from "@cuesheet/harness";
 import {
   chooseFallback,
+  DEFAULT_MAX_BRIEF_BYTES,
+  describeElision,
   describeGate,
+  estimateTokens,
   evaluateGate,
   expandHome,
+  firstMatch,
+  fitPatch,
+  formatBytes,
+  gateSkip,
   hostEnv,
   isGateRef,
+  neverReviewRule,
   parseVerdict,
   REVIEW_INSTRUCTIONS,
+  splitPatch,
+  utf8Bytes,
   writeDeniedByRole,
   type Cost,
   type DiffStat,
+  type Gate,
   type GateParticipant,
   type GateReport,
   type Fact,
@@ -43,6 +54,7 @@ import {
   type RunEvent,
   type RunResultSummary,
   type HarnessId,
+  type PatchFile,
   type RunStatus,
   type Station,
   type StationCost,
@@ -131,6 +143,13 @@ export function createHarnessExecutor(
     // `readdir` was designed to avoid.
     const stationCosts: StationCost[] = [];
     const gates: GateReport[] = [];
+    // Files a reviewer was not shown since the last gate, so the gate's report
+    // can say its verdicts were over less than the whole change. The open
+    // question Phase 14 left — "whether elision can be honest" — answered by
+    // putting it on the record rather than only in the brief.
+    let elidedSinceGate = new Set<string>();
+    const maxBriefBytes =
+      loaded.config.limits.max_brief_bytes ?? DEFAULT_MAX_BRIEF_BYTES;
 
     // The loop is wrapped rather than left to reject, because the two shipped
     // harnesses disagree about how a stop arrives: `claude-code` returns
@@ -140,7 +159,7 @@ export function createHarnessExecutor(
     // caught here and re-thrown after, unchanged.
     let thrown: unknown = null;
     try {
-      for (const step of steps) {
+      for (const [index, step] of steps.entries()) {
         if (ctx.signal.aborted) {
           status = "stopped";
           break;
@@ -163,18 +182,21 @@ export function createHarnessExecutor(
           // mid-cuesheet has to judge what exists when it runs, and
           // `skip_if_diff_under` is meaningless against a diff computed after
           // every Station has finished.
-          const diff = await gateDiff(ctx, stations, env);
+          const diff = await workspaceDiff(ctx, stations, env);
           const result = evaluateGate(gate, {
             verdicts,
             participants,
-            ...(diff !== undefined && { diff }),
+            ...gateInput(diff, env),
           });
+          const elided = [...elidedSinceGate];
+          elidedSinceGate = new Set();
 
           if (result.outcome !== "hold") {
             gates.push({
               gate: step.name,
               outcome: result.outcome,
               reasons: result.reasons,
+              ...(elided.length > 0 && { elided }),
             });
             continue;
           }
@@ -193,6 +215,7 @@ export function createHarnessExecutor(
             outcome: result.outcome,
             reasons: result.reasons,
             ...(answer === "go" && { overridden: true }),
+            ...(elided.length > 0 && { elided }),
           });
 
           if (answer === "no") {
@@ -250,16 +273,82 @@ export function createHarnessExecutor(
         }
 
         const reviewing = station.role === "reviewer";
-        let brief = reviewing
-          ? await reviewBrief(ctx, stations, env)
-          : ctx.run.prompt;
-        brief = await withCommonsContext(
-          brief,
+        const prefix = await commonsPrefix(
           harness,
           station,
           ctx.run.id,
           options,
         );
+        let brief: string;
+        if (reviewing) {
+          // The gate this reviewer feeds: the next gate cue after it. Its path
+          // rules decide what the reviewer is shown, and its skip rules decide
+          // whether the reviewer is asked at all.
+          const feeds = nextGate(loaded, steps, index);
+          const diff = await workspaceDiff(ctx, stations, env);
+
+          // **Skipped before it spends.** The gate cue comes after its
+          // reviewer, so a skip decided only there skipped the verdict and
+          // still paid for the review. Asked here with the same inputs the cue
+          // will use, so the cue reaches the same answer and records it.
+          const skip =
+            feeds === undefined
+              ? null
+              : gateSkip(feeds.gate, {
+                  verdicts,
+                  participants,
+                  ...gateInput(diff, env),
+                });
+          if (feeds !== undefined && skip !== null) {
+            ctx.emit({
+              t: "text",
+              at: new Date().toISOString(),
+              runId: ctx.run.id,
+              stationId: station.id,
+              chunk: `Not asking ${station.id} to review: gate "${feeds.name}" will skip. ${skip}\n`,
+            });
+            continue;
+          }
+
+          const fitted = reviewBrief(ctx, diff, {
+            prefix,
+            maxBytes: maxBriefBytes,
+            gate: feeds?.gate,
+            env,
+          });
+          brief = fitted.text;
+          for (const file of fitted.elided) elidedSinceGate.add(file.path);
+          if (fitted.elided.length > 0) {
+            const named = fitted.elided
+              .slice(0, 5)
+              .map((file) => file.path)
+              .join(", ");
+            ctx.emit({
+              t: "text",
+              at: new Date().toISOString(),
+              runId: ctx.run.id,
+              stationId: station.id,
+              chunk:
+                `Brief for ${station.id} leaves out ${fitted.elided.length} changed ` +
+                `file${fitted.elided.length === 1 ? "" : "s"}: ${named}` +
+                `${fitted.elided.length > 5 ? ", …" : ""}\n`,
+            });
+          }
+        } else {
+          brief = `${prefix}${ctx.run.prompt}`;
+        }
+
+        // **Refused before it spends anything.** Elision bounds the diff, but
+        // nothing elides a prompt or the review contract — if those alone are
+        // over the ceiling the honest outcome is a refusal naming the size,
+        // not a brief cut somewhere arbitrary and sent anyway.
+        const briefBytes = utf8Bytes(brief);
+        if (briefBytes > maxBriefBytes) {
+          status = "failed";
+          error = overBudget(station.id, brief, briefBytes, maxBriefBytes);
+          emitError(ctx, error);
+          break;
+        }
 
         const stepStarted = Date.now();
         const outcome = await runStation(ctx, harness, station, env, brief);
@@ -356,14 +445,21 @@ export function createHarnessExecutor(
   };
 }
 
-async function withCommonsContext(
-  brief: string,
+/**
+ * What the daemon puts in front of every brief: Commons facts for a runtime
+ * that cannot read a context file, and MCP provenance for one that can write.
+ *
+ * Returned as a prefix rather than wrapped around the brief, so the budget
+ * applies to the whole assembled text — this prefix counts against it the
+ * same as the diff does.
+ */
+async function commonsPrefix(
   harness: Harness,
   station: Station,
   runId: string,
   options: HarnessExecutorOptions,
 ): Promise<string> {
-  let assembled = brief;
+  let assembled = "";
 
   // Ollama is the concrete case: it is a completion endpoint with no MCP
   // client and no context file of its own. The daemon assembles the same
@@ -371,7 +467,7 @@ async function withCommonsContext(
   if (harness.contextFiles.length === 0 && options.memoryFacts) {
     const facts = await options.memoryFacts();
     if (facts.length > 0) {
-      assembled = `# Cuesheet Commons\n\n${renderProjection(facts)}\n\n${assembled}`;
+      assembled = `# Cuesheet Commons\n\n${renderProjection(facts)}\n\n`;
     }
   }
 
@@ -554,20 +650,6 @@ function cannotWrite(station: Station): boolean {
 /** How much of a Station's text to keep for verdict parsing. */
 const TRANSCRIPT_LIMIT = 1_000_000;
 
-/**
- * How much diff to show a reviewer before it stops being useful context.
- *
- * This is the knob that decides what a review *costs*: every byte here is
- * input tokens on someone's bill, and a reviewer reading a repo can spend
- * more than the engineer that wrote the change did. 200 KB is roughly a large
- * feature branch — big enough that a real review is never truncated, small
- * enough that a runaway diff (a committed `node_modules`, a lockfile churn)
- * cannot quietly turn one gate into a five-figure token count. Truncation is
- * announced in the brief rather than silent, because a reviewer that saw half
- * the change should say so.
- */
-const REVIEW_DIFF_LIMIT = 200_000;
-
 type PlannedStep =
   { kind: "station"; station: Station } | { kind: "gate"; name: string };
 
@@ -623,30 +705,98 @@ function planSteps(
  * again with a different model — which looks like a review, costs like a
  * review, and checks nothing. The brief is the original ask, the diff as it
  * stands, and the format the verdict parser reads.
+ *
+ * Bounded by `max_brief_bytes`, and bounded in whole files: see `fitPatch`.
+ * The diff used to be cut at a character count, which stopped mid-hunk in
+ * whichever file sorted last and told the reviewer only that something was
+ * missing. The gate's `never_review` files are left out first, by name, so a
+ * lockfile the gate would not count is not a lockfile a second vendor reads at
+ * full price.
  */
-async function reviewBrief(
+function reviewBrief(
   ctx: ExecutionContext,
-  stations: readonly Station[],
-  env: HostEnv,
-): Promise<string> {
-  const diff = await workspaceDiff(ctx, stations, env);
-  const patch = diff?.patch ?? "";
-  const shown =
-    patch.length > REVIEW_DIFF_LIMIT
-      ? `${patch.slice(0, REVIEW_DIFF_LIMIT)}\n… diff truncated at ${REVIEW_DIFF_LIMIT} characters …`
-      : patch;
+  diff: { patch: string } | undefined,
+  options: {
+    prefix: string;
+    maxBytes: number;
+    gate: Gate | undefined;
+    env: HostEnv;
+  },
+): ReturnType<typeof fitPatch> {
+  const { gate, env } = options;
+  return fitPatch({
+    files: splitPatch(diff?.patch ?? ""),
+    maxBytes: options.maxBytes,
+    ...(gate !== undefined && {
+      exclude: (path: string) => neverReviewRule(gate, path, env),
+      priority: (path: string) =>
+        firstMatch(gate.always_review ?? [], path, env) !== undefined,
+    }),
+    frame: (patch, elided) => {
+      const note = describeElision(elided);
+      const changed =
+        patch.trim() === ""
+          ? elided.length === 0
+            ? "They changed nothing. That is itself worth a verdict."
+            : "None of what they changed fits in this brief."
+          : `What they changed:\n\n\`\`\`diff\n${patch}\n\`\`\``;
+      return [
+        `${options.prefix}You are reviewing another agent's work. Do not change any files.`,
+        "",
+        `The brief they were given:\n${ctx.run.prompt}`,
+        "",
+        changed,
+        ...(note === "" ? [] : ["", note]),
+        "",
+        REVIEW_INSTRUCTIONS,
+      ].join("\n");
+    },
+  });
+}
 
-  return [
-    "You are reviewing another agent's work. Do not change any files.",
-    "",
-    `The brief they were given:\n${ctx.run.prompt}`,
-    "",
-    shown.trim() === ""
-      ? "They changed nothing. That is itself worth a verdict."
-      : `What they changed:\n\n\`\`\`diff\n${shown}\n\`\`\``,
-    "",
-    REVIEW_INSTRUCTIONS,
-  ].join("\n");
+/** The next gate cue after `index`, which is the gate a reviewer there feeds. */
+function nextGate(
+  loaded: LoadedConfig,
+  steps: readonly PlannedStep[],
+  index: number,
+): { name: string; gate: Gate } | undefined {
+  for (const step of steps.slice(index + 1)) {
+    if (step.kind !== "gate") continue;
+    const gate = loaded.config.gate[step.name];
+    // An unconfigured gate fails the run when its cue is reached. There are
+    // no rules to apply, so the reviewer runs as it always did.
+    return gate === undefined ? undefined : { name: step.name, gate };
+  }
+  return undefined;
+}
+
+/**
+ * A diff as `evaluateGate` and `gateSkip` read it: totals and per file.
+ *
+ * Empty when the diff could not be read, which both treat as "not known"
+ * rather than "small" — a failed `git diff` must not turn a skip rule into a
+ * gate that silently never runs.
+ */
+function gateInput(
+  diff: { patch: string; stat: DiffStat } | undefined,
+  env: HostEnv,
+): { diff?: DiffStat; changes?: { files: PatchFile[]; env: HostEnv } } {
+  if (diff === undefined) return {};
+  return { diff: diff.stat, changes: { files: splitPatch(diff.patch), env } };
+}
+
+function overBudget(
+  stationId: string,
+  brief: string,
+  bytes: number,
+  maxBytes: number,
+): string {
+  return (
+    `The brief for ${stationId} is ${formatBytes(bytes)} ` +
+    `(about ${estimateTokens(brief).toLocaleString("en-US")} tokens, estimated), ` +
+    `over max_brief_bytes of ${formatBytes(maxBytes)}. Nothing was sent. ` +
+    `Shorten the prompt or raise [limits] max_brief_bytes.`
+  );
 }
 
 /**
@@ -709,21 +859,6 @@ async function workspaceDiff(
     timeoutMs: ctx.signal.aborted ? 10_000 : 60_000,
   }).catch(() => null);
   return diff ?? undefined;
-}
-
-/**
- * The diff a Gate judges.
- *
- * `undefined` when it cannot be read, and `evaluateGate` treats that as "not
- * known" rather than "small" — a failed `git diff` must not turn
- * `skip_if_diff_under` into a gate that silently never runs.
- */
-async function gateDiff(
-  ctx: ExecutionContext,
-  stations: readonly Station[],
-  env: HostEnv,
-): Promise<DiffStat | undefined> {
-  return (await workspaceDiff(ctx, stations, env))?.stat;
 }
 
 /**

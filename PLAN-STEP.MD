@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Step 57 done**, pulled forward into Step 39 where the ledger needed it |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 done.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2078,7 +2078,7 @@ The finding is in Phase 10 and the detail is worth repeating at the point of wor
 
 **Done when:** a run that hits a warm cache shows a hit rate, two runs with the same `tokensIn` and different cache mixes show different prices, and a harness that reports nothing about caching still produces a valid `Cost`.
 
-### Step 58 — The brief has a budget
+### Step 58 — The brief has a budget ✅
 
 `ctx.brief` is assembled by the daemon and handed to a harness. Nothing caps it.
 
@@ -2089,6 +2089,42 @@ Two places this bites, both real today. A reviewer in a Gate is handed the *whol
 - Local, approximate token counting for the pre-run check of Step 38. Approximate because the only exact answer is a vendor endpoint, and the README's no-credential promise means Cuesheet will never hold the key to call one. The number is labelled an estimate wherever it is shown.
 
 **Done when:** a Gate over a 40k-line diff sends a bounded brief and says what it left out, a lockfile-only change skips review on a path rule rather than a line count, and a run refused for budget is refused before it spends anything.
+
+- [x] **A Gate over a 40k-line diff sends a bounded brief and says what it left out.** `gate-run.test.ts` puts a 40,000-line `package-lock.json` in a real git workspace beside the engineer's change, with `max_brief_bytes = 60000`. The reviewer is handed a brief under 60,000 bytes containing the engineer's file whole, the lockfile named and not shown, and the gate's record carries `elided: ["package-lock.json"]`.
+- [x] **A lockfile-only change skips review on a path rule rather than a line count.** Same harness, a gate with no `skip_if_diff_under` at all and an unsatisfiable `require`/`distinct_vendors`, and `never_review = ["**/package-lock.json"]`. The gate lands `skipped` with a `never_review` reason, and the reviewer was **never called** — no brief, no `StationCost` row.
+- [x] **A run refused for budget is refused before it spends anything.** Twice, because there are two places it can be: a prompt over `max_brief_bytes` gets `413` from `POST /runs` and the run list stays empty; a prompt that fits an engineer but not the review contract fails the run at the reviewer step with "Nothing was sent", and that reviewer's `run()` is never entered.
+
+All three are proven against `mock` harnesses over real `git`, on this Windows machine. No real vendor has been handed an elided brief yet, and the change has not been through the macOS runner.
+
+#### The skip was happening after the money was spent
+
+The finding that reshaped the step, and it was in the cuesheet the README prints: `{ station = "reviewer" }` comes **before** `{ gate = "default" }`. The gate cue was the only place `skip_if_diff_under` was evaluated, so a "skipped" gate had already run its reviewer — the existing test for it used a reviewer that said nothing parseable and still passed, because the skip discarded a review it had paid for. The lever existed to save tokens and saved a standby.
+
+`gateSkip` is now exported from `core/gate.ts` and asked twice with the same inputs: once by the executor before each reviewer, against the next gate cue after it, and once by the cue itself, which reaches the same answer and records it. A reviewer whose gate will skip is announced on the stream and not run. Moving the decision rather than duplicating it was the point; `evaluateGate` calls `gateSkip` first, exactly where the inline check used to be.
+
+#### What the work settled
+
+- **One matcher, moved, not copied.** The leash's `compile` and its two option comments now live in `core/glob.ts`, and both `leash.ts` and the gate's path rules import it. It moved out of `leash.ts` because that module imports `node:fs/promises` and `gate.ts` imports nothing from disk — the same reason `roles.ts` exists. The platform test is written inline there rather than imported from `paths.ts`, which reaches `node:path` at load.
+- **`always_review` beats both other rules**, including `never_review` on the same file. Two rules disagreeing about a path is a config mistake, and the safe reading of a mistake in a safety check is "look at it".
+- **`skip_if_diff_under` now counts lines outside `never_review`.** A three-line fix that also churned the lockfile is a three-line fix. Without per-file data — an unreadable diff — the old whole-diff count still applies.
+- **Elision drops the largest files first, not the last ones.** Keeping files in patch order until the budget runs out makes what a reviewer sees depend on how paths sort, and `package-lock.json` sorts before `src/`. Smallest-first keeps the most files and drops the lockfile, the bundle and the snapshot; `always_review` paths are placed ahead of that ordering; survivors are emitted in the patch's own order.
+- **The budget is on the whole assembled brief**, Commons prefix included. `withCommonsContext` became `commonsPrefix` so the prefix could be measured rather than wrapped around a brief that had already been sized. The elision note is inside the budget too — `fitPatch` shrinks the space for the patch by the overrun and retries, which terminates because the space strictly decreases.
+- **Bytes for the ceiling, tokens only for display.** `max_brief_bytes` is exact; a token count is an estimate at four bytes a token and every place it is printed says "estimated". A ceiling should not move when an estimate does. It is optional in the schema with `DEFAULT_MAX_BRIEF_BYTES = 200_000` applied by the daemon — the reviewer's old character cap — so `Limits` literals written before it still typecheck, and an upgrade changes *how* a large diff is cut, not how much a review may cost.
+- **`413`, not `409`.** Step 38's refusal is a conflict with the state of a usage window; this one is the request being too large, which is what `413` says. Both clients already show the daemon's `error` verbatim.
+- **Paths come from the `+++` line, not the header.** `diff --git a/my b/file b/my b/file` is ambiguous because git does not quote spaces; `+++ b/<path>` is not. Octal-quoted names (`core.quotepath`) are decoded so a glob sees `café.ts` rather than `caf\303\251.ts`.
+
+#### Phase 14's third open question, answered for now
+
+*"Whether elision can be honest"* — yes, by saying so in two places. The reviewer is told in its brief which files it did not see and asked not to approve them by implication, and the gate's `GateReport` carries `elided` with their paths. That is additive to the run record, absent on every run that elided nothing and on every run recorded before this step.
+
+#### What this step deliberately did not build
+
+- **The Desk does not show `elided` or the estimate yet.** They are on the wire (`GateReport.elided`, `brief.estimatedTokens` on the `202`), and the CLI prints the estimate labelled as one. Drawing them belongs with Step 62's audit, which is the Desk surface about context cost.
+- **No vendor endpoint for exact counts**, by the README's no-credential promise, as the step said.
+
+#### Two existing tests time out under the full suite on this machine
+
+`gate-run.test.ts`'s "passes when a second vendor approves" and "continues when a human overrides the hold" each take about 1.5–2s alone and exceed vitest's 5s default when all 74 files run in parallel here. **Clean `HEAD` fails the same two the same way**, timed before this step's change was applied, so it is load on this Windows box rather than this step. Recorded here so the next person running the suite locally does not chase it.
 
 ### Step 59 — The repo map
 
@@ -2138,7 +2174,7 @@ This is the smallest step in the phase and probably the most useful one. A 40k-t
 
 - **Whether the repo map belongs in the context file at all**, or behind the MCP recall server of Step 49. Files are free and always loaded; a map is the single largest thing anyone would put in one. The answer probably differs by repo size, which means it is a setting, which means picking a default.
 - **What "maximize tokens" means when the user has a plan, not a bill.** Under a subscription the scarce thing is the 5-hour window, not dollars, and the cheapest run is not the one that finishes soonest. Phase 10's strip and this phase's ledger may want to optimize different quantities.
-- **Whether elision can be honest.** A brief that drops files to fit is a brief that reviewed less than it appears to have reviewed, and a Gate verdict over an elided diff should probably say so on the record.
+- ~~**Whether elision can be honest.**~~ Answered in Step 58: the reviewer is told by name what it did not see, and `GateReport.elided` puts it on the record.
 
 ---
 

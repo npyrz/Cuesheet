@@ -420,3 +420,208 @@ describe("a gated cuesheet", () => {
     });
   });
 });
+
+/**
+ * Step 58 — the brief has a budget.
+ *
+ * Each test reads the brief a reviewer was actually handed, which is the only
+ * way to prove what a second vendor would have been billed for.
+ */
+describe("the brief budget", () => {
+  /** A reviewer that records every brief it is given, and passes. */
+  function recordingReviewer(briefs: string[]): Harness {
+    return {
+      ...createMockHarness({ standby: false }),
+      id: "mock-two",
+      vendor: "other-vendor",
+      async run(ctx) {
+        briefs.push(ctx.brief);
+        return {
+          status: "done",
+          verdicts: [
+            {
+              id: "",
+              runId: "",
+              stationId: "",
+              harness: "",
+              vendor: "",
+              decision: "pass",
+              findings: [],
+              at: "",
+            },
+          ],
+        };
+      },
+    };
+  }
+
+  /** An engineer that changes nothing, so the workspace's diff is the test's. */
+  const idleEngineer: Harness = {
+    ...createMockHarness({ standby: false }),
+    id: "mock",
+    vendor: "cuesheet",
+    async run() {
+      return { status: "done" };
+    },
+  };
+
+  function lockfile(lines: number): string {
+    return Array.from(
+      { length: lines },
+      (_, i) => `    "node_modules/pkg-${i}": { "version": "1.0.${i}" },`,
+    ).join("\n");
+  }
+
+  it("sends a bounded brief over a 40k-line diff, and says what it left out", async () => {
+    await writeFile(
+      path.join(workspace, "package-lock.json"),
+      lockfile(40_000),
+      "utf8",
+    );
+    await writeConfig(
+      '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2\n\n[limits]\nmax_brief_bytes = 60000',
+    );
+    const briefs: string[] = [];
+    const url = await bootProject(
+      harnessRuntime({
+        registry: createHarnessRegistry([
+          { ...createMockHarness({ standby: false }), id: "mock" },
+          recordingReviewer(briefs),
+        ]),
+      }),
+    );
+
+    const stored = await waitForRun(url, await runShip(url));
+    expect(stored.run.status).toBe("done");
+
+    const [brief] = briefs;
+    expect(brief).toBeDefined();
+    expect(Buffer.byteLength(brief ?? "", "utf8")).toBeLessThanOrEqual(60_000);
+    // The engineer's own change made it in whole; the lockfile is named, not
+    // shown.
+    expect(brief).toContain("cuesheet-mock.md");
+    expect(brief).toContain("- package-lock.json (");
+    expect(brief).not.toContain("pkg-39999");
+    // And the record says the verdict was over less than the whole change.
+    expect(stored.run.result?.gates?.[0]).toMatchObject({
+      outcome: "pass",
+      elided: ["package-lock.json"],
+    });
+  });
+
+  it("skips a lockfile-only change on a path rule, before the reviewer is paid", async () => {
+    await writeFile(
+      path.join(workspace, "package-lock.json"),
+      lockfile(500),
+      "utf8",
+    );
+    // Unsatisfiable on purpose: if this gate evaluated rather than skipped,
+    // the run would hold. And no `skip_if_diff_under` — only the path rule
+    // can let it through.
+    await writeConfig(
+      '[gate.default]\nrequire = "2-of-2"\ndistinct_vendors = 9\nnever_review = ["**/package-lock.json"]',
+    );
+    const briefs: string[] = [];
+    const url = await bootProject(
+      harnessRuntime({
+        registry: createHarnessRegistry([
+          idleEngineer,
+          recordingReviewer(briefs),
+        ]),
+      }),
+    );
+
+    const stored = await waitForRun(url, await runShip(url));
+    expect(stored.run.status).toBe("done");
+    expect(stored.run.result?.gates?.[0]?.outcome).toBe("skipped");
+    expect(stored.run.result?.gates?.[0]?.reasons[0]).toContain("never_review");
+    // The point of moving the decision: the reviewer never ran, so it never
+    // cost anything.
+    expect(briefs).toEqual([]);
+    expect(
+      stored.run.result?.stations?.some((s) => s.stationId === "checker"),
+    ).toBe(false);
+  });
+
+  it("reviews a tiny change to an always_review path that the line count would skip", async () => {
+    await mkdir(path.join(workspace, "src", "auth"), { recursive: true });
+    await writeFile(
+      path.join(workspace, "src", "auth", "session.ts"),
+      "export const ttl = 0;\n",
+      "utf8",
+    );
+    await writeConfig(
+      '[gate.default]\nrequire = "1-of-1"\ndistinct_vendors = 2\nskip_if_diff_under = 10000\nalways_review = ["src/auth/**"]',
+    );
+    const briefs: string[] = [];
+    const url = await bootProject(
+      harnessRuntime({
+        registry: createHarnessRegistry([
+          idleEngineer,
+          recordingReviewer(briefs),
+        ]),
+      }),
+    );
+
+    const stored = await waitForRun(url, await runShip(url));
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).toContain("src/auth/session.ts");
+    expect(stored.run.result?.gates?.[0]?.outcome).toBe("pass");
+  });
+
+  it("refuses an over-budget prompt at POST, before anything is queued", async () => {
+    await writeConfig(
+      '[gate.default]\nrequire = "1-of-1"\n\n[limits]\nmax_brief_bytes = 1024',
+    );
+    const url = await bootProject();
+
+    const response = await fetch(`${url}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "x".repeat(2_000), cuesheet: "ship" }),
+    });
+    expect(response.status).toBe(413);
+    const body = (await response.json()) as {
+      error: string;
+      brief: { estimatedTokens: number };
+    };
+    expect(body.error).toContain("estimated");
+    expect(body.brief.estimatedTokens).toBe(500);
+
+    const listed = (await (await fetch(`${url}/runs`)).json()) as {
+      runs: unknown[];
+    };
+    expect(listed.runs).toEqual([]);
+  });
+
+  it("refuses a reviewer whose brief cannot fit, without calling it", async () => {
+    // The prompt fits an engineer's brief; wrapped in the review contract it
+    // does not, and no amount of eliding the diff makes room.
+    await writeConfig(
+      '[gate.default]\nrequire = "1-of-1"\n\n[limits]\nmax_brief_bytes = 1024',
+    );
+    const briefs: string[] = [];
+    const url = await bootProject(
+      harnessRuntime({
+        registry: createHarnessRegistry([
+          idleEngineer,
+          recordingReviewer(briefs),
+        ]),
+      }),
+    );
+
+    const response = await fetch(`${url}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "y".repeat(800), cuesheet: "ship" }),
+    });
+    expect(response.status).toBe(202);
+    const { runId } = (await response.json()) as { runId: string };
+    const stored = await waitForRun(url, runId);
+
+    expect(stored.run.status).toBe("failed");
+    expect(stored.run.error).toContain("Nothing was sent");
+    expect(stored.run.error).toContain("checker");
+    expect(briefs).toEqual([]);
+  });
+});

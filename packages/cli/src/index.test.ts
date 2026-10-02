@@ -130,6 +130,8 @@ describe("the cuesheet CLI", () => {
     ).toBe(0);
     const runId = output[0]?.match(/^Queued (\S+)/)?.[1];
     expect(runId).toBeTruthy();
+    // Shown, and never without the word that says what kind of number it is.
+    expect(output[0]).toMatch(/about \d+ tokens \(estimated\)/);
     const detail = await fetch(`${active.url}/projects/${id}/runs/${runId}`);
     expect(detail.status).toBe(200);
     expect(

@@ -191,6 +191,8 @@ require            = "1-of-1"
 distinct_vendors   = 2
 blocking           = ["security", "correctness"]
 skip_if_diff_under = 20
+always_review      = ["src/auth/**", "infra/**"]
+never_review       = ["**/package-lock.json", "vendor/**"]
 
 [cuesheet.ship]
 cues = [
@@ -204,6 +206,7 @@ cues = [
 warn_at     = 0.85
 block_at    = 0.97
 when_capped = { opus = "backup-engineer" }
+max_brief_bytes = 200000
 
 # Deferred workflow tables below: parsed and preserved, not executed today.
 [caller]
@@ -256,8 +259,8 @@ Station IDs must start with an alphanumeric character and may contain letters,
 digits, dots, dashes, and underscores. `paths` and `deny` are optional, but an
 absent or empty allow list denies every path. Deny rules always win.
 
-`warn_at` defaults to `0.85`, `block_at` to `0.97`, and `when_capped` to an
-empty mapping. A fallback must keep the same role, and its harness must support
+`warn_at` defaults to `0.85`, `block_at` to `0.97`, `when_capped` to an
+empty mapping, and `max_brief_bytes` to `200000`. A fallback must keep the same role, and its harness must support
 that role. Cuesheet refuses unsafe reseating instead of silently changing what
 the step is allowed to do.
 
@@ -353,8 +356,29 @@ current workspace diff.
 - `distinct_vendors` counts the author and reviewers that actually acted, not
   only verdict authors. This makes `1-of-1` with two distinct vendors useful:
   one vendor authored the change and another reviewed it.
-- `skip_if_diff_under` counts inserted plus deleted lines and skips the Gate
-  when the diff is smaller than the configured threshold.
+- `skip_if_diff_under` counts inserted plus deleted lines outside
+  `never_review` paths and skips the Gate when that is under the threshold.
+- `always_review` and `never_review` are globs over workspace-relative paths,
+  matched by the same matcher as Station leashes (case-insensitive on Windows
+  only). A diff made only of `never_review` files skips the Gate; any changed
+  file matching `always_review` means the Gate is never skipped, whatever its
+  size. `always_review` wins when both match.
+- A skip is decided before the reviewer feeding the Gate runs, so a skipped
+  Gate costs nothing.
+
+### The brief budget
+
+`[limits] max_brief_bytes` caps every assembled brief in UTF-8 bytes. A
+reviewer's diff is fitted to it in whole files: `never_review` files are left
+out first, then the largest files until the rest fits, and the reviewer is told
+by name what it did not see. The Gate's record lists those files under
+`elided`. A brief that still cannot fit — a prompt or Commons context over the
+ceiling on its own — is refused before the harness is called, and a prompt over
+it is refused at `POST /runs` with `413` before anything is queued.
+
+Token figures shown alongside (`estimatedTokens`, "about N tokens") are local
+estimates at roughly four bytes per token. Exact counts need a vendor endpoint
+and its key, which Cuesheet does not hold.
 
 A failed Gate ends the current run as `held`; a hold is terminal. Continuing
 after a hold means starting a new run, preserving the original decision in

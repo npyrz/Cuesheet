@@ -20,6 +20,7 @@ import {
   isFactId,
   slugify,
   cappedHarnesses,
+  checkBrief,
   checkLimits,
   chooseFallback,
   ConfigError,
@@ -27,6 +28,7 @@ import {
   configFile,
   createMigrationLog,
   createProjectRegistry,
+  DEFAULT_MAX_BRIEF_BYTES,
   DEFAULT_PORT,
   expandHome,
   hostEnv,
@@ -1507,6 +1509,17 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         .send({ error: `No cuesheet named "${cuesheet}".` });
     }
 
+    // **The budget, first.** Cheaper than the usage check below — which may
+    // spawn a CLI per harness — and decided by nothing but the prompt, so a
+    // prompt that could never fit is refused before anything else is asked.
+    const brief = checkBrief(
+      prompt,
+      loaded.config.limits.max_brief_bytes ?? DEFAULT_MAX_BRIEF_BYTES,
+    );
+    if (brief.refused !== undefined) {
+      return reply.code(413).send({ error: brief.refused, brief });
+    }
+
     const stationIds = resolveStationIds(loaded, cuesheet);
     const workspace = resolveWorkspace(loaded, stationIds);
 
@@ -1564,8 +1577,11 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     // A warned run still starts. The threshold is a heads-up, not a gate —
     // `block_at` is the gate — so the findings ride along on the acceptance
     // rather than turning into a second request the client has to make.
+    // The estimate rides along so a client can show what was sent, labelled
+    // as an estimate — `brief.estimatedTokens` is never a vendor's count.
     return reply.code(202).send({
       runId: run.id,
+      brief: { bytes: brief.bytes, estimatedTokens: brief.estimatedTokens },
       ...(check.findings.length > 0 && { limits: check.findings }),
     });
   });

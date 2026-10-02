@@ -178,19 +178,23 @@ export async function runCli(
       if (prompt === "") {
         throw new CliError("Usage: cuesheet run [--cuesheet NAME] <prompt...>");
       }
-      const { runId } = await request<{ runId: string }>(
-        api,
-        `${scope}/runs`,
-        fetcher,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            prompt,
-            ...(parsed.cuesheet !== undefined && { cuesheet: parsed.cuesheet }),
-          }),
-        },
-      );
-      write(`Queued ${runId} in ${project.name}.`);
+      const { runId, brief } = await request<{
+        runId: string;
+        brief?: { estimatedTokens: number };
+      }>(api, `${scope}/runs`, fetcher, {
+        method: "POST",
+        body: JSON.stringify({
+          prompt,
+          ...(parsed.cuesheet !== undefined && { cuesheet: parsed.cuesheet }),
+        }),
+      });
+      // "Estimated" in the words, every time: the daemon counts bytes and
+      // divides, and a number printed bare would read as a vendor's count.
+      const size =
+        brief === undefined
+          ? ""
+          : ` Prompt is about ${brief.estimatedTokens.toLocaleString("en-US")} tokens (estimated).`;
+      write(`Queued ${runId} in ${project.name}.${size}`);
       write(`Inspect it with: cuesheet show ${runId} --project ${project.id}`);
       return 0;
     }

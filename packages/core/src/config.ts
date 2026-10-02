@@ -103,8 +103,23 @@ export const GateSchema = z
     distinct_vendors: z.number().int().min(1).default(1),
     /** Finding categories that block. Anything else is advisory. */
     blocking: z.array(z.string().min(1)).default([]),
-    /** Don't burn tokens reviewing a typo. Counted in changed lines. */
+    /**
+     * Don't burn tokens reviewing a typo. Counted in changed lines — outside
+     * `never_review` paths, since Step 58.
+     */
     skip_if_diff_under: z.number().int().min(0).optional(),
+    /**
+     * Paths always worth a second opinion, however small the change. Beats
+     * `skip_if_diff_under` and `never_review`. Matched with the leash's own
+     * matcher — workspace-relative, posix, case-folded on Windows only.
+     */
+    always_review: z.array(z.string().min(1)).optional(),
+    /**
+     * Paths never sent to a reviewer: lockfiles, vendored code, snapshots. A
+     * diff made only of these skips the gate — and its reviewer — on a path
+     * rule rather than a line count.
+     */
+    never_review: z.array(z.string().min(1)).optional(),
     /** Parsed and kept for M7's hotfix gate; nothing reads it yet. */
     merges: z.boolean().optional(),
   })
@@ -136,8 +151,26 @@ export const LimitsSchema = z
      * Desk's own writer rather than being dropped as an unknown key.
      */
     when_capped: z.record(Identifier, Identifier).default({}),
+    /**
+     * The ceiling on one assembled brief, in UTF-8 bytes — Step 58.
+     *
+     * Optional rather than defaulted, so `Limits` literals written before it
+     * existed still typecheck; the daemon applies `DEFAULT_MAX_BRIEF_BYTES`.
+     * Bytes rather than tokens because bytes are exact and tokens are only
+     * ever estimated here — a ceiling should not move when the estimate does.
+     */
+    max_brief_bytes: z.number().int().min(1024).optional(),
   })
   .loose();
+
+/**
+ * 200 KB: roughly a large feature branch plus its brief.
+ *
+ * The figure the reviewer's character cap used before Step 58, kept so that an
+ * upgrade changes *how* a large diff is cut — whole files, named — and not how
+ * much a review is allowed to cost.
+ */
+export const DEFAULT_MAX_BRIEF_BYTES = 200_000;
 
 /**
  * `[commons]` — only the approval policy is live in Step 48.

@@ -16,6 +16,9 @@ import type { DiffStat, Finding, HarnessId, Vendor, Verdict } from "./types.js";
 // at runtime: `config.ts` reaches zod and smol-toml, and `verbatimModuleSyntax`
 // erases an `import type` entirely.
 import type { Gate } from "./config.js";
+import type { ChangedFile } from "./brief.js";
+import type { HostEnv } from "./paths.js";
+import { firstMatch } from "./glob.js";
 
 /** A Station that actually acted in the run — author or reviewer. */
 export interface GateParticipant {
@@ -34,6 +37,15 @@ export interface GateInput {
   participants: readonly GateParticipant[];
   /** The run's diff at this cue, for `skip_if_diff_under`. */
   diff?: DiffStat | undefined;
+  /**
+   * The same diff, file by file, for `always_review` and `never_review`.
+   *
+   * Carries its own `env` because the path rules compile through the leash's
+   * matcher, which folds case on Windows and only there. Bundled rather than a
+   * sibling field so that "here are the paths" cannot arrive without "and here
+   * is the platform they were written on".
+   */
+  changes?: { files: readonly ChangedFile[]; env: HostEnv } | undefined;
 }
 
 export type GateOutcome = "pass" | "hold" | "skipped";
@@ -62,9 +74,9 @@ export function parseRequire(require: string): {
 /**
  * Does this run get through the gate?
  *
- * The order of the checks is deliberate. `skip_if_diff_under` comes first
- * because a gate that was never going to run should not report a vendor
- * failure for a two-line change. Everything after it is a reason to hold.
+ * The order of the checks is deliberate. The skip rules come first because a
+ * gate that was never going to run should not report a vendor failure for a
+ * two-line change. Everything after them is a reason to hold.
  */
 export function evaluateGate(gate: Gate, input: GateInput): GateResult {
   const { required, of } = parseRequire(gate.require);
@@ -72,21 +84,15 @@ export function evaluateGate(gate: Gate, input: GateInput): GateResult {
   const passed = input.verdicts.filter((v) => v.decision === "pass").length;
   const tally = { required, of, passed };
 
-  // A typo is not worth a review. Counted in changed lines rather than files,
-  // which is what the README's `skip_if_diff_under = 20` reads as.
-  if (gate.skip_if_diff_under !== undefined && input.diff !== undefined) {
-    const lines = input.diff.insertions + input.diff.deletions;
-    if (lines < gate.skip_if_diff_under) {
-      return {
-        outcome: "skipped",
-        reasons: [
-          `Diff is ${lines} line${lines === 1 ? "" : "s"}, under the gate's threshold of ${gate.skip_if_diff_under}.`,
-        ],
-        blocking: [],
-        tally,
-        vendors,
-      };
-    }
+  const skip = gateSkip(gate, input);
+  if (skip !== null) {
+    return {
+      outcome: "skipped",
+      reasons: [skip],
+      blocking: [],
+      tally,
+      vendors,
+    };
   }
 
   const reasons: string[] = [];
@@ -131,6 +137,99 @@ export function evaluateGate(gate: Gate, input: GateInput): GateResult {
     tally,
     vendors,
   };
+}
+
+/**
+ * Why this gate would not review the diff, or `null` when it would.
+ *
+ * Exported separately from {@link evaluateGate} because the daemon has to ask
+ * it *before the reviewer runs*. A gate cue sits after its reviewer in a
+ * cuesheet, so a skip decided only at the cue skipped the verdict and still
+ * paid for the review — `skip_if_diff_under` saved nothing but a standby
+ * until Step 58 moved the question ahead of the spend.
+ *
+ * The rules, in the order that makes them mean something:
+ *
+ *   1. **Any changed file matching `always_review` means review.** It beats
+ *      the line count, which is the point: a five-line change to an auth path
+ *      is worth a second vendor's time, and `skip_if_diff_under = 20` alone
+ *      would wave it through. It also beats `never_review` on the same file,
+ *      because the two disagreeing about a path is a config mistake and the
+ *      safe reading of a mistake in a safety check is "look at it".
+ *   2. **A diff made only of `never_review` files is skipped**, on a path
+ *      rule rather than a size — a regenerated lockfile is the same
+ *      non-event at four lines as at forty thousand.
+ *   3. **`skip_if_diff_under` counts lines outside `never_review`.** A
+ *      three-line fix that also churned the lockfile is a three-line fix.
+ *
+ * When the per-file list is absent the line count falls back to `diff`, which
+ * is what every gate did before path rules existed.
+ */
+export function gateSkip(gate: Gate, input: GateInput): string | null {
+  const always = gate.always_review ?? [];
+  const changes = input.changes;
+
+  if (changes !== undefined) {
+    const { files, env } = changes;
+    const forced = files.find(
+      (file) => firstMatch(always, file.path, env) !== undefined,
+    );
+    if (forced !== undefined) return null;
+
+    const reviewed = files.filter(
+      (file) => neverReviewRule(gate, file.path, env) === undefined,
+    );
+    if (files.length > 0 && reviewed.length === 0) {
+      const named = files
+        .slice(0, 3)
+        .map((file) => file.path)
+        .join(", ");
+      const more =
+        files.length > 3 ? ` and ${String(files.length - 3)} more` : "";
+      return `Every changed file matches never_review (${named}${more}).`;
+    }
+
+    if (gate.skip_if_diff_under !== undefined) {
+      const lines = reviewed.reduce(
+        (sum, file) => sum + file.insertions + file.deletions,
+        0,
+      );
+      if (lines < gate.skip_if_diff_under) {
+        const outside =
+          reviewed.length < files.length ? " outside never_review paths" : "";
+        return `Diff is ${lines} line${lines === 1 ? "" : "s"}${outside}, under the gate's threshold of ${gate.skip_if_diff_under}.`;
+      }
+    }
+    return null;
+  }
+
+  // A typo is not worth a review. Counted in changed lines rather than files,
+  // which is what the README's `skip_if_diff_under = 20` reads as.
+  if (gate.skip_if_diff_under !== undefined && input.diff !== undefined) {
+    const lines = input.diff.insertions + input.diff.deletions;
+    if (lines < gate.skip_if_diff_under) {
+      return `Diff is ${lines} line${lines === 1 ? "" : "s"}, under the gate's threshold of ${gate.skip_if_diff_under}.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * The `never_review` rule that keeps `path` from a reviewer, if one does.
+ *
+ * `undefined` when an `always_review` rule also matches — see rule 1 of
+ * {@link gateSkip}. The reviewer's brief and the skip decision both ask this,
+ * so a file the gate would not count is a file the reviewer is not sent.
+ */
+export function neverReviewRule(
+  gate: Gate,
+  path: string,
+  env: HostEnv,
+): string | undefined {
+  if (firstMatch(gate.always_review ?? [], path, env) !== undefined) {
+    return undefined;
+  }
+  return firstMatch(gate.never_review ?? [], path, env);
 }
 
 /** One line for a standby prompt or a run record. */

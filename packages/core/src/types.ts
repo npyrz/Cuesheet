@@ -163,6 +163,13 @@ export interface GateReport {
   reasons: string[];
   /** A human was asked, and said carry on anyway. */
   overridden?: boolean;
+  /**
+   * Changed files a reviewer feeding this gate was not shown — over the brief
+   * budget, or matched by `never_review`. Absent when every reviewer saw the
+   * whole diff, and on every run recorded before Step 58. A verdict over an
+   * elided diff checked less than it appears to, and this is where it says so.
+   */
+  elided?: string[];
 }
 
 /** What a `done` event carries: enough to render a run row without a re-read. */

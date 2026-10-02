@@ -10,13 +10,15 @@
  * obvious way out of a workspace — is deliberately not in here. It lives in
  * `resolveAndCheck` below, a thin async wrapper, so the decision logic stays a
  * pure function that a test can hammer with hostile inputs.
+ *
+ * The glob matcher itself — `dot`, Windows-only `nocase`, and what a bare
+ * directory rule means — is in `glob.ts`, shared with Gates since Step 58.
  */
 import { realpath } from "node:fs/promises";
-import picomatch from "picomatch";
+import { compileGlob as compile } from "./glob.js";
 import {
   expandHome,
   hostEnv,
-  isWindows,
   pathFor,
   toPosix,
   type HostEnv,
@@ -36,25 +38,6 @@ export interface Leash {
   workspace: string;
   paths?: readonly string[] | undefined;
   deny?: readonly string[] | undefined;
-}
-
-/**
- * Match options, and why each one is not a default.
- *
- * `dot: true` — without it picomatch will not let `*` cross a leading dot, so
- * the README's own deny rule `**\/*.env` fails to match a bare `.env`, the
- * exact file the rule exists to protect. A test using `config.env` passes
- * either way, which is how this ships broken.
- *
- * `nocase` is gated on the platform rather than always on. On Windows
- * `SECRET.ENV` and `secret.env` are the same file, and `path.relative` folds
- * case for its own comparison but hands back the target's original spelling —
- * so a case-sensitive match lets a renamed `.env` straight past a deny rule.
- * On POSIX a directory can genuinely hold both, and folding there would deny
- * files the user never wrote a rule for.
- */
-function matchOptions(env: HostEnv): picomatch.PicomatchOptions {
-  return { dot: true, nocase: isWindows(env) };
 }
 
 export function toLeash(station: Station): Leash {
@@ -159,29 +142,6 @@ export function checkPath(
  * It is re-exported below so no caller had to change.
  */
 export { writeDeniedByRole } from "./roles.js";
-
-/**
- * Compile one leash rule into a matcher.
- *
- * A rule with no glob syntax in it — `paths = ["src/config"]` — is expanded to
- * cover the directory *and* its contents. Written literally it would match one
- * path and nothing under it, which is never what someone naming a directory
- * means.
- *
- * There is deliberately no walk-up over ancestor directories here. That looks
- * like a convenience and is actually a bypass: applied to an allow list it
- * turns `src/*` into `src/**`, because `src/deep/nested/secret.ts` has an
- * ancestor `src/deep` that `src/*` matches. A rule that says one level deep
- * has to mean one level deep.
- */
-function compile(glob: string, env: HostEnv): (relPosix: string) => boolean {
-  const options = matchOptions(env);
-  if (picomatch.scan(glob).isGlob) return picomatch(glob, options);
-
-  const bare = glob.replace(/\/+$/, "");
-  const isMatch = picomatch([bare, `${bare}/**`], options);
-  return isMatch;
-}
 
 /**
  * `checkPath`, with symlinks resolved first.
