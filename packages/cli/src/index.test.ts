@@ -106,6 +106,43 @@ describe("the cuesheet CLI", () => {
     expect(output).toEqual(["Release available. Run npm run update."]);
   });
 
+  it("prints what always-loaded context costs, and calls it an estimate", async () => {
+    // A harness that declares MOCK.md, so the audit has a file to count. The
+    // default `startDaemon` knows no harness, which would report the Station
+    // as unknown — true, and not what this test is about.
+    daemon = await startDaemon({
+      port: 0,
+      cwd: home,
+      env,
+      writeLockFile: false,
+      harnessContext: () => ({
+        vendor: "cuesheet",
+        contextFiles: [{ path: "MOCK.md", scope: "project" }],
+      }),
+    });
+    await writeFile(path.join(projectRoot, "MOCK.md"), "z".repeat(4_000));
+    const variables = { CUESHEET_URL: daemon.url };
+    expect(
+      await runCli(["project", "add", projectRoot], {
+        ...cliOptions(home),
+        variables,
+      }),
+    ).toBe(0);
+    output.length = 0;
+
+    expect(
+      await runCli(["context"], { ...cliOptions(projectRoot), variables }),
+    ).toBe(0);
+    expect(output[0]).toBe(
+      "Context per run: about 1,000 tokens across 1 Station (estimated).",
+    );
+    // Nothing has run, so nothing is priced — said, not printed as $0.00.
+    expect(output[1]).toBe(
+      "Price per run: unknown — no price reported for builder.",
+    );
+    expect(output).toContain("MOCK.md\t1,000\t0\t1,000\tbuilder");
+  });
+
   it("registers a project and queues its named cuesheet from a nested directory", async () => {
     const active = await boot();
     expect(

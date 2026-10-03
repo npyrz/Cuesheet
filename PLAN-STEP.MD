@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60–61 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60–62 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 puts a number on every always-loaded file — per run, across the Stations that load it, priced at what this project has actually paid |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2261,13 +2261,53 @@ Plan mode and session resume, the plan's other two examples, have **no** member 
 - **A hook's report on a run the hook failed.** A failure is *thrown* to the queue, which has nowhere to put a summary, so `result.hooks` exists only for runs that finished; a failed one carries the hook, exit code and stderr in `error`. Gates have the same limitation today. Both would move with a change to how the queue records a failure's partial summary — not something to change for one kind of cue.
 - **Hooks keyed to events** ("after every engineer", "on hold") rather than placed as cues. The done-when is met by position, and an event-keyed hook is a second scheduling model beside the cuesheet's one. Worth it only when someone has a cuesheet where placing the cue by hand is the problem.
 
-### Step 62 — What your context already costs
+### Step 62 — What your context already costs ✅
 
 A read-only audit, in the Desk and in the CLI: how large every always-loaded file is, in estimated tokens, multiplied by the Stations that load it and the runs that load them.
 
 This is the smallest step in the phase and probably the most useful one. A 40k-token hand-written `CLAUDE.md` is paid by every Station on every run forever, and nothing in any tool tells anybody that. It also keeps the rest of this phase honest, since it is the only thing here that produces a before and an after.
 
 **Done when:** the Desk can answer "what am I paying for context, per run, across this project's Stations" with a number, and a projection that grows by 10k tokens shows up as a cost change rather than a bigger file.
+
+- [x] **The Desk can answer "what am I paying for context, per run, across this project's Stations" with a number.** The project view has a **Context** section under the Stations. Its first line is the per-run total across the crew, in estimated tokens, and its second line is the price or the reason there is none. The same audit is `GET /projects/:id/context` and `cuesheet context`. The section was rendered in headless Chromium against a real `cuesheetd` and Vite. The project had three Stations (`claude-code`, `codex`, `ollama`) and a hand-written 40 KB `CLAUDE.md`, and the panel and the CLI agreed on 9,932 tokens. That project had never run, so the screen showed the "no price yet" sentence and not a dollar figure. The dollar line is covered by `ui/context.test.ts` and has not been seen rendered.
+- [x] **A projection that grows by 10k tokens shows up as a cost change rather than a bigger file.** `daemon/context.test.ts` boots a daemon with a harness that bills a known $3 per million input tokens and runs it once, so the ledger has a rate. It then writes a 40,000-byte fact through `POST /commons`, and the real projector grows `MOCK.md` with it. The priced Station's per-run figure rises by the fact's tokens (≥10,000) and its `usdPerRun` by exactly those tokens at the observed rate. The growth is attributed to Cuesheet's generated block, not the operator's text, and the file-less Station is shown paying for the same fact in its brief. Proven with a mock vendor. No real vendor's price has been read back through the audit yet.
+
+#### Where the price comes from, and why not a table
+
+The audit prices tokens at **what this project has actually paid per input token, by vendor**: `usd / tokensIn` from the ledger's `byVendor` rows. A price table was the obvious alternative and was turned down for three reasons. It would go stale the week a vendor changed a price. It would need a model-to-price mapping that no harness reports. And it would price context at the fresh-token rate, when a warm cache serves most always-loaded context at a fraction of that. The observed rate already includes this project's cache mix, which is the right weighting for this purpose.
+
+The rate has two known biases, and the reference documents both instead of correcting them. It **overstates**, because a run's dollars pay for output tokens too. It is **blind** for a vendor that reports no dollars, which today is Codex. That Station is named in `unpriced` and left out of the dollar total. Pricing it at zero would claim it is free, and that is the misreading this step exists to stop.
+
+#### What a Station loads is the harness's declaration, and the one exception
+
+Each file comes from `Harness.contextFiles`, the same declaration the projector writes through, read where the projector writes it. The daemon now gets `harnessContext` from `harnessRuntime()`, a per-harness view of that list plus the vendor, because the audit needs to know *which* Station loads a file before it can multiply. The flat `contextFiles` list the projector consumes cannot say that.
+
+The exception is a harness with no context file. `commonsPrefix` in `harness-executor.ts` assembles the Commons into that harness's brief instead, so `ollama` pays for every fact in every brief. The audit reports that prefix as its own `brief:commons` source and builds it byte for byte the way the executor does. Leaving it out would make the one Station that cannot cache look like the cheapest. The coupling is commented on both sides of the seam: if `commonsPrefix` changes its rule, the audit undercounts.
+
+A Station on a harness this build does not know is reported `known: false`, not as zero. A vendor CLI may also read files nobody declared, such as ancestor `CLAUDE.md`s and local overrides. The audit does not guess at those, and the reference says so.
+
+#### Two decisions about what the number means
+
+- **"Per run" is the whole crew.** A cuesheet that seats two of five Stations pays less than this figure. The audit answers what grows when a file grows, which is every Station that loads it. Per-cuesheet figures are a filter over the same data and were not built.
+- **History is "at today's size", and says so.** Nothing has ever recorded how large a context file was when a run started, so the audit cannot say what past runs paid. It shows the ledger's runs multiplied by today's size, which is what they *would* have paid. That is enough to make a habit visible, and the label prevents it being read as a bill.
+
+#### Running the app found two things the five commands did not
+
+- An empty Commons brief read **"missing"** in the CLI, and "not written yet" was one edit away in the Desk. A brief is not a file, and an empty one is not missing. Both now say it is empty.
+- A 12-token generated block in a 9,916-token hand-written file rendered as **"0% generated by Cuesheet"**, which reads as "there is no block". It now says "under 1%", with a test.
+
+#### A finding this step did not act on
+
+The walk's `AGENTS.md` and `CLAUDE.md` each picked up an **empty** `cuesheet:begin`/`end` block at boot, with no facts and no map. `updateTarget` skips only a file that does not exist. An existing hand-written file with no facts still gets an empty block appended. That is 45 bytes, and a dirty tracked file on first boot. It is projector behaviour from Step 47, not this step's, and changing when the block appears belongs in its own change. The audit shows it as a sliver of generated bytes, which is how it was noticed.
+
+#### Also fixed here, because `beta` was red without it
+
+`core/config.test.ts`'s "keeps cues and gate references in one ordered list" failed on clean `HEAD`. Step 61 added `{ hook = "format" }` to the documented reference cuesheet and did not update the test that parses it. The expectation now includes the hook. It is a test-only change.
+
+#### What this step deliberately did not build
+
+- **Step 58's `elided` and brief estimate are still not drawn in the Desk.** Step 58 deferred them to "Step 62's audit". On inspection they belong to a *run* (what one reviewer was not shown) and not to the project's standing context, so they belong on the run surface. They remain on the wire and in the CLI only.
+- **No per-cuesheet breakdown, no trend over time**, and no warning threshold. The audit is read-only, as the step said.
 
 ### The rule that makes all of this work, written down before it is broken
 

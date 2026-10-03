@@ -105,6 +105,13 @@ export type { StandbyRegistry, OpenStandby } from "./standby.js";
 
 export { describeStations, unprobed, unknownRoles } from "./stations.js";
 export {
+  auditContext,
+  generatedBytes,
+  unknownContext,
+  BRIEF_SOURCE_ID,
+} from "./context.js";
+export type { ContextAuditOptions, HarnessContext } from "./context.js";
+export {
   createCommonsStore,
   CommonsError,
   CommonsSyncError,

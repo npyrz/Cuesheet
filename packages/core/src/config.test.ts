@@ -61,14 +61,23 @@ describe("the reference config example", () => {
 
   it("keeps cues and gate references in one ordered list", () => {
     const ship = loaded.config.cuesheet["ship"];
-    expect(ship?.cues).toHaveLength(4);
-    expect(ship?.cues.map(isGateRef)).toEqual([false, false, true, false]);
-    expect(ship?.cues[1]).toMatchObject({
+    // Step 61 put a hook between the engineer and the reviewer, so a formatter
+    // runs before the review reads the code.
+    expect(ship?.cues).toHaveLength(5);
+    expect(ship?.cues.map(isGateRef)).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false,
+    ]);
+    expect(ship?.cues[1]).toEqual({ hook: "format" });
+    expect(ship?.cues[2]).toMatchObject({
       station: "codex-review",
       action: "review",
       mode: "adversarial",
     });
-    expect(ship?.cues[2]).toEqual({ gate: "default" });
+    expect(ship?.cues[3]).toEqual({ gate: "default" });
   });
 
   it("warns about every table it does not implement, and keeps them verbatim", () => {

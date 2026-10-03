@@ -17,6 +17,7 @@ import {
 import { createHarnessExecutor } from "./harness-executor.js";
 import type { ExecutorFactoryDeps } from "./server.js";
 import type { RunExecutor } from "./executor.js";
+import type { HarnessContext } from "./context.js";
 import type {
   HarnessConfinement,
   HarnessProber,
@@ -39,6 +40,7 @@ export interface HarnessRuntime {
   knownHarnesses: KnownHarnesses;
   usageSources: () => readonly UsageSource[];
   contextFiles: () => readonly ContextFile[];
+  harnessContext: HarnessContext;
   writeConnectors: (connectors: readonly Connector[]) => Promise<void>;
 }
 
@@ -101,6 +103,14 @@ export function harnessRuntime(
     // same projection simply by declaring another target.
     contextFiles: () =>
       registry.list().flatMap((harness) => harness.contextFiles),
+    // The same declaration, kept per harness for Step 62's audit, which has
+    // to know *which* Station loads a file to say what the file costs.
+    harnessContext: (harness) => {
+      const found = registry.get(harness);
+      return found === undefined
+        ? undefined
+        : { vendor: found.vendor, contextFiles: found.contextFiles };
+    },
     // Registration stays on the harness side of the seam: the daemon knows
     // the URL it serves, while only each CLI adapter knows how that runtime
     // persists an MCP server without corrupting the operator's config.

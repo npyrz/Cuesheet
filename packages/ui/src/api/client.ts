@@ -8,6 +8,7 @@
  */
 import type {
   Confinement,
+  ContextAudit,
   Fact,
   HarnessProbe,
   HarnessUsage,
@@ -291,6 +292,18 @@ export async function discardMemory(pendingId: string): Promise<void> {
  */
 export async function fetchLedger(projectId: string): Promise<Ledger> {
   return request(`${scope(projectId)}/ledger`);
+}
+
+/**
+ * What this project's always-loaded context costs a run — Step 62.
+ *
+ * On demand, like the ledger it is priced against. Every figure in it is an
+ * estimate and the surface that draws it has to say so; see `../context.ts`.
+ */
+export async function fetchContextAudit(
+  projectId: string,
+): Promise<ContextAudit> {
+  return request(`${scope(projectId)}/context`);
 }
 
 export async function fetchRuns(

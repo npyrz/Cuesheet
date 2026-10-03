@@ -69,6 +69,11 @@ import {
 } from "./repomap.js";
 import { type RunExecutor } from "./executor.js";
 import {
+  auditContext,
+  unknownContext,
+  type HarnessContext,
+} from "./context.js";
+import {
   createProjectRuntimes,
   type ProjectRuntime,
   type ProjectRuntimes,
@@ -202,6 +207,13 @@ export interface StartDaemonOptions {
   /** Context targets declared by the registered harnesses. */
   contextFiles?: () => readonly ContextFile[];
   /**
+   * Which context files each harness loads, and its vendor — Step 62's audit.
+   * Per harness rather than the flat list above, because the audit's whole
+   * point is multiplying a file by the Stations that load it. Supplied by
+   * `harnessRuntime()`; absent, every harness is reported as unknown.
+   */
+  harnessContext?: HarnessContext;
+  /**
    * Where the repo map's wasm lives (Step 59). The defaults resolve beside
    * this package, which is right for `cuesheetd` and wrong inside the bundled
    * Electron main process — so the desktop passes both paths.
@@ -317,6 +329,7 @@ export async function startDaemon(
   const harnessRoles = options.harnessRoles ?? unknownRoles;
   const harnessConfinement = options.harnessConfinement ?? unknownConfinement;
   const knownHarnesses = options.knownHarnesses ?? builtinHarnesses;
+  const harnessContext = options.harnessContext ?? unknownContext;
   const usage = createUsageCache({
     sources: options.usageSources ?? (() => []),
   });
@@ -519,6 +532,7 @@ export async function startDaemon(
     harnessRoles,
     harnessConfinement,
     knownHarnesses,
+    harnessContext,
     usage,
     commons,
     commonsInbox,
@@ -849,6 +863,7 @@ interface RouteDeps {
   harnessRoles: HarnessRoles;
   harnessConfinement: HarnessConfinement;
   knownHarnesses: KnownHarnesses;
+  harnessContext: HarnessContext;
   usage: UsageCache;
   commons: CommonsStore;
   commonsInbox: CommonsInbox;
@@ -886,6 +901,7 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     harnessRoles,
     harnessConfinement,
     knownHarnesses,
+    harnessContext,
     usage,
     commons,
     commonsInbox,
@@ -1529,6 +1545,32 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return buildLedger(await runtime.store.list(), {
       ...(typeof query["since"] === "string" && { since: query["since"] }),
       ...(typeof query["until"] === "string" && { until: query["until"] }),
+    });
+  });
+
+  /**
+   * What this project's always-loaded context costs — Step 62.
+   *
+   * Read-only and computed on request, like the ledger it prices against: the
+   * files are a handful of stats and reads, and an audit cached anywhere is an
+   * audit that says the old number right after somebody trimmed a file to
+   * make it move.
+   */
+  app.get("/projects/:id/context", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const projectId = runtime.project.id;
+    return auditContext({
+      config: runtime.config(),
+      projectRoot: runtime.project.root,
+      env,
+      harnessContext,
+      memoryFacts: async () =>
+        (await commons.list()).filter(
+          (fact) =>
+            fact.projects.length === 0 || fact.projects.includes(projectId),
+        ),
+      ledger: buildLedger(await runtime.store.list()),
     });
   });
 

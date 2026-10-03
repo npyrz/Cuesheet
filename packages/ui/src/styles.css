@@ -448,6 +448,57 @@ textarea {
   font-size: var(--text-md);
 }
 
+/* ── Context audit (Step 62) ───────────────────────────────────────────── */
+
+.context-audit {
+  margin-top: var(--space-9);
+  padding: var(--space-7);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.context-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+}
+
+.context-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--muted);
+}
+
+.context-headline {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.context-line {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.context-table {
+  margin: var(--space-6) 0 0;
+}
+
+.context-generated {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.context-table tr[data-missing="true"] {
+  color: var(--muted);
+}
+
 /* ── Memory approval inbox ─────────────────────────────────────────────── */
 
 .memory-inbox {

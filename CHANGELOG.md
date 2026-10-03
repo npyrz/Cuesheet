@@ -24,6 +24,8 @@ arrived in that build. Published tags below identify actual installers.
 
 - Repo map: `[repo_map] mode = "projection"` adds a byte-stable map of the workspace's files and exported symbols to the project's context files, rebuilt at run start, parsed with WebAssembly tree-sitter grammars (no native module). Off by default; `GET /projects/:id/repo-map` previews it with an estimated token cost.
 
+- Context audit: the project view's **Context** section, `cuesheet context` and `GET /projects/:id/context` show what every always-loaded context file costs a run. The audit multiplies each file by the Stations that load it, separates Cuesheet's generated block from hand-written text, and prices the total at the project's own observed price per input token. All figures are labelled as estimates.
+
 - Brief budgets: `[limits] max_brief_bytes` bounds every brief, a reviewer's diff is cut in whole named files rather than mid-hunk, and Gates take `always_review` / `never_review` path rules. A skipped Gate no longer runs (or bills) its reviewer, and an over-budget prompt is refused before it is queued.
 
 - Local crash/error diagnostics with bounded logs, interrupted-run context, path-free stack locations and a Desk preview/copy/download flow. Reports are never uploaded automatically.
