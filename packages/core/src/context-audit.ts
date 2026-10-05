@@ -1,5 +1,5 @@
 /** Read-only estimates of declared context, never a vendor bill. */
-export interface ContextAuditFile {
+export interface ContextLoadAuditFile {
   path: string;
   scope: "project" | "user";
   stationIds: string[];
@@ -11,7 +11,7 @@ export interface ContextAuditFile {
   error?: string;
 }
 
-export interface ContextAuditStation {
+export interface ContextLoadAuditStation {
   id: string;
   harness: string;
   filePaths: string[];
@@ -20,7 +20,7 @@ export interface ContextAuditStation {
   reason?: string;
 }
 
-export interface ContextAuditPlan {
+export interface ContextLoadAuditPlan {
   /** null is the ordinary run (the first configured Station). */
   cuesheet: string | null;
   stationIds: string[];
@@ -29,11 +29,11 @@ export interface ContextAuditPlan {
   complete: boolean;
 }
 
-export interface ContextAudit {
+export interface ContextLoadAudit {
   runs: number;
-  files: ContextAuditFile[];
-  stations: ContextAuditStation[];
-  plans: ContextAuditPlan[];
+  files: ContextLoadAuditFile[];
+  stations: ContextLoadAuditStation[];
+  plans: ContextLoadAuditPlan[];
   /** One invocation of every configured Station; not the default run. */
   estimatedTokensAcrossStations: number;
   complete: boolean;

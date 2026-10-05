@@ -354,6 +354,35 @@ aggregates by day, vendor, and Station and retains cache-read/cache-write
 breakdowns when the harness reports them. Older records that predate
 per-Station accounting remain visible as unsplit spend.
 
+### What your context already costs
+
+Every Station loads its harness's context files before it reads a prompt, on
+every run. `GET /api/projects/:id/context`, the **Context** section of the
+project view, and `cuesheet context` show what that comes to:
+
+- each file a harness declares (`CLAUDE.md` and `~/.claude/CLAUDE.md` for
+  Claude Code, `AGENTS.md` and `~/.codex/AGENTS.md` for Codex), its size, how
+  much of it is Cuesheet's generated block, and which Stations load it;
+- for a harness with no context file (Ollama), the Commons facts the daemon
+  puts in its brief instead;
+- the total per run across the project's Stations; and
+- the same context over the runs already in the ledger, at today's size.
+
+Every figure is an **estimate**. Tokens are about four bytes each, because an
+exact count needs a vendor's API key, which Cuesheet never holds. Dollars use
+the price this project has actually paid per input token for each vendor
+(`usd / tokensIn` from the ledger). That rate is weighted by the cache mix,
+which suits context that a warm cache mostly serves. It also overstates the
+price, because a run's dollars pay for output tokens too. A Station whose
+vendor has not reported a price on this project is named and left out of the
+dollar total. It is not counted as free. A Station on a harness this build
+does not know is reported as unknown.
+
+The audit reads the files Cuesheet projects into: project-scoped files under
+the project root and user-scoped files under the home directory. A vendor CLI
+may also read files nobody declared, such as ancestor directories or local
+overrides, and those are not counted.
+
 ## Gates
 
 A Gate evaluates all verdicts recorded so far, the Stations that acted, and the
@@ -539,7 +568,12 @@ refused rather than risking damage to hand-written content.
 
 Open **Context cost** in the project's Desk view, or choose **Audit context cost**
 in the command palette. From a built checkout, `npx cuesheet context --runs 10`
-reads the same report; `--project ID` selects a project explicitly. Refresh after
+reads the detailed report; `--project ID` selects a project explicitly. Without
+`--runs`, `cuesheet context` prints the priced summary described in
+[What your context already costs](#what-your-context-already-costs). The detailed
+report resolves files at each Station's workspace; the priced summary reads the
+projector's targets at the project root and includes inline Commons. Their totals
+can differ when workspaces differ or a harness loads Commons in its brief. Refresh after
 editing or regenerating context to see the new cost. The report never starts a
 Station, regenerates a projection, or sends file contents to a model.
 
@@ -608,6 +642,7 @@ the browser Desk's normal surface through the Vite proxy.
 | `GET` | `/api/projects/:id/context-audit?runs=10` | Read current declared context costs; `runs` defaults to 1 and must be 1–1,000,000. |
 | `GET` | `/api/projects/:id/repo-map` | Preview the project's repo map, its size and estimated token cost. |
 | `GET` | `/api/projects/:id/ledger?since=...&until=...` | Read project spend aggregates. |
+| `GET` | `/api/projects/:id/context` | Estimate what always-loaded context costs per run, per file and Station. See [What your context already costs](#what-your-context-already-costs). |
 | `WS` | `/api/projects/:id/ws` | Replay buffered project events, then stream live events. |
 
 Example:
@@ -625,7 +660,7 @@ The terminal client uses these same routes. From a built source checkout, use
 `npx cuesheet run --project PROJECT_ID --cuesheet ship "prompt"` to queue its
 configured cuesheet. `run` prints the run id; `runs`, `show`, and `stop`
 inspect or control it. `stations` lists configured Stations and cuesheets,
-and `answer STANDBY_ID go|no` answers a waiting Gate. Running inside a
+`context` prints the context audit, and `answer STANDBY_ID go|no` answers a waiting Gate. Running inside a
 registered project makes `--project` optional.
 
 ## Development

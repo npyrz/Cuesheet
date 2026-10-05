@@ -27,6 +27,7 @@ import { shortPath } from "../format.js";
 import { toCell } from "../ledger.js";
 import { COPY, describeSurface, LOADING, type Load } from "../surface.js";
 import { firstStep, starterStation } from "../firstrun.js";
+import { ContextPanel } from "./ContextPanel.js";
 import { FirstRun } from "./FirstRun.js";
 import { Notice } from "./Notice.js";
 
@@ -245,6 +246,13 @@ export function ProjectView({
           ))}
         </ul>
       )}
+
+      {/*
+        Below the Stations, not above: it is their bill. Only once there are
+        Stations — a project with none loads nothing, and the guide above is
+        already saying what to do about that.
+      */}
+      {rows.length > 0 && <ContextPanel projectId={projectId} />}
     </main>
   );
 }

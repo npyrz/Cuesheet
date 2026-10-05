@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ContextAudit } from "@cuesheet/core";
-import { fetchContextAudit } from "../api/client.js";
+import type { ContextLoadAudit } from "@cuesheet/core";
+import { fetchContextLoadAudit } from "../api/client.js";
 import { useModal } from "../hooks/useModal.js";
 
 export function ContextAuditPanel({
@@ -11,7 +11,7 @@ export function ContextAuditPanel({
   onClose: () => void;
 }): React.JSX.Element {
   const modal = useModal(onClose);
-  const [audit, setAudit] = useState<ContextAudit | null>(null);
+  const [audit, setAudit] = useState<ContextLoadAudit | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState(1);
   const [attempt, setAttempt] = useState(0);
@@ -19,7 +19,7 @@ export function ContextAuditPanel({
     let live = true;
     setAudit(null);
     setError(null);
-    fetchContextAudit(projectId, runs)
+    fetchContextLoadAudit(projectId, runs)
       .then((next) => {
         if (live) setAudit(next);
       })

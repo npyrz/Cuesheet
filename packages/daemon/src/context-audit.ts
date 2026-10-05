@@ -5,9 +5,9 @@ import {
   expandHome,
   isStationCue,
   type Config,
-  type ContextAudit,
-  type ContextAuditFile,
-  type ContextAuditStation,
+  type ContextLoadAudit,
+  type ContextLoadAuditFile,
+  type ContextLoadAuditStation,
   type HostEnv,
 } from "@cuesheet/core";
 import type { ContextFile } from "@cuesheet/harness";
@@ -27,12 +27,12 @@ export async function auditContext(options: {
   env: HostEnv;
   filesOf: HarnessContextFiles;
   runs: number;
-}): Promise<ContextAudit> {
-  const files = new Map<string, ContextAuditFile>();
-  const stations: ContextAuditStation[] = [];
+}): Promise<ContextLoadAudit> {
+  const files = new Map<string, ContextLoadAuditFile>();
+  const stations: ContextLoadAuditStation[] = [];
   for (const station of options.config.station) {
     const declared = options.filesOf(station.harness);
-    const row: ContextAuditStation = {
+    const row: ContextLoadAuditStation = {
       id: station.id,
       harness: station.harness,
       filePaths: [],
@@ -121,8 +121,8 @@ export async function auditContext(options: {
 async function measure(
   path: string,
   scope: ContextFile["scope"],
-): Promise<ContextAuditFile> {
-  const row: ContextAuditFile = {
+): Promise<ContextLoadAuditFile> {
+  const row: ContextLoadAuditFile = {
     path,
     scope,
     stationIds: [],

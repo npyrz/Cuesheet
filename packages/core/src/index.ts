@@ -10,6 +10,7 @@ export * from "./roles.js";
 export * from "./setup.js";
 export * from "./limits.js";
 export * from "./ledger.js";
+export * from "./context.js";
 export * from "./commons.js";
 export * from "./fallback.js";
 export * from "./gate.js";

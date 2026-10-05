@@ -62,6 +62,8 @@ describe("the reference config example", () => {
 
   it("keeps Station, hook and gate cues in one ordered list", () => {
     const ship = loaded.config.cuesheet["ship"];
+    // Step 61 put a hook between the engineer and the reviewer, so a formatter
+    // runs before the review reads the code.
     expect(ship?.cues).toHaveLength(5);
     expect(ship?.cues.map(isGateRef)).toEqual([
       false,

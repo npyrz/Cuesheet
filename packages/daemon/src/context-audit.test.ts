@@ -9,7 +9,11 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseConfig, type ContextAudit, type HostEnv } from "@cuesheet/core";
+import {
+  parseConfig,
+  type ContextLoadAudit,
+  type HostEnv,
+} from "@cuesheet/core";
 import { auditContext } from "./context-audit.js";
 import { startDaemon, type DaemonHandle } from "./server.js";
 import { harnessRuntime } from "./runtime.js";
@@ -93,7 +97,7 @@ cues=[{station="author",action="write"},{station="review",action="review"},{stat
     const url = `${daemon.url}/projects/${project.id}/context-audit`;
     const response = await fetch(`${url}?runs=3`);
     expect(response.status).toBe(200);
-    const result = (await response.json()) as ContextAudit;
+    const result = (await response.json()) as ContextLoadAudit;
     expect(result.complete).toBe(true);
     expect(result.stations.map((station) => station.estimatedTokens)).toEqual([
       110, 100,

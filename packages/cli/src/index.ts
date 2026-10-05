@@ -5,9 +5,10 @@
 import { readFile, realpath } from "node:fs/promises";
 import nodePath from "node:path";
 import {
-  type ContextAudit,
+  type ContextLoadAudit,
   daemonLockFile,
   hostEnv,
+  type ContextAudit,
   type HostEnv,
   type ListedProject,
   type Run,
@@ -30,7 +31,7 @@ Commands:
   updates                          Check for a published Cuesheet release
   projects                         List registered projects
   project add [path]               Register a project (default: current directory)
-  context [--project ID] [--runs N] Audit estimated always-loaded context
+  context [--project ID] [--runs N] Estimate context; --runs N adds cuesheet details
   stations [--project ID]          List Stations and cuesheets
   run [--project ID] [--cuesheet NAME] <prompt...>
                                    Queue a run and print its id
@@ -168,9 +169,9 @@ export async function runCli(
     const project = await selectProject(api, parsed.project, cwd, fetcher);
     const scope = `/projects/${encodeURIComponent(project.id)}`;
 
-    if (command === "context") {
+    if (command === "context" && parsed.runs !== undefined) {
       noPositionals(parsed);
-      const audit = await request<ContextAudit>(
+      const audit = await request<ContextLoadAudit>(
         api,
         `${scope}/context-audit?runs=${encodeURIComponent(parsed.runs ?? "1")}`,
         fetcher,
@@ -221,6 +222,18 @@ export async function runCli(
               : ""),
         );
       }
+      return 0;
+    }
+    if (command === "context") {
+      noPositionals(parsed);
+      if (parsed.cuesheet !== undefined)
+        throw new CliError("Usage: cuesheet context [--project ID]");
+      const audit = await request<ContextAudit>(
+        api,
+        `${scope}/context`,
+        fetcher,
+      );
+      for (const line of describeContext(audit)) write(line);
       return 0;
     }
     if (command === "run") {
@@ -503,4 +516,85 @@ async function selectProject(
     );
   }
   return project;
+}
+
+/**
+ * Step 62's audit as lines. Tab-separated rows, like every other listing
+ * here, under two sentences that carry the answer — and "estimated" in them,
+ * because the daemon counts bytes and divides, and the price is read back out
+ * of this project's own ledger rather than a vendor's list.
+ */
+export function describeContext(audit: ContextAudit): string[] {
+  const { perRun, history } = audit;
+  const crew = audit.stations.length;
+  const lines = [
+    `Context per run: about ${tokens(perRun.estimatedTokens)} tokens across ` +
+      `${String(crew)} Station${crew === 1 ? "" : "s"} (estimated).`,
+  ];
+  if (perRun.usd !== undefined) {
+    lines.push(
+      `Price per run: about ${dollars(perRun.usd)} at this project's observed ` +
+        `price per input token (estimated)` +
+        (perRun.unpriced.length === 0
+          ? "."
+          : `, not counting ${perRun.unpriced.join(", ")}.`),
+    );
+  } else if (perRun.estimatedTokens > 0) {
+    lines.push(
+      perRun.unpriced.length === 0
+        ? "Price per run: unknown."
+        : `Price per run: unknown — no price reported for ${perRun.unpriced.join(", ")}.`,
+    );
+  }
+  if (history.runs > 0 && history.estimatedTokens > 0) {
+    lines.push(
+      `Over ${String(history.runs)} recorded run${history.runs === 1 ? "" : "s"}, at today's size: ` +
+        `${tokens(history.estimatedTokens)} tokens` +
+        (history.usd === undefined ? "." : `, about ${dollars(history.usd)}.`),
+    );
+  }
+  for (const station of audit.stations) {
+    if (!station.known)
+      lines.push(
+        `${station.stationId}: harness "${station.harness}" is not in this build; its context is not counted.`,
+      );
+  }
+  const files = audit.files.filter(
+    (file) => file.exists || file.loadedBy.length > 0,
+  );
+  if (files.length > 0) {
+    lines.push("file\ttokens\tgenerated\tper run\tloaded by");
+    for (const file of files) {
+      const label =
+        file.scope === "user" && file.kind === "file"
+          ? `~/${file.path}`
+          : file.path;
+      lines.push(
+        [
+          label,
+          file.exists
+            ? tokens(file.estimatedTokens)
+            : file.kind === "brief"
+              ? "empty"
+              : "missing",
+          tokens(file.generatedTokens),
+          tokens(file.perRunTokens),
+          file.loadedBy.join(",") || "-",
+        ].join("\t"),
+      );
+    }
+  }
+  return lines;
+}
+
+function tokens(count: number): string {
+  return count.toLocaleString("en-US");
+}
+
+function dollars(value: number): string {
+  // A context's share of a run is often under a cent; `$0.00` would read as
+  // free, which is the misreading the whole command exists to correct.
+  return value !== 0 && value < 0.1
+    ? `$${value.toPrecision(2)}`
+    : `$${value.toFixed(2)}`;
 }
