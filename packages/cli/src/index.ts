@@ -5,6 +5,7 @@
 import { readFile, realpath } from "node:fs/promises";
 import nodePath from "node:path";
 import {
+  type ContextAudit,
   daemonLockFile,
   hostEnv,
   type HostEnv,
@@ -29,6 +30,7 @@ Commands:
   updates                          Check for a published Cuesheet release
   projects                         List registered projects
   project add [path]               Register a project (default: current directory)
+  context [--project ID] [--runs N] Audit estimated always-loaded context
   stations [--project ID]          List Stations and cuesheets
   run [--project ID] [--cuesheet NAME] <prompt...>
                                    Queue a run and print its id
@@ -74,6 +76,7 @@ export async function runCli(
         "show",
         "stop",
         "rewind",
+        "context",
       ].includes(command)
     ) {
       throw new CliError(`Unknown command "${command}". Run cuesheet help.`);
@@ -81,6 +84,8 @@ export async function runCli(
     if (parsed.check === true && command !== "rewind") {
       throw new CliError("--check only applies to rewind.");
     }
+    if (parsed.runs !== undefined && command !== "context")
+      throw new CliError("--runs only applies to context.");
     const api = await connect(env, variables, fetcher);
 
     if (command === "updates") {
@@ -163,6 +168,34 @@ export async function runCli(
     const project = await selectProject(api, parsed.project, cwd, fetcher);
     const scope = `/projects/${encodeURIComponent(project.id)}`;
 
+    if (command === "context") {
+      noPositionals(parsed);
+      const audit = await request<ContextAudit>(
+        api,
+        `${scope}/context-audit?runs=${encodeURIComponent(parsed.runs ?? "1")}`,
+        fetcher,
+      );
+      const number = (value: number) => value.toLocaleString("en-US");
+      write(`Context audit — estimated tokens, ${audit.runs} run(s).`);
+      for (const file of audit.files) {
+        write(
+          `${file.path}\t${file.state}\t${file.estimatedTokens === null ? "unknown" : number(file.estimatedTokens)} tokens/load\tprojection: ${file.projectionEstimatedTokens === null ? "unknown" : number(file.projectionEstimatedTokens)}\tStations: ${file.stationIds.join(", ")}`,
+        );
+      }
+      for (const station of audit.stations)
+        write(
+          `Station ${station.id}\t${number(station.estimatedTokens)} tokens/invocation${station.complete ? "" : " (partial/unknown)"}${station.reason === undefined ? "" : ` — ${station.reason}`}`,
+        );
+      write(
+        `Every Station once: ${number(audit.estimatedTokensAcrossStations)} estimated tokens${audit.complete ? "" : " (partial/unknown)"}.`,
+      );
+      for (const plan of audit.plans)
+        write(
+          `${plan.cuesheet === null ? "Default run" : `Cuesheet ${plan.cuesheet}`}\t${number(plan.estimatedTokensPerRun)} tokens/run\t${number(plan.estimatedTokens)} over ${audit.runs} run(s)${plan.complete ? "" : " (partial/unknown)"}`,
+        );
+      for (const note of audit.notes) write(note);
+      return 0;
+    }
     if (command === "stations") {
       noPositionals(parsed);
       const view = await request<{
@@ -295,6 +328,7 @@ interface Parsed {
   cuesheet?: string;
   /** `rewind --check`: ask, write nothing. */
   check?: boolean;
+  runs?: string;
 }
 
 function parse(args: readonly string[]): Parsed {
@@ -304,13 +338,17 @@ function parse(args: readonly string[]): Parsed {
     const arg = args[i] ?? "";
     if (!literal && arg === "--") {
       literal = true;
-    } else if (!literal && (arg === "--project" || arg === "--cuesheet")) {
+    } else if (
+      !literal &&
+      (arg === "--project" || arg === "--cuesheet" || arg === "--runs")
+    ) {
       const value = args[i + 1];
       if (value === undefined || value === "" || value.startsWith("--")) {
         throw new CliError(`${arg} needs a value.`);
       }
       if (arg === "--project") parsed.project = value;
-      else parsed.cuesheet = value;
+      else if (arg === "--cuesheet") parsed.cuesheet = value;
+      else parsed.runs = value;
       i += 1;
     } else if (!literal && arg === "--check") {
       parsed.check = true;

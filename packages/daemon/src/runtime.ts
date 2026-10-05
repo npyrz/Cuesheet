@@ -39,6 +39,7 @@ export interface HarnessRuntime {
   knownHarnesses: KnownHarnesses;
   usageSources: () => readonly UsageSource[];
   contextFiles: () => readonly ContextFile[];
+  harnessContextFiles: (harness: string) => readonly ContextFile[] | undefined;
   writeConnectors: (connectors: readonly Connector[]) => Promise<void>;
 }
 
@@ -101,6 +102,7 @@ export function harnessRuntime(
     // same projection simply by declaring another target.
     contextFiles: () =>
       registry.list().flatMap((harness) => harness.contextFiles),
+    harnessContextFiles: (harness) => registry.get(harness)?.contextFiles,
     // Registration stays on the harness side of the seam: the daemon knows
     // the URL it serves, while only each CLI adapter knows how that runtime
     // persists an MCP server without corrupting the operator's config.

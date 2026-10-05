@@ -535,6 +535,31 @@ a remote URL are redacted from API responses.
 Writing to a context file that has incomplete or duplicated Cuesheet markers is
 refused rather than risking damage to hand-written content.
 
+### Context cost audit
+
+Open **Context cost** in the project's Desk view, or choose **Audit context cost**
+in the command palette. From a built checkout, `npx cuesheet context --runs 10`
+reads the same report; `--project ID` selects a project explicitly. Refresh after
+editing or regenerating context to see the new cost. The report never starts a
+Station, regenerates a projection, or sends file contents to a model.
+
+Each file's current UTF-8 size is estimated at four bytes per token. The Cuesheet
+projection block is shown as a subtotal within the file, not added to it. Per-Station
+figures include only that harness's declared project/workspace and user context
+files. Per-cuesheet figures count each Station cue, including repeats, and ignore
+Gate and hook cues. The default run uses the first configured Station; the total
+for every Station once is labelled separately. `runs` multiplies the current
+estimate, rather than reconstructing earlier files from history.
+
+Missing files cost zero; unreadable files and unregistered harnesses make totals
+partial/unknown. A harness declaring no context files has a known zero for this
+audit. Context outside the declared files (ancestor/nested instructions, vendor
+system prompts, inline Commons, task briefs, diffs and tool results) is excluded.
+Skipped reviews, early stops and cap fallback routing can change actual loads.
+These are estimated input tokens, not a dollar bill: caching, model prices and
+subscription windows affect what they cost. The palette separately estimates
+the typed prompt, and Gate results name changed files omitted from review.
+
 ## HTTP and WebSocket API
 
 The standalone daemon listens on `127.0.0.1:7373` by default. Routes are
@@ -580,6 +605,7 @@ the browser Desk's normal surface through the Vite proxy.
 | `GET` | `/api/projects/:id/runs/:runId/diff` | Read the unified diff as plain text. |
 | `POST` | `/api/projects/:id/runs/:runId/stop` | Stop a queued, active, or waiting run. |
 | `POST` | `/api/projects/:id/runs/:runId/rewind` | Reverse a finished run's own change; `{ "dryRun": true }` only checks. See [Rewind](#rewind). |
+| `GET` | `/api/projects/:id/context-audit?runs=10` | Read current declared context costs; `runs` defaults to 1 and must be 1–1,000,000. |
 | `GET` | `/api/projects/:id/repo-map` | Preview the project's repo map, its size and estimated token cost. |
 | `GET` | `/api/projects/:id/ledger?since=...&until=...` | Read project spend aggregates. |
 | `WS` | `/api/projects/:id/ws` | Replay buffered project events, then stream live events. |

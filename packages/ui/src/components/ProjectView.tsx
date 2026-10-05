@@ -44,6 +44,7 @@ export interface ProjectViewProps {
   onAddStarter: (draft: ReturnType<typeof starterStation>) => Promise<void>;
   onStart: (prompt: string) => void;
   onOpenLedger: () => void;
+  onOpenContextAudit: () => void;
   onRetry: () => void;
 }
 
@@ -59,6 +60,7 @@ export function ProjectView({
   onAddStarter,
   onStart,
   onOpenLedger,
+  onOpenContextAudit,
   onRetry,
 }: ProjectViewProps): React.JSX.Element {
   const [ledger, ledgerLoad] = useProjectLedger(projectId);
@@ -132,6 +134,9 @@ export function ProjectView({
         </div>
         <span className="spacer" />
         <div className="project-totals">
+          <button type="button" className="ghost" onClick={onOpenContextAudit}>
+            Context cost
+          </button>
           {/*
             The project's own total, with the ledger a click away rather than
             redrawn here. Two surfaces for one number is how they drift.

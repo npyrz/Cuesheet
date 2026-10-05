@@ -60,12 +60,15 @@ function cliOptions(cwd = projectRoot): CliOptions {
   };
 }
 
-async function boot(): Promise<DaemonHandle> {
+async function boot(
+  extra: Parameters<typeof startDaemon>[0] = {},
+): Promise<DaemonHandle> {
   daemon = await startDaemon({
     port: 0,
     cwd: home,
     env,
     writeLockFile: false,
+    ...extra,
   });
   await mkdir(path.dirname(daemonLockFile(env)), { recursive: true });
   await writeFile(
@@ -81,6 +84,36 @@ async function boot(): Promise<DaemonHandle> {
 }
 
 describe("the cuesheet CLI", () => {
+  it("audits current context through the daemon and multiplies the estimate by runs", async () => {
+    const configPath = path.join(projectRoot, "cuesheet.toml");
+    await writeFile(
+      configPath,
+      (await readFile(configPath, "utf8")).replace(
+        'workspace = "."',
+        `workspace = ${JSON.stringify(projectRoot)}`,
+      ),
+    );
+    await writeFile(path.join(projectRoot, "CLAUDE.md"), "a".repeat(400));
+    await boot({
+      harnessContextFiles: () => [{ path: "CLAUDE.md", scope: "project" }],
+    });
+    expect(await runCli(["project", "add"], cliOptions())).toBe(0);
+    output = [];
+    expect(await runCli(["context", "--runs", "3"], cliOptions())).toBe(0);
+    expect(output.join("\n")).toContain("100 tokens/run\t300 over 3 run(s)");
+    expect(output.join("\n")).toContain("estimated");
+    expect(output.join("\n")).toContain("CLAUDE.md");
+    expect(errors).toEqual([]);
+    expect(await runCli(["context", "--runs", "0"], cliOptions())).toBe(1);
+    expect(errors.at(-1)).toContain("runs must be an integer");
+    expect(await runCli(["context", "--runs", "3&other=x"], cliOptions())).toBe(
+      1,
+    );
+    expect(errors.at(-1)).toContain("runs must be an integer");
+    expect(await runCli(["run", "--runs", "3", "hi"], cliOptions())).toBe(1);
+    expect(errors.at(-1)).toBe("--runs only applies to context.");
+  });
+
   it("checks updates without selecting a project", async () => {
     daemon = await startDaemon({
       port: 0,

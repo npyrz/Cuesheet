@@ -6,6 +6,7 @@
  * here starts deciding things, it belongs in one of those two files.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ContextAuditPanel } from "./components/ContextAuditPanel.js";
 import { UpdatesPanel } from "./components/UpdatesPanel.js";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel.js";
 import { AddStationPanel } from "./components/AddStationPanel.js";
@@ -51,6 +52,7 @@ export function App(): React.JSX.Element {
   const [palette, setPalette] = useState(false);
   const [adding, setAdding] = useState(false);
   const [ledger, setLedger] = useState(false);
+  const [contextAudit, setContextAudit] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
 
@@ -111,6 +113,11 @@ export function App(): React.JSX.Element {
         id: "add-station",
         label: "Add a Station…",
         run: () => setAdding(true),
+      },
+      {
+        id: "context-audit",
+        label: "Audit context cost — estimated tokens per run",
+        run: () => setContextAudit(true),
       },
       {
         id: "ledger",
@@ -347,6 +354,7 @@ export function App(): React.JSX.Element {
               void desk.start(prompt);
             }}
             onOpenLedger={() => setLedger(true)}
+            onOpenContextAudit={() => setContextAudit(true)}
             onRetry={desk.reload}
           />
         ) : view === "inbox" ? (
@@ -483,6 +491,13 @@ export function App(): React.JSX.Element {
       {updatesOpen && <UpdatesPanel onClose={() => setUpdatesOpen(false)} />}
       {diagnostics && (
         <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
+      )}
+      {contextAudit && (
+        <ContextAuditPanel
+          key={desk.project.project.id}
+          projectId={desk.project.project.id}
+          onClose={() => setContextAudit(false)}
+        />
       )}
       {ledger && (
         <LedgerPanel

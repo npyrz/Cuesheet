@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60–61 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60–62 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 audits current declared context costs in the Desk and CLI |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2119,7 +2119,7 @@ The finding that reshaped the step, and it was in the cuesheet the README prints
 
 #### What this step deliberately did not build
 
-- **The Desk does not show `elided` or the estimate yet.** They are on the wire (`GateReport.elided`, `brief.estimatedTokens` on the `202`), and the CLI prints the estimate labelled as one. Drawing them belongs with Step 62's audit, which is the Desk surface about context cost.
+- **The Desk displays landed in Step 62.** The palette labels the typed prompt's token estimate, and Gate results name `GateReport.elided` files. The CLI already printed the prompt estimate labelled as one.
 - **No vendor endpoint for exact counts**, by the README's no-credential promise, as the step said.
 
 #### Two existing tests time out under the full suite on this machine — *closed in Step 59*
@@ -2261,13 +2261,62 @@ Plan mode and session resume, the plan's other two examples, have **no** member 
 - **A hook's report on a run the hook failed.** A failure is *thrown* to the queue, which has nowhere to put a summary, so `result.hooks` exists only for runs that finished; a failed one carries the hook, exit code and stderr in `error`. Gates have the same limitation today. Both would move with a change to how the queue records a failure's partial summary — not something to change for one kind of cue.
 - **Hooks keyed to events** ("after every engineer", "on hold") rather than placed as cues. The done-when is met by position, and an event-keyed hook is a second scheduling model beside the cuesheet's one. Worth it only when someone has a cuesheet where placing the cue by hand is the problem.
 
-### Step 62 — What your context already costs
+### Step 62 — What your context already costs ✅
 
 A read-only audit, in the Desk and in the CLI: how large every always-loaded file is, in estimated tokens, multiplied by the Stations that load it and the runs that load them.
 
 This is the smallest step in the phase and probably the most useful one. A 40k-token hand-written `CLAUDE.md` is paid by every Station on every run forever, and nothing in any tool tells anybody that. It also keeps the rest of this phase honest, since it is the only thing here that produces a before and an after.
 
 **Done when:** the Desk can answer "what am I paying for context, per run, across this project's Stations" with a number, and a projection that grows by 10k tokens shows up as a cost change rather than a bigger file.
+
+- [x] **The Desk answers per-run context cost with a number.** The project view's Context cost button and command palette open a report of current declared files, each consuming Station, and each cuesheet's estimated inputs per run. A runs multiplier estimates repeated runs. The CLI's `cuesheet context --runs N [--project ID]` consumes the same `GET /projects/:id/context-audit` response.
+- [x] **A projection growing by 10k estimated tokens changes the cost.** `context-audit.test.ts` adds 40,000 UTF-8 bytes inside the generated block: its subtotal grows by 10,000 tokens, a cuesheet invoking that Station twice grows by 20,000 per run, and three runs grow by 60,000. Repeating the audit without edits gives the same report.
+
+#### What the work settled
+
+**Current input volume, not a reconstructed bill.** Four UTF-8 bytes per token is
+Step 58's existing estimate. Every display labels it as estimated; the report
+explains that caching and subscription/model pricing determine the actual bill.
+`runs` multiplies today's files, not historical sizes. Default-run cost counts the
+first Station, as the executor does; every-Station-once cost is a separately
+labelled total. Cuesheets count repeated Station cues and omit Gate/hook cues.
+Skipped reviews, early termination and cap fallback can change actual loads.
+
+**Keep context declarations attached to their harness.** The projector's flattened
+target list cannot answer who reads each file. `harnessRuntime` now supplies a
+per-harness lookup without adding a new Harness capability or detecting vendors.
+Project context is read at the Station's resolved workspace, matching the executor's
+current path semantics; the relative-workspace defect recorded in Step 59 remains
+open. User files resolve under the injected home. This audit covers declared files,
+not ancestor/nested instructions, vendor system prompts, inline Commons, task briefs,
+diffs or tool results. The projection subtotal is part of each file's total.
+
+**Missing and unknown stay distinct.** Missing files are zero. Unreadable files,
+unknown harness declarations, missing workspaces and escaping declarations make
+totals partial/unknown rather than authoritative zeroes. A harness declaring an
+empty file list has no file context to charge. Files shared by two Stations are
+read once but counted for both consumers; duplicate declarations do not double-charge.
+
+**The audit is read-only and fetched on demand.** It never regenerates projections,
+starts a model or writes reports into generated context, preserving byte stability.
+The panel has a refresh control and the usual Escape/focus trap. Step 58's deferred
+Desk displays also landed: prompt token estimates in the palette and omitted files
+beside Gate results, including a passed Gate whose review did not cover them.
+
+**Verification:** daemon tests exercise the real HTTP route and `/api` alias,
+per-harness and user scope, repeated cues, projection growth, UTF-8, unknown and
+unreadable inputs, invalid multipliers and unchanged file bytes. A CLI integration
+test checks its report against a real isolated daemon. Browser verification used
+an isolated temporary profile and confirmed per-run/Station/file tables and the
+three-run multiplier, refresh after another 10k-token projection growth, Escape,
+and the palette's prompt estimate. Build, typecheck, lint, format-check and the
+full suite passed locally on macOS: 79 files, 1,212 tests passed and 9 skipped.
+The full run also found Step 61's reference-config test still expecting four
+cues after the hook made five; its assertions now cover all three cue kinds in
+order. Test startup consumes only context declarations, avoiding real connector
+registration. Windows execution and Step 59's live saving measurement remain
+unclaimed.
+
 
 ### The rule that makes all of this work, written down before it is broken
 

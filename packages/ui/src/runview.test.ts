@@ -532,3 +532,35 @@ describe("toolSummary", () => {
     expect(toolSummary("Tool", "inline string")).toBe("inline string");
   });
 });
+
+describe("review context omissions", () => {
+  it("keeps files absent from a review visible even when its gate passed", () => {
+    const record = run({
+      status: "done",
+      result: {
+        status: "done",
+        cost: { tokensIn: 0, tokensOut: 0 },
+        durationMs: 0,
+        gates: [
+          {
+            gate: "check",
+            outcome: "pass",
+            reasons: [],
+            elided: ["large.ts"],
+          },
+        ],
+      },
+    });
+    expect(describeRun(record, []).gates[0]?.elided).toEqual(["large.ts"]);
+    const legacy = run({
+      status: "done",
+      result: {
+        status: "done",
+        cost: { tokensIn: 0, tokensOut: 0 },
+        durationMs: 0,
+        gates: [{ gate: "check", outcome: "pass", reasons: [] }],
+      },
+    });
+    expect(describeRun(legacy, []).gates[0]?.elided).toEqual([]);
+  });
+});

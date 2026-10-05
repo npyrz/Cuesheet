@@ -70,6 +70,7 @@ export interface GateRow {
   /** `overridden` is a hold a human waved through; it is not a pass. */
   overridden: boolean;
   reasons: string[];
+  elided: string[];
   tone: Tone;
 }
 
@@ -191,6 +192,7 @@ function gateRows(run: Run): GateRow[] {
     outcome: gate.outcome,
     overridden: gate.overridden === true,
     reasons: gate.reasons,
+    elided: gate.elided ?? [],
     // An overridden hold is drawn as a warning rather than a pass: somebody
     // decided to carry on, which is a different fact from the gate agreeing.
     tone:

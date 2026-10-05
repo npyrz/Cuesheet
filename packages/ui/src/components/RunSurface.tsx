@@ -246,7 +246,18 @@ function RunDetail({
                 {gate.overridden ? "overridden" : gate.outcome}
               </span>
               <span className="gate-name">gate “{gate.gate}”</span>
-              <span className="gate-reasons">{gate.reasons.join(" ")}</span>
+              <span className="gate-reasons">
+                {gate.reasons.join(" ")}
+                {gate.elided.length > 0 && (
+                  <>
+                    {" "}
+                    Review context omitted {gate.elided.length} changed file
+                    {gate.elided.length === 1 ? "" : "s"}:{" "}
+                    {gate.elided.join(", ")}. Approval does not cover these
+                    files.
+                  </>
+                )}
+              </span>
             </li>
           ))}
         </ul>

@@ -30,6 +30,10 @@
     "./setup": {
       "types": "./dist/setup.d.ts",
       "default": "./dist/setup.js"
+    },
+    "./brief": {
+      "types": "./dist/brief.d.ts",
+      "default": "./dist/brief.js"
     }
   },
   "files": [

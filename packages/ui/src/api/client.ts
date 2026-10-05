@@ -7,6 +7,7 @@
  * a wire shape is a compile error in the Desk rather than a runtime surprise.
  */
 import type {
+  ContextAudit,
   Confinement,
   Fact,
   HarnessProbe,
@@ -95,6 +96,13 @@ export interface AddStationResponse {
   sourcePath: string;
   created: boolean;
   stations: StationsResponse;
+}
+
+export function fetchContextAudit(
+  projectId: string,
+  runs = 1,
+): Promise<ContextAudit> {
+  return request(`${scope(projectId)}/context-audit?runs=${runs}`);
 }
 
 /**

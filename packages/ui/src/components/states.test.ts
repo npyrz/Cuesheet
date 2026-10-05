@@ -72,6 +72,7 @@ function project(load: Load, harnesses: HarnessProbe[] = []): string {
       onAddStarter: () => Promise.resolve(),
       onStart: () => undefined,
       onOpenLedger: () => undefined,
+      onOpenContextAudit: () => undefined,
       onRetry: () => undefined,
     }),
   );

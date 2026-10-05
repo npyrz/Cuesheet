@@ -6,6 +6,7 @@
  * which is the path that has to be fast.
  */
 import { useEffect, useRef, useState } from "react";
+import { estimateTokens } from "@cuesheet/core/brief";
 import { shortcutHint } from "../format.js";
 import { useModal } from "../hooks/useModal.js";
 import { isActivate, rove } from "../keys.js";
@@ -166,6 +167,13 @@ function Palette({
           aria-activedescendant={at >= 0 ? `palette-${String(at)}` : undefined}
         />
         <div className="body" id="palette-commands">
+          {text.trim() !== "" && canStart && (
+            <p className="hint">
+              Prompt: about{" "}
+              {estimateTokens(text.trim()).toLocaleString("en-US")} tokens
+              (estimated), before context and review diffs.
+            </p>
+          )}
           {text.trim() !== "" && (
             <button
               type="button"

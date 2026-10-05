@@ -2000,3 +2000,7 @@ main:focus {
 .diagnostics footer {
   flex-wrap: wrap;
 }
+
+.context-files th[scope="row"] {
+  overflow-wrap: anywhere;
+}

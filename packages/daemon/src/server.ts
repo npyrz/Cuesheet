@@ -9,6 +9,7 @@
  * because nothing here is reachable off the machine — pairing tokens and a
  * tailnet are M3, and that is the point at which this comment has to change.
  */
+import { auditContext, type HarnessContextFiles } from "./context-audit.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import { stat } from "node:fs/promises";
@@ -201,6 +202,8 @@ export interface StartDaemonOptions {
   commonsInbox?: CommonsInbox;
   /** Context targets declared by the registered harnesses. */
   contextFiles?: () => readonly ContextFile[];
+  /** Context declarations kept per harness for the read-only cost audit. */
+  harnessContextFiles?: HarnessContextFiles;
   /**
    * Where the repo map's wasm lives (Step 59). The defaults resolve beside
    * this package, which is right for `cuesheetd` and wrong inside the bundled
@@ -520,6 +523,7 @@ export async function startDaemon(
     harnessConfinement,
     knownHarnesses,
     usage,
+    harnessContextFiles: options.harnessContextFiles ?? (() => undefined),
     commons,
     commonsInbox,
     projector,
@@ -850,6 +854,7 @@ interface RouteDeps {
   harnessConfinement: HarnessConfinement;
   knownHarnesses: KnownHarnesses;
   usage: UsageCache;
+  harnessContextFiles: HarnessContextFiles;
   commons: CommonsStore;
   commonsInbox: CommonsInbox;
   projector: CommonsProjector;
@@ -1506,6 +1511,31 @@ function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     );
     const runs = await runtime.store.list(limit);
     return { runs };
+  });
+
+  // Reading the audit never regenerates context or invokes a vendor CLI.
+  app.get("/projects/:id/context-audit", async (request, reply) => {
+    const runtime = await runtimeFor(request, reply);
+    if (!runtime) return reply;
+    const raw = (request.query as Record<string, unknown>)["runs"];
+    const runs = raw === undefined ? 1 : Number(raw);
+    if (
+      (typeof raw !== "undefined" &&
+        (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw))) ||
+      !Number.isSafeInteger(runs) ||
+      runs < 1 ||
+      runs > 1_000_000
+    ) {
+      return reply
+        .code(400)
+        .send({ error: "runs must be an integer from 1 to 1000000." });
+    }
+    return auditContext({
+      config: runtime.config().config,
+      env,
+      filesOf: deps.harnessContextFiles,
+      runs,
+    });
   });
 
   /**

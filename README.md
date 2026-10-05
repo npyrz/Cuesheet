@@ -25,6 +25,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Safety and review | Roles, path leashes, two-vendor Gates, Holds, and stop/recovery behavior work |
 | Projects | One daemon serves multiple isolated projects with independent config, history, queues, and events |
 | Limits and cost | Usage reporting, pre-run refusal, role-safe fallback routing, and the project ledger work |
+| Context cost | Read-only Desk/CLI audit estimates declared context per file, Station, cuesheet and run count, including projection size |
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
 | Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
@@ -87,6 +88,7 @@ another, register a project and copy the id it prints:
 
 ```bash
 npx cuesheet project add /path/to/your/project
+npx cuesheet context --project PROJECT_ID --runs 10
 npx cuesheet stations --project PROJECT_ID
 npx cuesheet run --project PROJECT_ID --cuesheet ship "Add a regression test"
 npx cuesheet runs --project PROJECT_ID
