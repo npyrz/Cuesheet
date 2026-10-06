@@ -47,8 +47,8 @@ arrived in that build. Published tags below identify actual installers.
 
 ### Compatibility and known limits
 
-- The beta release bar remains open. Phone pairing, Caller automation and On-Call are not implemented.
-- All five published releases now have captured profiles, including the first SQLite release. SQLite-to-files conversion is unsupported; incompatible selection leaves the database untouched.
+- The beta release bar remains open: relative workspaces currently resolve against daemon cwd, published-release profile coverage needs updating, and dependency findings need triage. Pocket pairing is implemented; physical tailnet/phone and Windows UI acceptance remain open. Caller automation, On-Call and background phone push are not implemented.
+- Five historical published releases have captured profiles, including the first SQLite release; ten later published builds lack captures as of 2026-10-06. SQLite-to-files conversion is unsupported; incompatible selection leaves the database untouched.
 - Signed release jobs refuse to publish without signing/notarization credentials. Local unsigned development builds remain available.
 
 ## [build-36170856000-bb9ab14] — 2026-09-25

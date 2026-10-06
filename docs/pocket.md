@@ -8,7 +8,9 @@ patches. Open the Desk when a decision needs the full findings and diff.
 
 ## Connect a phone
 
-Use the current source build; published alpha installers do not contain Pocket.
+Use the current source build or development prerelease
+[`build-37505975254-d92b689`](https://github.com/npyrz/Cuesheet/releases/tag/build-37505975254-d92b689).
+The named `v0.1.0-alpha` installers do not contain Pocket.
 
 1. Build and run Cuesheet with `npm run build` and either the desktop app or
    `npx cuesheetd`. For the browser Desk, also run the UI development server.
@@ -123,7 +125,8 @@ disposable profile and a loopback proxy simulating the HTTPS terminator:
 pair, read two questions, GO, NO, generate a QR, revoke from the Desk, then
 reload the phone to observe the refusal. The image below contains synthetic
 questions from that profile. No real Tailscale connection or physical phone
-was exercised; Windows, physical-phone alerts and tailnet HTTPS acceptance
-remain recorded in [the plan](../PLAN-STEP.MD#phase-15--pocket).
+was exercised. Automated checks and unsigned packaging passed on macOS and
+Windows for `d92b689` in Release run 37505975254; Windows UI, physical-phone
+alerts and tailnet HTTPS acceptance remain recorded in [the plan](../PLAN-STEP.MD#phase-15--pocket).
 
 ![Pocket with two synthetic project questions](images/pocket.jpg)

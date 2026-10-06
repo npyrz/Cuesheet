@@ -2,7 +2,7 @@
 
 Small, ordered steps to get a **working** Cuesheet on **macOS and Windows**. Everything here is scaffolding you can tear up later; the goal is a running app you can tweak, not a finished product.
 
-The foundation scope was README milestones **M0 (Spine)** and **M1 (Desk)**, plus harness seams. The plan expanded through Gates, Projects, Limits, Commons and the context economy; Phase 15 now implements **M3 (Pocket)**. Linux, Caller, On-Call and the remaining 1.0 hardening stay open — see [Deferred](#deferred-on-purpose).
+The foundation scope was README milestones **M0 (Spine)** and **M1 (Desk)**, plus harness seams. The plan expanded through Gates, Projects, Limits, Commons and the context economy; Phase 15 now implements **M3 (Pocket)**. Release closure and 1.0 hardening are now explicit in Phases 16–17; researched extensions are proposed in Phase 18. Caller and On-Call stay open — see [Deferred](#deferred-on-purpose).
 
 **The first release bar was alpha; current work reaches toward 1.0 without claiming it.** Phases 0–4 are pre-alpha, Phases 5–6 are alpha, and the beta and 1.0 bars are stated in [Release stages](#release-stages) so the gap is visible rather than assumed.
 
@@ -62,14 +62,67 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 10 · Limits | 37–39 | 🔵 beta | ✅ **Done.** Usage on the wire, the strip, a run refused before it starts, a cache-aware ledger, and `when_capped` routing that refuses to swap a seat |
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
-| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ✅ **Steps 57–62 done.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map and saved one discovery call before the first edit in each of two paired real-Claude fixture tasks; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 audits current declared context costs in the Desk and CLI, with observed ledger-based pricing |
-| 15 · Pocket | 63 | 🟢 1.0 | **Source implemented and HTTP/browser verified on macOS.** Opt-in restricted phone listener, one-time QR pairing, expiring/revocable devices, and cross-project GO/NO. Real tailnet/physical-phone and Windows acceptance stay open |
-| — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
+| 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | **Implementation landed; release acceptance reopened.** Phase 13 merged into `beta` in `54936cb`. Five historical profiles replay, but ten subsequently published builds lack captures as of this audit. Step 53’s continuing criterion is incomplete; close Phase 16 before declaring beta ready |
+| 14 · The context economy | 57–62 | 🔵 pulled forward | ✅ **Steps 57–62 done.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map and saved one discovery call before the first edit in each of two paired real-Claude fixture tasks; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 audits current declared context costs in the Desk and CLI, with observed ledger-based pricing |
+| 15 · Pocket | 63 | 🟢 1.0 | **Source implemented; automated checks pass both platforms.** HTTP/browser walkthrough on macOS; real tailnet/physical-phone and Windows UI acceptance stay open |
+| 16 · Close release gaps | 64–67 | 🔵 beta release | ⬜ Workspace semantics, profile coverage, dependency triage, and candidate acceptance/publication |
+| 17 · Finish the 1.0 bar | 68–71 | 🟢 1.0 | ⬜ Security/fuzzing, backup/restore, Linux, and independent harness acceptance; also finish Step 63 |
+| 18 · Workflow extensions | 72–77 | ⚪ proposed after release closure | ⬜ Research-backed proposals; none implemented by this audit |
 
-**Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 now targets source checkout updates, as clarified by the maintainer. Phase 13's source criteria passed both CI platforms on `68c1290` on 2026-10-01. The `codex/phase-13-readiness` branch still needs merging into `beta`; a local stop-test fixture fix should be pushed and verified first. This is a source-control boundary, not a release claim: package versions remain `0.1.0-alpha` until preparing the named `v0.5.0-beta` release. No beta tag or release was published in this audit.
+**Branch checkpoint (2026-10-06):** this audit started from clean `beta` at `d92b689`. Phase 13 and its stop-test fix are already merged via `54936cb`; the old merge blocker is closed. [Release run 37505975254](https://github.com/npyrz/Cuesheet/actions/runs/37505975254) passed all five checks and unsigned packaging on macOS and Windows, then published [`build-37505975254-d92b689`](https://github.com/npyrz/Cuesheet/releases/tag/build-37505975254-d92b689). This is a development prerelease, not the named beta milestone. Source package versions remain `0.1.0-alpha`; no `v0.5.0-beta` or `1.0.0` release exists. This audit changed documentation only and did not push, merge, tag or publish.
 
 **Numbering rule, because this table has now been renumbered once and will be again:** a phase or step that is **done is frozen** — Phases 0–7 and Steps 1–30 keep their numbers forever, because other documents, commits and this file's own retrospectives point at them. Everything **unbuilt renumbers freely**, so that a phase number always equals its position in the running order. The alternative — appending new phases and leaving the order to a footnote — buys a smaller diff once and costs every future reader a sentence like "do 7, then 10, then 11, then 8."
+
+---
+
+## Release readiness audit · 2026-10-06
+
+**Verdict: the core beta features are implemented, but the checkout is not ready for a named beta release; 1.0 is also incomplete.** A green suite establishes the tested paths, not every historical acceptance clause. This audit reviewed the plan’s completion clauses, current implementation/test entry points, README, security/release guides, package versions, workflows, live GitHub releases and the current commit’s runner results. It did not repeat paid vendor runs, drive a physical phone, observe Windows UI, or conduct an independent security audit.
+
+### Verification on the audited source
+
+| Check | Result |
+|---|---|
+| Local `npm run build` → `npm run typecheck` → `npm run lint` → `npm run format:check` → `npm test` | All pass in CI order on macOS, Node `v25.2.1`; 85 files, 1,257 tests passed, 9 skipped |
+| Current source `d92b689`, macOS and Windows, Node 22 | [Release run 37505975254](https://github.com/npyrz/Cuesheet/actions/runs/37505975254): all five checks, packaging and publication pass |
+| Fresh vendor CLI integration | Not rerun; `CUESHEET_E2E` remains opt-in and captured harness streams plus prior live acceptance are the evidence |
+| Dependency audit | Full tree: 15 affected packages (4 high, 11 moderate, 0 critical). `--omit=dev`: 4 (1 high, 3 moderate). These are npm advisory classifications, not proof of reachable exploits |
+| User/device acceptance | Earlier macOS browser evidence exists; complete keyboard, stranger-onboarding, physical tailnet/phone and Windows UI acceptance remain open |
+
+### Feature review
+
+Paths below are implementation and executable evidence, relative to this repository. “Implemented” does not close the limitations listed alongside it.
+
+| Feature / plan coverage | Implementation and tests | Assessment / remaining work |
+|---|---|---|
+| Toolchain, types, configuration, paths · 0–1 | `core/config.ts`, `paths.ts`, config/path/migration tests; six workspace builds | Implemented; relative Station workspace resolution is defective (Step 64) |
+| Roles and leashes · 1, 9, 11 | `core/leash.ts`, `roles.ts`; `harness/workspace.ts`, `codex.ts`, role/leash/workspace tests | Implemented with disclosed bounds: subprocess shell writes bypass facade checks; Claude Code declares no role sandbox. Fuzzing and independent review outstanding |
+| Queue, streaming, stop, crash recovery · 2 | `daemon/queue.ts`, `bus.ts`, `server.ts`, `reconcile.ts`; queue/bus/server/reconcile tests | Implemented; project queues serialize their own runs, not every Station sharing a disk workspace across projects |
+| Harnesses and vendor independence · 3, 7, 9 | `harness/{claude-code,codex,ollama,contract}.ts`, captured streams and corresponding tests | Implemented: Claude Code/Codex; worker-only Ollama; mock. Third-party acceptance remains a 1.0 item |
+| Desk and Electron · 4–6, 11 | `ui/App.tsx`, client/store/components; reducer, runview, keys, first-run tests; `desktop/main.ts`, preload/build/release tests | Implemented; original Phase 7 run replay is reconstructed, complete keyboard walk and stranger first-run remain open; three Windows eyes-on items remain below |
+| Gates, verdicts, Holds · 7 | `core/{gate,verdict}.ts`, `daemon/harness-executor.ts`; `gate-run.test.ts` | Implemented; unreadable review abstains, NO holds, GO overrides. Reviews use workspace-wide diffs, including earlier dirty work |
+| Projects and isolation · 8 | `core/project.ts`, `daemon/projects.ts`; project/switch/migrate tests | Implemented for registry, history, buses and queues; workspace-path defect means logical project isolation does not guarantee the correct working directory |
+| Limits, routing, ledger · 10 | `core/{limits,fallback,ledger}.ts`, `daemon/usage.ts`, Desk limits/ledger | Implemented; unknown usage is not a percentage, Codex dollars remain unknown. Per-run dollar/elapsed-time budgets are proposed, not present |
+| Commons store, projection, capture, recall, sync · 12 | `daemon/{commons,projections,commons-inbox,mcp}.ts`; Commons, inbox, projection, MCP and sync tests | Implemented; operator resolves Git conflicts. Empty generated blocks can dirty existing instruction files at boot (Step 64) |
+| CLI · 13 / 51 | `cli/index.ts` and real-daemon CLI tests | Implemented, including run/stop/standby/context/rewind; Caller and On-Call are separate unbuilt workflows |
+| SQLite, migrations, upgrade safety · 13 / 52–53 | `daemon/store-{sqlite,backend}.ts`, shared store contract and `profiles.test.ts` | Implemented; five captured profiles pass. Ten published builds lack captures; current floor assertion cannot detect new publications (Step 65) |
+| Updates, distribution, contributor docs · 13 / 54–55 | `scripts/update.mjs`, release/version scripts, both workflows, source-update/release tests, `docs/harnesses.md`, `examples/harness/` | Implemented; Phase 13 merged. Named milestone/version/changelog preparation remains; signed installed-update acceptance is optional and still unproven |
+| Local diagnostics · 13 / 56 | `daemon/diagnostics.ts`, `ui/components/DiagnosticsPanel.tsx`, force-kill/fatal-exception tests | Implemented with bounded, path-reduced local export; ordinary run history still stores prompt/work content |
+| Cache, briefs, review path policy · 14 / 57–58 | `core/{brief,ledger}.ts`, executor, gate-run/brief/ledger tests | Implemented; whole-file truncation and skipped review before payment. No bill estimate is a spend ceiling |
+| Repo map · 14 / 59 | `daemon/repomap.ts`, WASM grammars, projection tests; `docs/experiments/repo-map-2026-10-05/` | Implemented, off by default; two paired fixture tasks each saved one discovery call. This is limited evidence, not a universal savings guarantee |
+| Rewind and hooks · 14 / 60–61 | `harness/git.ts`, `daemon/hooks.ts`, executor/rewind routes; rewind/hooks tests | Implemented through API/CLI. Edits made by the operator during a run are included in its snapshots; hooks are trusted, not leashed. No Desk rewind control, persistent rewind-action record, or structured hook report on a thrown failure |
+| Context cost · 14 / 62 | `daemon/context.ts`, `context-audit.ts`, Desk panels and CLI integration tests | Implemented; current declared context estimates and observed-rate pricing, not historic size reconstruction or a bill |
+| Pocket · 15 / 63 | `daemon/pocket.ts`, store/redactor, UI pairing/settings; Pocket store/HTTP/UI helper tests | Implemented; both runner checks pass. Physical tailnet/phone and Windows UI remain open; background push unbuilt |
+| Remaining README/1.0 scope | Exit criteria, `SECURITY.md`, deferred table | Independent security review, pre-vendor redaction design, leash fuzzing, Linux, backup/restore, external harness proof remain; Caller/On-Call and plan mode stay deferred |
+
+### Why beta readiness is reopened
+
+1. **Wrong working directory is reproducible.** Loading project B’s `cuesheet.toml` with `workspace = "."` leaves the value relative. `createWorkspace` resolves it against the daemon process directory. A disposable two-directory reproduction returned the daemon directory instead of B; no agent ran and both directories were removed. The README’s sample configuration therefore can target the wrong repository. Step 64 must decide project-root versus config-directory semantics explicitly, including registry-stored configs; using `~/.cuesheet/projects/<id>` as a code workspace would repeat the problem.
+2. **Upgrade coverage is incomplete.** The live [release list](https://github.com/npyrz/Cuesheet/releases) contains fifteen publications; only five fixture directories exist. A passing `profiles.test.ts` cannot support “every published release” because its floor lists only those five. Missing tags are listed in Step 65. This is an evidence gap; this audit did not establish data loss.
+3. **Dependency findings require disposition.** Runtime audit flags MCP SDK, Fastify, fast-uri and smol-toml. The [SDK maintainer advisory](https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-6qxp-vccf-f47h) affects OAuth HTTP clients and explicitly excludes MCP servers; Cuesheet’s `mcp.ts` imports server transports. Do not call that an observed credential leak. Triage all findings, upgrade applicable dependencies and prove packaging compatibility in Step 66; no forced bulk upgrade was performed.
+4. **Acceptance and release preparation are unfinished.** Steps 43–45 retain their stated evidence gaps. Versions remain alpha, the named beta changelog/tag is absent, and automatic push releases produce `build-*`, not semantic milestones. Step 67 records a concrete candidate acceptance/release checklist. Optional signing is not a beta prerequisite.
+
+The existing 1.0 exit criteria remain in force. Step 63’s real-device work is a 1.0 requirement; proposing more features does not complete it. New feature choices below are recommendations inferred from the researched mechanisms and this audit’s gaps, not commitments or implemented behavior.
 
 ---
 
@@ -77,7 +130,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 
 Phases 0–6 land you at **alpha**, and for a long time that was the whole document — it said so, in a sentence that has now been overtaken. Alpha shipped, and the honest ceiling moved: the features that make Cuesheet worth choosing over a terminal are gates, the Commons, the limits strip, and the phone, and the first of those is now done. So the plan continues past Phase 6 rather than handing off to a roadmap row.
 
-**Current state:** development is on the beta track in Phase 13; the latest named milestone remains `v0.1.0-alpha` (later per-commit development prereleases also exist). “Working on beta” means closing the checklist below. It does not make an unverified or migration-incomplete build a beta release.
+**Current state:** development is on the beta track with Steps 1–62 implemented and Step 63 awaiting device acceptance. The latest named milestone remains `v0.1.0-alpha`. **Beta release readiness is not established**: the 2026-10-06 audit reopened upgrade coverage and confirmed a workspace defect; Phase 16 records the closure work. **1.0 is not ready**: its unchecked exit criteria remain required.
 
 The sequencing is the plan's, not the README's. That table numbers features (M2, M3, M4…) for a reader deciding whether to care; it is a catalogue, not a work order, and the work has already jumped past M2–M4 to M5 once. What governs here is which unbuilt thing most changes what the product *is*.
 
@@ -123,7 +176,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] `ollama` harness, so the local/worker story is real. **Phase 9, done.** This line used to say it was blocked by nothing but a missing install, which was wrong twice over: Ollama is a completion endpoint rather than an agent loop, so the `worker`-only reading the README already specifies is what made it small — *and then* the install turned out to be the remaining blocker after all, once a machine had one. Both halves of that were worth finding out in the order they were found
 - [x] **The Desk rebuilt** around projects, limits and roles — **Phase 11, done.** It now has a launch level above the project, a project view above the run, and a run surface ordered around findings rather than log arrival
 - [x] Run store moved to SQLite behind `RunStore` (files won't hold up at thousands of runs) — **Step 52, done.** `node:sqlite`, so no native module and no per-platform rebuild; the file store stays a supported choice behind `CUESHEET_RUN_STORE=files` and both are held to one executable contract
-- [x] Config migrations, and an upgrade that never discards run history — **Steps 33 and 53.** All five published releases have captured profiles and pass replay on macOS and Windows in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503). File-origin history opens under both stores; SQLite history opens losslessly under SQLite, and incompatible file selection refuses without touching the database
+- [ ] Config migrations and complete published-release upgrade coverage — **Steps 33 and 53 are implemented; continuing acceptance reopened on 2026-10-06.** The five historical captures pass replay, including SQLite/WAL preservation and incompatible-backend refusal. GitHub now lists fifteen published releases, and ten lack profiles; Step 65 closes the gap
 - [x] Source checkout updates from published release tags — **Step 54 revised on 2026-09-30 by maintainer clarification.** Clone-and-run distribution does not require signing. App/browser/CLI checks and a stopped-checkout update script pass both CI platforms on `68c1290` in [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986)
 - [ ] Optional prebuilt installer signing and notarization — separate distribution hardening, no longer a Phase 13 prerequisite
 - [x] Crash and error reporting you can actually act on — local only, no telemetry — **Step 56, done**. Real force-kill and fatal-exception runs leave attachable reports; the tests pass on macOS and Windows CI
@@ -135,7 +188,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [ ] Security review of the daemon's network surface, pairing tokens, and redaction pack. The README already promises "not audited" — 1.0 is where that stops being acceptable
 - [ ] Leash enforcement fuzzed, not just unit-tested
 - [ ] `docs/harnesses.md` published and a third-party harness proven to work against it
-- [ ] Linux builds (the README calls it first-class)
+- [ ] Linux builds — a planned target; the current README correctly excludes it from tested, packaged platforms
 - [ ] Documented backup/restore of `~/.cuesheet`
 
 **Explicitly post-1.0** — README milestones M6 (Caller), M7 (On-Call), M8 (Fleet), M9 (Ecosystem). On-Call is a headline section and it will feel odd to defer, but it is opt-in, armed deliberately, and depends on Gates being battle-tested first. Shipping it before gates have real mileage is how you get a 3am patch nobody trusts.
@@ -1753,13 +1806,13 @@ The interface was cut for this in Step 10, and the seam has held through everyth
 
 **Half of Step 53 arrived here, and it is the half that prevents damage.** The database carries SQLite's own `user_version`, and a build that finds a version it does not understand refuses to open rather than writing to it. A migration that runs once and is recorded is still Step 53's work; a downgrade quietly corrupting a newer store is the failure that could not wait for it.
 
-### Step 53 — Migrations as a mechanism ✅
+### Step 53 — Migrations as a mechanism *(implemented; published-profile coverage reopened)*
 
 Step 33 performs one migration. This makes it a system: versioned config, versioned store, a migration that runs once and is recorded, and a refusal to open state written by a *newer* build rather than corrupting it.
 
 **Step 52 already installed two pieces of this**, and the remainder is what the step is now for: the run store is versioned (`user_version`) and refuses a newer one, and the file-store-to-SQLite import is a migration that runs once, detected by that version. Neither is *recorded* anywhere a person can read, config is still unversioned, and nothing runs an old profile in CI.
 
-**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. ✅ All five published releases, including the first SQLite release `build-36170856000-bb9ab14`, have captured profiles and pass on both `macos-latest` and `windows-latest` in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503), source commit `bbd62c6`, verified on 2026-09-30. Replay includes committed SQLite/WAL state and full events for that release.
+**Done when:** every released version's state opens on the current build with nothing lost, proven by keeping the old profiles around and running them in CI. **Reopened on 2026-10-06:** five of fifteen published releases are captured; see Step 65. **Historical acceptance (2026-09-30):** all five releases published at that checkpoint, including the first SQLite release `build-36170856000-bb9ab14`, have captured profiles and pass on both `macos-latest` and `windows-latest` in [CI run 36808020503](https://github.com/npyrz/Cuesheet/actions/runs/36808020503), source commit `bbd62c6`, verified on 2026-09-30. Replay includes committed SQLite/WAL state and full events for that release.
 
 #### What the work settled
 
@@ -2430,9 +2483,9 @@ and enabling remote access never exposes the unrestricted Desk API.
 - [ ] **Actual Tailscale HTTPS and physical phone.** Tailscale is not installed
   on this host. The operator setup command follows its current official Serve
   documentation; neither a real tailnet nor a physical-phone alert has been observed.
-- [ ] **Windows acceptance.** Portable paths, atomic state writes, ephemeral
-  test ports and the existing UI-resource resolver are used, but this new source
-  has not been run on a Windows machine or CI runner.
+- [ ] **Windows UI/device acceptance.** All five checks and unsigned packaging
+  passed on Windows in Release run 37505975254 for `d92b689` on 2026-10-06.
+  Actual Windows Pocket UI, tailnet and phone operation remain unobserved.
 
 #### A second listener is an access boundary, not a second daemon
 
@@ -2480,7 +2533,168 @@ not a published-release claim.
 tests passed in CI's order on macOS: 85 test files, 1,257 tests passed and 9
 skipped. The new suites include a disable-versus-pairing race and unauthenticated
 answer refusal. The disposable preview daemon, its home and browser tabs were
-removed after the walkthrough. Changes are uncommitted; no CI run is claimed.
+removed after the walkthrough. This was a local-only checkpoint. The source
+subsequently committed as `d92b689` and passed both release runners on
+2026-10-06; physical-device acceptance remains open.
+
+---
+
+# Phase 16 · Close release gaps
+
+This phase reopens release acceptance without renumbering completed implementation. **Do these before new feature work.** All checkboxes start open; this audit implements none of these fixes.
+
+### Step 64 — Workspace semantics and clean first boot
+
+- [ ] Define and document relative Station paths for repo-local and registry-stored configs. A recommended rule is relative to the registered project root; standalone config loading must carry an explicit base. Preserve absolute and `~` paths and intentional external workspaces.
+- [ ] Resolve consistently for execution, snapshots, Gates, hooks, rewind, maps and both context reports, on load and reload. Prove two projects using `workspace = "."` write only their own disposable roots regardless of daemon cwd; inject Windows path semantics and exercise actual host filesystem operations separately.
+- [ ] Skip adding an empty generated block to an existing hand-written context file when no facts/map apply and no block exists. Still clear/update an existing Cuesheet block after removing its last fact/map.
+
+**Done when:** the README example works in both project config locations on both OSes, no run reaches the daemon checkout accidentally, and first boot without generated content leaves tracked instruction files byte-identical.
+
+### Step 65 — Catch up and maintain published profiles
+
+At the audit checkpoint these ten published tags lack profiles:
+
+```text
+build-36875660969-68c1290
+build-36881668336-1bf0eb4
+build-36883491094-54936cb
+build-36958604459-2b8972e
+build-36962233947-4a787b1
+build-36964123415-226aac1
+build-37092348732-db39648
+build-37354580671-04ff3d0
+build-37403696094-aa30884
+build-37505975254-d92b689
+```
+
+- [ ] Build each exact tag in an isolated worktree and capture with `scripts/capture-profile.mjs`; never hand-edit the output or manifest. Keep SQLite/WAL recovery and schema-2 rewind artifacts covered.
+- [ ] Replay all captures on macOS and Windows; prove projects/config, full events, costs, patches, Commons, pending memory and restart behavior survive.
+- [ ] Add an explicit release-inventory check outside offline unit tests. A new publication must create a profile-capture follow-up; refresh the inventory before every candidate, including automatic `build-*` releases. Account for the new milestone’s own capture after publication.
+
+**Done when:** every publication preceding the candidate has a genuine captured profile and passing replay, and a newly published tag cannot silently disappear from the acceptance inventory.
+
+### Step 66 — Dependency advisory triage
+
+- [ ] Record installed versions, dependency chains and reachability for full-tree and runtime-only audit findings; distinguish packaging tooling from shipped execution paths.
+- [ ] Update affected dependencies where appropriate; document evidence for any non-applicable advisory. The SDK advisory’s server exclusion is a disposition, not a reason to ignore other packages.
+- [ ] Run all five checks plus macOS/Windows packaging after changes. Review electron-builder recommendations for compatibility instead of using `npm audit fix --force`.
+
+**Done when:** no applicable high/critical finding is unresolved, all remaining findings have a recorded disposition, and both packaged builds pass.
+
+### Step 67 — Candidate acceptance and named beta
+
+- [ ] Drive the full Desk by keyboard on macOS and Windows: palette, project switch, run selection, modal Tab/Shift+Tab containment, Escape and focus restoration. Confirm the Windows shortcut hint, 16px tray decision and enabled-system notification toast; retain evidence rather than inferring UI behavior from unit tests.
+- [ ] Have a person unfamiliar with the project complete the first run from the written guide; record failures and remedies. Preserve Step 43’s missing original record as a historical limitation; retain a new actual gate record for future replay instead of silently replacing that criterion.
+- [ ] On the exact candidate, run all five checks on both OSes, test the documented Node 22 source path, source updating from published tags, interrupted-run recovery and profile replay. Refresh the release/advisory inventories after any code/dependency change.
+- [ ] Prepare consistent `0.5.0-beta` workspace/lockfile versions, dated changelog, truthful README/release/Pocket documentation and reviewed release notes. Verify the named-tag procedure; current push automation only makes development builds.
+- [ ] Publish the named beta only after the preceding criteria pass and the maintainer authorizes publication; verify attached assets/source update selection and capture its profile afterward. Advance the next development version deliberately.
+
+**Done when:** an identifiable beta candidate satisfies the above criteria and `v0.5.0-beta` is actually published. Until publication, call it a candidate. Signing remains optional.
+
+---
+
+# Phase 17 · Finish the 1.0 bar
+
+Finish **Step 63 physical tailnet/phone and Windows UI acceptance** alongside this phase. The acceptance below elaborates existing exit criteria; it does not replace them.
+
+### Step 68 — Security review and leash fuzzing
+
+- [ ] Independently review Desk HTTP/WebSocket/MCP and Pocket boundaries, origins/hosts, pairing/revocation, file/path handling, subprocess permissions and diagnostics redaction; resolve findings and publish the actual reviewed scope.
+- [ ] Fuzz injected platform path semantics and exercise real symlink/junction escapes, drive/UNC paths and malformed requests. Separately settle the pre-vendor redaction policy and its limits; Pocket summary redaction alone does not satisfy it.
+
+**Done when:** the independent review and reproducible fuzz corpus are recorded, required fixes pass both platforms, and security docs accurately describe the remaining boundaries.
+
+### Step 69 — Documented backup and verified restore
+
+- [ ] Specify a stopped-daemon whole-profile backup initially: registry, configs, SQLite/files history, Commons Git state/inbox and migration state; exclude vendor credentials and decide whether Pocket devices must be revoked on restore.
+- [ ] Restore into a disposable profile on each OS and compare records, events, diffs, memory and project relocation. Refuse incompatible newer state safely. If adding live backup, use a consistent SQLite snapshot mechanism; [SQLite’s backup API](https://www.sqlite.org/backup.html) provides one rather than independently copying active WAL files.
+
+**Done when:** an operator can follow a published backup/restore guide and the restore drill preserves the checked data. This closes the existing 1.0 requirement without claiming an unbuilt live-backup API.
+
+### Step 70 — Linux distribution and acceptance
+
+- [ ] Choose supported Linux versions/architectures, add CI and installer targets, and exercise native harness spawn/stop, SQLite, desktop launch/tray, source updates and Pocket on that target.
+
+**Done when:** a Linux source build and packaged app meet documented acceptance on an actual supported system, with artifacts and limits published.
+
+### Step 71 — Independent harness proof and 1.0 candidate
+
+- [ ] Have an external author implement a harness from `docs/harnesses.md`, run structural/behavioral contracts and drive it through a real isolated daemon without vendor-specific daemon branches.
+- [ ] Reconcile the full README/reference against observed behavior, complete Step 63 and Steps 68–70, rerun release checks/profile inventory, and prepare a separately reviewed `1.0.0` candidate.
+
+**Done when:** external harness acceptance and every 1.0 exit criterion have evidence. Caller/On-Call, plan mode and optional signing retain their explicit deferred status.
+
+---
+
+# Phase 18 · Researched workflow extensions *(proposed)*
+
+Research checked on **2026-10-06** using primary documentation. These are Cuesheet proposals inferred from those mechanisms; no framework adoption is implied. Close Phase 16 first. Smaller additions can be selected before 1.0 hardening is complete, but cannot substitute for it. Preserve the daemon API as the product and add typed Harness members only when a consumer needs them.
+
+| Suggested order | Step | Benefit | Size / dependency |
+|---|---|---|---|
+| 1 | 72 · Desk rewind and durable action history | Makes existing recovery discoverable and shows what was undone | Small–medium; existing rewind API |
+| 2 | 73 · Run budgets | Bounds unattended cost/time and explains budget stops | Medium; reliable cost telemetry, cancellation, typed vendor support |
+| 3 | 74 · Isolated workspaces | Keeps user edits and separate projects/runs out of each other’s reviews | Large; workspace fix first, Git lifecycle and shared-workspace scheduling |
+| 4 | 75 · Session continuation and recovery | Continues useful work without rebuilding all conversation context | Large; captured vendor session streams, migrations, cue checkpoints |
+| 5 | 76 · Commons freshness and selective loading | Keeps stale guidance out of briefs while retaining its provenance | Medium; versioned metadata, approval and projection/recall policy |
+| 6 | 77 · Pocket background notifications | Reaches an operator when the page is suspended | Medium–large; physical phone acceptance, push endpoint/session lifecycle |
+
+### Step 72 — Desk rewind and durable action history
+
+Step 60 already supplies safe whole-run rewind; this proposal supplies its missing Desk workflow. [Claude’s checkpointing guide](https://code.claude.com/docs/en/checkpointing) documents code/conversation recovery and its limits, including shell edits; Cuesheet’s snapshot-based whole-run behavior must keep its own distinct contract.
+
+- [ ] Show rewind availability and dry-run conflicts in the run surface, then explicit confirmation; use the same HTTP route as the CLI.
+- [ ] Persist a separate operator-action record identifying the run, time and outcome. Keep finished harness event logs immutable; show already-rewound state consistently across API, CLI and Desk.
+
+**Done when:** a user previews and undoes a completed/failed run from the Desk, other edits remain intact, conflicts change no files, and restart preserves the action’s outcome. Per-file/hunk rewind remains a separate proposal.
+
+### Step 73 — Per-run cost and elapsed-time budgets
+
+Current Limits protect measured plan windows and brief size, not run spend. [Anthropic’s cost guide](https://code.claude.com/docs/en/agent-sdk/cost-tracking) documents cost totals, `maxBudgetUsd` and accounting resets. This establishes a useful vendor mechanism; it does not establish that Cuesheet’s installed CLI supports the same option.
+
+- [ ] Add opt-in elapsed-time/token/dollar budgets with explicit semantics; persist budget reasons and observed totals. Prevent starting later cues after exhaustion and cancel an active harness where supported.
+- [ ] Add a typed vendor-budget capability only after help output and captured streams prove it. Label daemon-side sampled limits as approximate; unknown dollars cannot support a guaranteed dollar ceiling, and cancellation may still incur an in-flight request.
+
+**Done when:** measured-budget tests stop/refuse at the documented boundary, no later cue runs, unknown-price vendors get an honest unsupported answer, and existing limits/fallback roles still hold.
+
+### Step 74 — Isolated run worktrees and safe integration
+
+[Git worktrees](https://git-scm.com/docs/git-worktree) allow multiple working trees with separate HEAD/index while sharing repository objects. That is a mechanism for isolation; it does not make merge conflicts or arbitrary subprocess effects disappear.
+
+- [ ] Offer opt-in daemon-owned worktrees for writing runs; persist base revision, branch/worktree identity and run-owned diff. Explicitly decide what happens to pre-existing dirty files rather than copying them silently.
+- [ ] Review the run diff, preview integration into the operator’s branch, preserve conflicts for inspection and clean up only recoverable state. Serialize integration; separately enforce workspace locks if two projects intentionally share a root.
+
+**Done when:** two disposable writing runs cannot modify each other’s trees, Gates see the correct run’s diff, integration/refusal is reviewable, and crash/restart/cleanup preserve recoverable work on both OSes. Parallel execution is a later scheduling choice, not implied by creating worktrees.
+
+### Step 75 — Session continuation and durable cue checkpoints
+
+[LangGraph’s persistence documentation](https://docs.langchain.com/oss/javascript/langgraph/persistence) separates execution checkpoints from cross-thread memory. The useful Cuesheet inference is to preserve resumable execution state separately from Commons facts.
+
+- [ ] Capture and persist vendor session IDs and a typed continuation capability from actual CLI streams; offer linked follow-up runs on supported harnesses.
+- [ ] Persist completed cue boundaries and side-effect identifiers; never automatically replay a commit/push/notification hook after a crash. Define interruption recovery for one supported harness before generalizing.
+
+**Done when:** a recorded supported session continues with linked history; a crash at a tested boundary does not duplicate completed side effects; unsupported vendors fail explicitly. `held` remains terminal: a continuation creates a new linked run and does not rewrite past Gate decisions.
+
+### Step 76 — Commons freshness and selective loading
+
+[LangGraph’s memory guide](https://docs.langchain.com/oss/javascript/langgraph/add-memory) shows namespaced long-term retrieval by query and limit. Cuesheet already has recall and scopes; the proposed addition is lifecycle control and a deliberate always-loaded versus recall-only policy while keeping Markdown/Git ownership.
+
+- [ ] Add backward-compatible freshness/supersession and projection-priority metadata, reviewed through the inbox. Warn when referenced guidance is stale; retain old facts and provenance in Git rather than deleting them silently.
+- [ ] Support deterministic bounded projection selection with a preview explaining what is included/omitted. Keep recall able to expose superseded facts with their status rather than presenting them as current advice.
+
+**Done when:** old profiles still open, superseded guidance no longer projects as active, operators can inspect/restore it, and projection/recall/context-audit tests agree on the selected facts and their estimated cost.
+
+### Step 77 — Pocket background Web Push
+
+[MDN’s Push API guide](https://developer.mozilla.org/en-US/docs/Web/API/Push_API) describes service-worker delivery and subscriptions. [WebKit documents Home Screen Web Push on iOS/iPadOS 16.4+](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/), requiring user interaction to request permission. A three-second foreground poll cannot provide this delivery.
+
+- [ ] Choose and document a push sender/network model, manifests/service worker, opt-in subscriptions and expiry/revocation. Keep subscription endpoints secret and notification payloads generic; document contact with platform push services.
+- [ ] Open the authenticated phone view from a notification and refetch the current standby. Never queue GO/NO offline or trust a stale notification as authorization.
+
+**Done when:** a locked/backgrounded physical iPhone Home Screen app and an Android browser receive tested notifications, revoked devices receive no new sends, stale decisions refuse, and offline/OS delivery limits are stated without promising guaranteed delivery.
+
+Caller/On-Call and plan mode remain existing deferred ideas. They should be shaped after the above choices settle budgets, safe continuation and notification delivery, rather than re-added as newly discovered features.
 
 ---
 
@@ -2536,7 +2750,7 @@ If you want the shortest path to something you can play with, do **Steps 1, 4, 5
 
 **Past alpha, the phase number is the order** — see the numbering rule under [Status](#status). Phase 7 came first because a second opinion is the thesis and it was the one claim the README could not back. Phases 8–13 then run in sequence, and the chain is a dependency chain rather than a ranking:
 
-**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product → 14 the context economy → 15 Pocket.**
+**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product → 14 the context economy → 15 Pocket → 16 release closure → 17 the 1.0 bar → 18 proposed extensions.**
 
 Projects because nothing above it can be scoped without them. `ollama` before Limits because a strip designed without a station that cannot run out is a strip that will need redesigning the week one arrives. Limits before the Desk because half the screen the operator asked for renders usage, and `usage()` returns `[]` from every harness today. The Desk after all three because a rebuilt UI full of placeholders is the expensive kind of mistake — you ship it, and then you cannot tell whether it is wrong or merely empty. The Commons after the Desk because its scoping question is answered by Phase 8 and its inbox needs somewhere to live. And the product last because signing, migrations and a CLI are the work that only pays off once the thing is worth installing.
 

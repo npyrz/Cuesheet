@@ -16,7 +16,7 @@ Cuesheet puts Claude Code, Codex, Ollama, and future coding agents behind one lo
 
 > **Development is on the beta track. The latest named milestone is still [`v0.1.0-alpha`](https://github.com/npyrz/Cuesheet/releases/tag/v0.1.0-alpha).**
 
-The current source is building toward `v0.5.0-beta`; it is not a beta release yet. The published installers are unsigned alpha and development builds, while the source tree includes the newer multi-project, limits, routing, ledger, and Commons work described below.
+The current source is building toward `v0.5.0-beta`; it is not a beta release yet. The [2026-10-06 readiness audit](PLAN-STEP.MD#release-readiness-audit--2026-10-06) records a relative-workspace defect, incomplete published-release profile coverage and dependency triage before a named beta candidate. The published installers are unsigned alpha and development builds, while the source tree includes the newer multi-project, limits, routing, ledger, and Commons work described below.
 
 | Area | Current source |
 |---|---|
@@ -31,7 +31,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Pocket | Opt-in QR pairing and a phone standby view through private Tailscale HTTPS; expiring/revocable sessions and GO/NO work in source. Physical phone/tailnet verification remains open |
 | Still to build | Caller, On-Call, and background phone push delivery |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
-| Upgrades | All five published releases have captured profiles, including SQLite/WAL history. Config, registry and run store are versioned; incompatible file-backend selection refuses before hiding SQLite history |
+| Upgrades | Five historical published releases have captured profiles, including SQLite/WAL history; ten later published builds still need captures as of 2026-10-06. Config, registry and run store are versioned; incompatible file-backend selection refuses before hiding SQLite history |
 | Local diagnostics | Durable crash/run context and a previewable report in the Desk; copy/download stays local until you attach it |
 | Source updates | App, browser and CLI check published GitHub releases; `npm run update` fast-forwards and rebuilds a stopped, clean checkout. Signed installers are optional |
 
@@ -137,14 +137,14 @@ The script fetches the exact published release tag, fast-forwards a clean checko
 
 ## Configuration
 
-A **Station** combines one harness, model, role, workspace, and leash. A project can use several Stations in an ordered cuesheet:
+A **Station** combines one harness, model, role, workspace, and leash. Until [Step 64](PLAN-STEP.MD#step-64--workspace-semantics-and-clean-first-boot) is fixed, set `workspace` to an absolute project path (or a `~` path): relative values currently resolve against the daemon’s working directory. Replace `~/code/your-project` below with your actual workspace. A project can use several Stations in an ordered cuesheet:
 
 ```toml
 [[station]]
 id        = "engineer"
 harness   = "claude-code"
 role      = "engineer"
-workspace = "."
+workspace = "~/code/your-project"
 paths     = ["src/**", "tests/**"]
 deny      = ["**/*.env", ".git/**"]
 
@@ -152,7 +152,7 @@ deny      = ["**/*.env", ".git/**"]
 id        = "reviewer"
 harness   = "codex"
 role      = "reviewer"
-workspace = "."
+workspace = "~/code/your-project"
 paths     = ["src/**", "tests/**"]
 deny      = ["**/*.env", ".git/**"]
 
@@ -173,7 +173,7 @@ The engineer produces a diff, the reviewer evaluates it independently, and the G
 
 ## Architecture
 
-The daemon is the product. The desktop shell, browser Desk, terminal client, and future phone client all use the same project-scoped HTTP and WebSocket API. Anything the app can do must be possible through that API.
+The daemon is the product. The desktop shell, browser Desk, terminal client, and Pocket phone client all use the same project-scoped HTTP and WebSocket API. Anything the app can do must be possible through that API.
 
 Dependency direction stays one-way:
 

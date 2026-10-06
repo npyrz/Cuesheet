@@ -78,13 +78,20 @@ GitHub check correctly refuses a downgrade from this development checkout.
 [Release run 36875660969](https://github.com/npyrz/Cuesheet/actions/runs/36875660969)
 on 2026-10-01 passed all five checks and unsigned packaging on Windows for
 `68c1290` (1,134 passed tests, 5 skipped). macOS failed an older stop-test
-fixture race, now fixed locally. The canceled standalone CI run was retried;
+fixture race, subsequently fixed in `1bf0eb4` and merged into `beta` in
+`54936cb`. The canceled standalone CI run was retried;
 [CI run 36875667986](https://github.com/npyrz/Cuesheet/actions/runs/36875667986)
 passed all five checks on both platforms for `68c1290`, completing Step 54's
-source acceptance. Push and verify the local fixture fix before merging; the
-earlier Release failure remains recorded. Phase 13's source criteria are met,
-but the named beta release has not been cut. Evidence is in `PLAN-STEP.MD`. Every new published release
-still needs its own captured state profile for Step 53.
+source acceptance. The earlier Release failure remains recorded.
+The fixture fix and Phase 13 are now merged into `beta`. Release run
+[37505975254](https://github.com/npyrz/Cuesheet/actions/runs/37505975254) passed
+all five checks and unsigned packaging on both platforms for `d92b689`, and
+published a development prerelease. The named beta release has not been cut.
+The [2026-10-06 audit](../PLAN-STEP.MD#release-readiness-audit--2026-10-06)
+reopens readiness for workspace semantics, published-profile coverage, dependency
+triage and candidate acceptance. Five historical profiles exist; ten later
+publications need captures. Every new published release still needs its own
+captured state profile for Step 53.
 
 ## Optional signed installers
 
