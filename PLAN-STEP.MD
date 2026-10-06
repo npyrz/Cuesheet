@@ -63,7 +63,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 11 · The Desk, rebuilt | 40–45 | 🔵 beta | ✅ **Done.** Launch surface, switcher, a project view that says what each seat may do, a run surface that leads with the blocking finding rather than logging it, one design system under all of it, and a path from a fresh machine to a first run that says what is missing and how to get it. Two clauses stay open and say why: nothing has been driven by a keyboard, and no stranger has walked the first run |
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
-| 14 · The context economy | 57–62 | ⚪ post-1.0 | ◐ **Steps 57–58 and 60–62 done; 59 built, its measurement open.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map, but nobody has yet measured whether it saves an agent any tool calls; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 audits current declared context costs in the Desk and CLI, with observed ledger-based pricing |
+| 14 · The context economy | 57–62 | ⚪ post-1.0 | ✅ **Steps 57–62 done.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map and saved one discovery call before the first edit in each of two paired real-Claude fixture tasks; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 audits current declared context costs in the Desk and CLI, with observed ledger-based pricing |
 | — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
@@ -2126,7 +2126,7 @@ The finding that reshaped the step, and it was in the cuesheet the README prints
 
 `gate-run.test.ts`'s "passes when a second vendor approves" and "continues when a human overrides the hold" each take about 1.5–2s alone and exceed vitest's 5s default when all 74 files run in parallel here. **Clean `HEAD` fails the same two the same way**, timed before this step's change was applied, so it is load on this Windows box rather than this step. Recorded here so the next person running the suite locally does not chase it.
 
-### Step 59 — The repo map ◐ *(built; the measurement that justifies it is not taken)*
+### Step 59 — The repo map ✅
 
 A symbol index of the workspace, rendered into the projection as part of the generated block: files, their exported symbols, and where they live. Regenerated on change, stable-ordered.
 
@@ -2138,7 +2138,7 @@ Where it lives is a dependency-direction question with an unobvious answer: `cor
 
 **Done when:** a cold run on a mapped repo reaches its first edit in measurably fewer tool calls than the same run unmapped, and regenerating the map twice produces no diff.
 
-- [ ] **A cold run on a mapped repo reaches its first edit in measurably fewer tool calls than the same run unmapped.** Not ticked, and it is the clause the step exists for. It needs paired real runs — the same prompt, the same repository, mapped and unmapped, on a vendor CLI — and those spend an operator's plan. `claude` is installed on the machine this was built on and `codex` is not; no run was made. Until one is, the map is a cost Cuesheet can state (`GET .../repo-map` says it in estimated tokens) and a saving it cannot.
+- [x] **A cold run on a mapped repo reaches its first edit in measurably fewer tool calls than the same run unmapped.** Measured on Windows on 2026-10-05: two tasks, each run in fresh Claude Code sessions against identical scratch repositories and prompts, with the treatment order reversed for the second task. Both unmapped runs made `Grep, Read, Read` before the first successful edit; both mapped runs made `Read, Read`. All four patches passed the fixture tests and independent behavior assertions. The production mapper and projection generated the 950-byte map; it added 998 context bytes including its wrapper. [Captured streams, manifest and method](docs/experiments/repo-map-2026-10-05/README.md) record the result. Cold means a new session/workspace, not a controlled vendor prompt cache. This proves one saved discovery call per task on a small synthetic repository; it does not establish general, financial or multi-vendor savings.
 - [x] **Regenerating the map twice produces no diff.** At three levels: `core/repomap.test.ts` renders the same bytes whatever order files arrive in; `daemon/repomap.test.ts` renders a real repository twice through the real grammars and compares; and `projections.test.ts` boots a daemon, runs twice through HTTP, and compares `CLAUDE.md` byte for byte across the second run — after showing that a file added between runs *does* reach it.
 
 #### The default is off, and that is the answer to Phase 14's first open question
@@ -2175,9 +2175,27 @@ The first draft of the projection test configured its Station with `workspace = 
 
 Stations written by the Desk carry absolute paths, which is presumably why nothing has hit this. The test now uses an absolute path. The fix — resolving a relative workspace against the directory of the config file that declared it, at load time — changes config semantics and belongs in its own change, not inside a repo-map step.
 
-#### What was not done
+#### The live measurement, completed 2026-10-05
 
-- **The measurement**, above.
+The environment blocker expired: Claude Code was installed and authenticated.
+`scripts/measure-repo-map.mjs` now reproduces the comparison with four explicit
+live runs, or replays the saved counts without using a model. Each run starts from
+the same 20 source/test files and instructions. Only the production map projection
+changes. The script refuses to overwrite evidence and stops on an unsuccessful
+session or failed independent check. All four sessions used Claude Code 2.1.221
+and reported `claude-sonnet-5`. Total tool calls fell from six to five in each
+pair as well as the pre-edit count falling from three to two. The reported
+usage-equivalent valuation across all four was $0.410481 on a subscription;
+cache mixes were uncontrolled, so no dollar-saving claim is made. The map remains
+off by default. Evidence lives in `docs/experiments/repo-map-2026-10-05/`.
+
+Capture replay and all five repository checks passed on Windows for the finished
+change: 82 test files, 1,231 tests passed and 10 skipped. The measurement stays
+outside CI; replay reads the captured streams without invoking a model.
+
+#### What was not done in the original implementation
+
+- **The measurement** was deferred then; the 2026-10-05 comparison above closes it.
 - **The relative-workspace defect**, above.
 - **The packaged app was not launched.** The bundle was exercised by a probe built with its exact options; an installer has not been built and opened, so `extraResources` delivering `grammars/` is configured and unit-tested by path, not observed.
 - **Languages beyond TS/JS/Python**, and exports inside `declare module` or namespaces. The map is a table of contents, not an index.
@@ -2316,8 +2334,8 @@ full suite passed locally on macOS: 79 files, 1,212 tests passed and 9 skipped.
 The full run also found Step 61's reference-config test still expecting four
 cues after the hook made five; its assertions now cover all three cue kinds in
 order. Test startup consumes only context declarations, avoiding real connector
-registration. Windows execution and Step 59's live saving measurement remain
-unclaimed.
+registration. At that checkpoint Windows execution and Step 59's live saving
+measurement were unclaimed; the 2026-10-05 comparison above closes the latter.
 
 #### Priced summary verification from the incoming branch
 
@@ -2356,9 +2374,13 @@ The walk's `AGENTS.md` and `CLAUDE.md` each picked up an **empty** `cuesheet:beg
 
 `core/config.test.ts`'s "keeps cues and gate references in one ordered list" failed on clean `HEAD`. Step 61 added `{ hook = "format" }` to the documented reference cuesheet and did not update the test that parses it. The expectation now includes the hook. It is a test-only change.
 
-Neither implementation adds a historical size trend or a warning threshold. Step 59's live saving measurement and Windows verification of the merged source remain open.
+Neither implementation adds a historical size trend or a warning threshold. Step 59's live saving measurement was open at this checkpoint and is now recorded above.
 
 **Merged-source verification (2026-10-05):** both context reports and their clients are preserved with separate wire types. The CLI defaults to the priced summary; `--runs N` selects the detailed cuesheet/run-count report. Build, typecheck, lint, format-check and tests passed locally on macOS: 82 files, 1,232 tests passed and 9 skipped.
+
+**Windows verification (2026-10-05):** all five checks also passed during Step 59's
+live measurement closure: 82 files, 1,231 tests passed and 10 skipped. This checks
+the merged source on Windows; it does not add a Windows UI walkthrough.
 
 ### The rule that makes all of this work, written down before it is broken
 

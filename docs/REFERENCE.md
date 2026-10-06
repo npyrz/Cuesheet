@@ -537,6 +537,11 @@ be reviewed. `GET /projects/:id/repo-map` returns the map, its size and an
 estimated token cost whatever the mode, so the cost can be seen before turning
 it on.
 
+[Two paired real-Claude fixture tasks](experiments/repo-map-2026-10-05/README.md)
+each reached their first edit with two tool calls mapped versus three unmapped.
+That small-repository measurement establishes a discovery-call saving, without
+claiming a dollar saving or a result across other repositories and vendors.
+
 Parsing uses `web-tree-sitter` (WebAssembly) and grammar `.wasm` files vendored
 in `packages/daemon/grammars`; there is no native module. A map that cannot be
 built is left out and the reason is reported by that route, without failing a

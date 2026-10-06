@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-10-06T01:49:08.049Z",
+  "revision": "04ff3d08b19e0a287ac1ef6bd1a569019352e275",
+  "platform": "win32",
+  "node": "v24.19.0",
+  "cli": "2.1.221 (Claude Code)",
+  "args": [
+    "--print",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--permission-mode",
+    "acceptEdits",
+    "--no-session-persistence",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--tools",
+    "Read,Edit,Write,Glob,Grep,Bash",
+    "--allowedTools",
+    "Read,Edit,Write,Glob,Grep,Bash(node *)",
+    "--max-budget-usd",
+    "1"
+  ],
+  "fixtureSha256": "7114ed4d931bfe6dfa6df17e4bb985f65eee4bec0c408d3a5dc4619b8db21f54",
+  "instructions": "# Fixture application\n\nThis is an ESM Node application. Source functions have colocated .test.mjs tests. Run `node --test` to verify changes. Keep changes focused. Do the task directly without delegating.\n",
+  "tasks": [
+    {
+      "id": "calendar-window",
+      "prompt": "Fix resolveReportWindow: the previous window must be the immediately preceding full UTC calendar month, including across a year boundary. Keep current-window behavior unchanged and add regression tests. Verify the tests and report the change briefly."
+    },
+    {
+      "id": "contact-labels",
+      "prompt": "Fix mergeContactLabels: trim every label, discard blank labels, and deduplicate case-insensitively while preserving the first trimmed spelling and insertion order. Keep the inputs unchanged and add regression tests. Verify the tests and report the change briefly."
+    }
+  ],
+  "metric": "Unique tool invocations before the first successful Edit/Write result; the edit itself is excluded.",
+  "cold": "New process, new workspace, no resumed session; vendor prompt caches are not controlled.",
+  "runs": [
+    {
+      "id": "calendar-window-unmapped",
+      "mapped": false,
+      "mapBytes": 0,
+      "model": "claude-sonnet-5",
+      "callsBeforeFirstEdit": 3,
+      "toolsBeforeFirstEdit": [
+        "Grep",
+        "Read",
+        "Read"
+      ],
+      "firstEdit": "{{WORKSPACE}}\\src\\reporting\\windows.mjs",
+      "totalToolCalls": 6,
+      "exitCode": 0,
+      "killed": false,
+      "result": "success",
+      "usd": 0.10969290000000001,
+      "testsPassed": true
+    },
+    {
+      "id": "calendar-window-mapped",
+      "mapped": true,
+      "mapBytes": 950,
+      "model": "claude-sonnet-5",
+      "callsBeforeFirstEdit": 2,
+      "toolsBeforeFirstEdit": [
+        "Read",
+        "Read"
+      ],
+      "firstEdit": "{{WORKSPACE}}\\src\\reporting\\windows.mjs",
+      "totalToolCalls": 5,
+      "exitCode": 0,
+      "killed": false,
+      "result": "success",
+      "usd": 0.096095,
+      "testsPassed": true
+    },
+    {
+      "id": "contact-labels-mapped",
+      "mapped": true,
+      "mapBytes": 950,
+      "model": "claude-sonnet-5",
+      "callsBeforeFirstEdit": 2,
+      "toolsBeforeFirstEdit": [
+        "Read",
+        "Read"
+      ],
+      "firstEdit": "{{WORKSPACE}}\\src\\directory\\labels.mjs",
+      "totalToolCalls": 5,
+      "exitCode": 0,
+      "killed": false,
+      "result": "success",
+      "usd": 0.10037230000000001,
+      "testsPassed": true
+    },
+    {
+      "id": "contact-labels-unmapped",
+      "mapped": false,
+      "mapBytes": 0,
+      "model": "claude-sonnet-5",
+      "callsBeforeFirstEdit": 3,
+      "toolsBeforeFirstEdit": [
+        "Grep",
+        "Read",
+        "Read"
+      ],
+      "firstEdit": "{{WORKSPACE}}\\src\\directory\\labels.mjs",
+      "totalToolCalls": 6,
+      "exitCode": 0,
+      "killed": false,
+      "result": "success",
+      "usd": 0.1043208,
+      "testsPassed": true
+    }
+  ]
+}

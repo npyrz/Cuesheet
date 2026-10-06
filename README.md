@@ -26,6 +26,7 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Projects | One daemon serves multiple isolated projects with independent config, history, queues, and events |
 | Limits and cost | Usage reporting, pre-run refusal, role-safe fallback routing, and the project ledger work |
 | Context cost | Read-only Desk/CLI audit estimates declared context per file, Station, cuesheet and run count, including projection size and observed ledger-based prices |
+| Repo map | Optional stable source/export map in generated context; [two paired real-Claude fixture tasks](docs/experiments/repo-map-2026-10-05/README.md) each saved one discovery call before the first edit |
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
 | Still to build | Phone pairing, Caller, and On-Call |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |

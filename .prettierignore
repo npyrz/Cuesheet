@@ -14,3 +14,7 @@ packages/harness/src/fixtures
 # Captured release profiles — what a shipped build wrote, byte for byte, and
 # what the upgrade test holds the current build to. Same reason as above.
 packages/daemon/src/fixtures/profiles
+
+# Live experiment captures and their generated manifest are evidence too.
+docs/experiments/*/*.jsonl
+docs/experiments/*/manifest.json
