@@ -55,7 +55,7 @@ the `/api` prefix.
 | Project | `GET /projects/:id/ledger` | Project spend aggregation |
 | Project | `GET /projects/:id/ws` | Project-only event stream and bounded replay |
 
-All current routes are loopback-only and unauthenticated. A future remote client cannot safely reuse that deployment posture unchanged.
+These Desk routes are loopback-only and unauthenticated. Pocket's separate listener exposes only pairing, authenticated standby reads/answers and device disconnect. Tailscale Serve supplies private HTTPS; it must target Pocket on port 7374, never the unrestricted Desk on 7373. See [Pocket's route and access contracts](../pocket.md).
 
 ## Live events and reconnect
 
@@ -91,6 +91,6 @@ Unknown run ids seen in live events are adopted with `GET /runs/:runId`; this su
 
 Electron owns native lifecycle and presentation: single-instance behavior, window creation, close-to-tray behavior, start-at-login, notifications, native folder selection, and clean shutdown of a daemon it owns. Starting runs, adding Stations, listing projects, and answering standbys remain API operations.
 
-## Planned clients
+## Phone and terminal clients
 
-The command-line client and phone client are planned. Phone pairing, tailnet or LAN serving, push, and device revocation do not exist yet. The current responsive Desk reduces future UI work but does not provide those transport and security features.
+The terminal client controls projects, Stations, runs and standbys through the Desk API. Pocket pairs through a one-time QR and reads/answers standbys across projects using expiring, revocable credentials. The phone polls every three seconds and resyncs when it returns to the foreground. Background push, actual tailnet/physical-phone acceptance and the independent network-security review remain open.

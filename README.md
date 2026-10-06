@@ -28,13 +28,18 @@ The current source is building toward `v0.5.0-beta`; it is not a beta release ye
 | Context cost | Read-only Desk/CLI audit estimates declared context per file, Station, cuesheet and run count, including projection size and observed ledger-based prices |
 | Repo map | Optional stable source/export map in generated context; [two paired real-Claude fixture tasks](docs/experiments/repo-map-2026-10-05/README.md) each saved one discovery call before the first edit |
 | Commons | Git-backed facts, approval inbox, projections, MCP recall, and operator-owned remote sync work |
-| Still to build | Phone pairing, Caller, and On-Call |
+| Pocket | Opt-in QR pairing and a phone standby view through private Tailscale HTTPS; expiring/revocable sessions and GO/NO work in source. Physical phone/tailnet verification remains open |
+| Still to build | Caller, On-Call, and background phone push delivery |
 | CLI | The `cuesheet` command registers projects and controls runs through the daemon API |
 | Upgrades | All five published releases have captured profiles, including SQLite/WAL history. Config, registry and run store are versioned; incompatible file-backend selection refuses before hiding SQLite history |
 | Local diagnostics | Durable crash/run context and a previewable report in the Desk; copy/download stays local until you attach it |
 | Source updates | App, browser and CLI check published GitHub releases; `npm run update` fast-forwards and rebuilds a stopped, clean checkout. Signed installers are optional |
 
 For exact completion criteria and the next build step, see [PLAN-STEP.MD](PLAN-STEP.MD).
+
+To connect a phone, open **Pocket** in the local Desk and follow the
+[pairing and private HTTPS guide](docs/pocket.md). Pocket uses its own restricted
+loopback listener on port 7374; keep the Desk API on port 7373 local.
 
 ## Why Cuesheet
 

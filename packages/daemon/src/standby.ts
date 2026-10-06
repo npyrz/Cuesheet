@@ -55,6 +55,9 @@ export function createStandbyRegistry(
         ask: request.ask,
         kind: request.kind,
         at: new Date().toISOString(),
+        ...(request.projectId !== undefined && {
+          projectId: request.projectId,
+        }),
         ...(request.stationId !== undefined && {
           stationId: request.stationId,
         }),

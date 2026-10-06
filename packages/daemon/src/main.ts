@@ -30,7 +30,17 @@ async function main(): Promise<void> {
         "../../..",
       ),
     });
-    handle = await startDaemon({ diagnostics, updates, ...harnessRuntime() });
+    handle = await startDaemon({
+      diagnostics,
+      updates,
+      ...harnessRuntime(),
+      pocket: {
+        uiDir: nodePath.resolve(
+          nodePath.dirname(fileURLToPath(import.meta.url)),
+          "../../ui/dist",
+        ),
+      },
+    });
     void updates.check();
     const timer = setInterval(() => void updates.check(), 4 * 60 * 60 * 1000);
     timer.unref();

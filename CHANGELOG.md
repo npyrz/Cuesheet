@@ -9,6 +9,8 @@ arrived in that build. Published tags below identify actual installers.
 
 ### Added
 
+- Pocket: opt-in QR phone pairing, 24-hour revocable device sessions, private Tailscale HTTPS setup, and a foreground phone view for pending permissions and Gate Holds with GO/NO. A separate restricted listener exposes redacted summaries; the Desk API refuses non-loopback binds. Physical phone/tailnet acceptance and background push delivery remain open.
+
 - Context cost audit in the Desk and `cuesheet context --runs N`: current declared files, projection subtotals, per-Station and repeated-cue estimates through a read-only daemon route. The Desk also displays prompt token estimates and files omitted from Gate reviews.
 
 - Source checkout updates: app, browser and CLI check published GitHub releases; `npm run update:check` and `npm run update` select exact tags, refuse unsafe checkout states, rebuild and recover from failed builds. No signing subscription is required for the primary clone-and-run path.

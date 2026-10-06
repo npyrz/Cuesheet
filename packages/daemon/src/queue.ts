@@ -57,6 +57,7 @@ export interface RunQueue {
 }
 
 export interface RunQueueOptions {
+  projectId?: string;
   store: RunStore;
   bus: EventBus;
   standbys: StandbyRegistry;
@@ -191,7 +192,13 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
          * hangs if they reload.
          */
         ask(request) {
-          const opened = standbys.open({ ...request, runId: run.id });
+          const opened = standbys.open({
+            ...request,
+            runId: run.id,
+            ...(options.projectId !== undefined && {
+              projectId: options.projectId,
+            }),
+          });
           publish({
             t: "standby",
             at: stamp(),

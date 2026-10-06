@@ -7,6 +7,8 @@
  * which is why this package exports a function rather than only a binary.
  */
 export { startDaemon } from "./server.js";
+export { POCKET_PORT } from "./pocket.js";
+export type { PocketOptions } from "./pocket.js";
 export type {
   StartDaemonOptions,
   DaemonHandle,

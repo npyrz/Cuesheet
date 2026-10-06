@@ -35,6 +35,7 @@ export interface LaunchSurfaceProps {
   error?: string | null;
   onUpdates?: () => void;
   onDiagnostics?: () => void;
+  onPocket?: () => void;
 }
 
 export function LaunchSurface({
@@ -47,6 +48,7 @@ export function LaunchSurface({
   error,
   onUpdates,
   onDiagnostics,
+  onPocket,
 }: LaunchSurfaceProps): React.JSX.Element {
   const recents = describeRecents(projects);
   const empty = emptyState(chooseDirectory !== undefined);
@@ -147,6 +149,11 @@ export function LaunchSurface({
         {onUpdates && (
           <button type="button" className="ghost" onClick={onUpdates}>
             check for updates
+          </button>
+        )}
+        {onPocket && (
+          <button type="button" className="ghost" onClick={onPocket}>
+            Pocket · pair a phone
           </button>
         )}
         {onDiagnostics && (

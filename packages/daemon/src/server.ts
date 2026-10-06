@@ -2,12 +2,12 @@
  * `cuesheetd` — the HTTP + WebSocket surface.
  *
  * This is the product. The Desk, the CLI, and later the phone are all clients
- * of exactly these routes, so there are no Electron-only shortcuts here: if
- * the app can do it, it is an HTTP call, and M3's phone gets it for free.
+ * of HTTP routes, so there are no Electron-only shortcuts here: if the app
+ * can do it, it is an HTTP call. Pocket exposes a restricted standby surface.
  *
- * Bound to loopback. Nothing here is authenticated, which is fine only
- * because nothing here is reachable off the machine — pairing tokens and a
- * tailnet are M3, and that is the point at which this comment has to change.
+ * The Desk must stay on loopback. Pocket uses a separate loopback listener
+ * behind private Tailscale HTTPS, with expiring paired-device credentials.
+ * Its routes are never a proxy to this unrestricted API.
  */
 import {
   auditContext as auditContextLoads,
@@ -126,8 +126,10 @@ import {
 import { createDiagnostics, type Diagnostics } from "./diagnostics.js";
 import { DAEMON_VERSION } from "./version.js";
 import { registerUpdateRoutes, type UpdateService } from "./updates.js";
+import { createPocket, type PocketOptions } from "./pocket.js";
 
 export interface StartDaemonOptions {
+  pocket?: PocketOptions;
   diagnostics?: Diagnostics;
   updates?: UpdateService;
   /** `0` binds an ephemeral port — what tests use, so they never collide. */
@@ -319,6 +321,11 @@ export async function startDaemon(
 ): Promise<DaemonHandle> {
   const env = options.env ?? hostEnv();
   const host = options.host ?? "127.0.0.1";
+  if (!["127.0.0.1", "::1", "localhost"].includes(host)) {
+    throw new Error(
+      "The Desk API must stay on loopback. Enable Pocket for authenticated phone access.",
+    );
+  }
   const requestedPort = options.port ?? DEFAULT_PORT;
   const cwd = options.cwd ?? process.cwd();
   const writeLockFile = options.writeLockFile ?? true;
@@ -455,6 +462,13 @@ export async function startDaemon(
   const defaultProject = bootstrapped.runtime;
 
   const app = Fastify({ logger: options.logger ?? false });
+  const pocket = await createPocket({
+    env,
+    standbys,
+    registry,
+    options: options.pocket ?? {},
+  });
+  app.addHook("onClose", async () => pocket.close());
   app.addHook("onError", async (_request, _reply, error) => {
     diagnostics.error("http-error", error);
   });
@@ -529,6 +543,10 @@ export async function startDaemon(
     },
   );
 
+  pocket.register(app);
+  await app.register(async (scope) => pocket.register(scope), {
+    prefix: "/api",
+  });
   await app.register(websocket);
 
   const routeDeps: RouteDeps = {

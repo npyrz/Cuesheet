@@ -336,6 +336,7 @@ export type StandbyAnswer = "go" | "no";
 export interface Standby {
   id: string;
   runId: RunId;
+  projectId?: string;
   stationId?: string;
   /** What is being asked, in one line, readable one-handed. */
   ask: string;

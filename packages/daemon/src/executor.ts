@@ -39,7 +39,9 @@ export interface ExecutionContext {
    * Ask the operator a question and wait. Resolves with their answer, or
    * rejects if the run is stopped while waiting.
    */
-  ask(request: Omit<StandbyRequest, "runId">): Promise<StandbyAnswer>;
+  ask(
+    request: Omit<StandbyRequest, "runId" | "projectId">,
+  ): Promise<StandbyAnswer>;
   /**
    * Hand over the run's unified diff, to be written to `diff.patch`.
    *
@@ -76,6 +78,7 @@ export type RunExecutor = (ctx: ExecutionContext) => Promise<RunResultSummary>;
 
 export interface StandbyRequest {
   runId: string;
+  projectId?: string;
   ask: string;
   kind: Standby["kind"];
   stationId?: string;

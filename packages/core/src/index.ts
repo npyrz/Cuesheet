@@ -19,3 +19,4 @@ export * from "./config-write.js";
 export * from "./project.js";
 export * from "./migrate.js";
 export * from "./migration-log.js";
+export type * from "./pocket.js";

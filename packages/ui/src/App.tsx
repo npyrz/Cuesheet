@@ -31,6 +31,7 @@ import {
 } from "./store/reducer.js";
 import { describeSwitcher, switchCommands } from "./switcher.js";
 import { useDesk } from "./store/useDesk.js";
+import { PocketPanel } from "./components/PocketPanel.js";
 
 export function App(): React.JSX.Element {
   const desk = useDesk();
@@ -55,6 +56,7 @@ export function App(): React.JSX.Element {
   const [contextAudit, setContextAudit] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
+  const [pocketOpen, setPocketOpen] = useState(false);
 
   const run = selectedRun(state);
   const events = selectedEvents(state);
@@ -99,6 +101,11 @@ export function App(): React.JSX.Element {
 
   const commands = useMemo<Command[]>(
     () => [
+      {
+        id: "pocket",
+        label: "Pocket — pair a phone and manage devices",
+        run: () => setPocketOpen(true),
+      },
       {
         id: "updates",
         label: "Check for Cuesheet updates",
@@ -187,6 +194,7 @@ export function App(): React.JSX.Element {
     return (
       <>
         {updatesOpen && <UpdatesPanel onClose={() => setUpdatesOpen(false)} />}
+        {pocketOpen && <PocketPanel onClose={() => setPocketOpen(false)} />}
         {diagnostics && (
           <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
         )}
@@ -206,6 +214,7 @@ export function App(): React.JSX.Element {
           error={state.error}
           onUpdates={() => setUpdatesOpen(true)}
           onDiagnostics={() => setDiagnostics(true)}
+          onPocket={() => setPocketOpen(true)}
         />
       </>
     );
@@ -281,6 +290,13 @@ export function App(): React.JSX.Element {
               : "connecting…"}
         </span>
         <span className="spacer" />
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setPocketOpen(true)}
+        >
+          Pocket
+        </button>
         <button
           type="button"
           className="ghost"
@@ -489,6 +505,7 @@ export function App(): React.JSX.Element {
       />
 
       {updatesOpen && <UpdatesPanel onClose={() => setUpdatesOpen(false)} />}
+      {pocketOpen && <PocketPanel onClose={() => setPocketOpen(false)} />}
       {diagnostics && (
         <DiagnosticsPanel onClose={() => setDiagnostics(false)} />
       )}

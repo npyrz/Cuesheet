@@ -34,7 +34,11 @@ Check [release status](README.md#project-status) and the
 - The daemon defaults to `127.0.0.1:7373` and has **no API authentication**.
   Loopback is not a boundary against other local processes. Do not expose it
   through port forwarding, a public bind address or an untrusted reverse proxy.
-  Pairing tokens, phone access and tailnet serving are not implemented.
+  Current source refuses non-loopback binds. Opt-in [Pocket](docs/pocket.md)
+  uses a separate restricted listener, one-time pairing, 24-hour hashed device
+  credentials and explicit revocation. Tailscale Serve supplies private HTTPS;
+  never proxy the unrestricted Desk listener. Physical tailnet/phone acceptance
+  and independent security review remain outstanding.
 - Direct workspace operations enforce roles and path leashes, including
   symlink-resolved containment checks. External CLIs execute their own tools:
   observed file events do not constrain arbitrary shell commands. Codex gets
@@ -43,7 +47,9 @@ Check [release status](README.md#project-status) and the
   proof. Use only repositories, harnesses and commands you trust to execute.
 - Vendor CLIs use accounts you authenticated with them. Cuesheet does not manage
   those credentials, but briefs, diffs and tool output may contain sensitive
-  material. Automatic secret redaction is not implemented. Review what you send
+  material. Pre-vendor secret redaction is not implemented. Pocket summaries
+  redact recognized credential formats; arbitrary secrets remain undetectable.
+  Review what you send
   and use synthetic data when demonstrating a failure.
 - Run history, prompts, patches and Commons are stored locally without an
   application encryption layer. The default state root is `~/.cuesheet`

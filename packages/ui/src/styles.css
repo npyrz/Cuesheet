@@ -163,6 +163,95 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Pocket shares the Desk's tokens, with targets large enough for one thumb. */
+.pocket-page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: var(--space-9) var(--space-7);
+  font-size: var(--text-xl);
+  overflow-wrap: anywhere;
+}
+.pocket-head,
+.pocket-tools,
+.pocket-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+.pocket-head {
+  justify-content: space-between;
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid var(--line);
+}
+.pocket-card {
+  margin: var(--space-8) 0;
+  padding: var(--space-8);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.pocket-page h1,
+.pocket-page h2,
+.pocket-panel h2 {
+  font-size: var(--text-2xl);
+  line-height: var(--leading-tight);
+}
+.pocket-page button,
+.pocket-page input {
+  min-height: var(--space-11);
+  font-size: var(--text-xl);
+}
+.pocket-page label,
+.pocket-panel label {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-7) 0;
+}
+.pocket-page input,
+.pocket-panel input {
+  width: 100%;
+  min-width: 0;
+}
+.pocket-actions button {
+  flex: 1;
+}
+.pocket-ask {
+  white-space: pre-wrap;
+}
+.pocket-status {
+  margin-top: var(--space-7);
+  color: var(--muted);
+}
+.pocket-error {
+  color: var(--bad);
+}
+.pocket-qr {
+  text-align: center;
+  margin: var(--space-7) 0;
+}
+.pocket-qr img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+.pocket-devices {
+  list-style: none;
+  padding: 0;
+}
+.pocket-devices li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin: var(--space-7) 0;
+}
+.pocket-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 button,
 input,
 select,

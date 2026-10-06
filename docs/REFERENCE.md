@@ -21,6 +21,7 @@ roadmap and status record.
 - [Usage, routing, and the ledger](#usage-routing-and-the-ledger)
 - [Gates](#gates)
 - [The Commons](#the-commons)
+- [Pocket phone access](pocket.md)
 - [HTTP and WebSocket API](#http-and-websocket-api)
 - [Development](#development)
 - [Security and privacy](#security-and-privacy)
@@ -283,6 +284,10 @@ planned top-level tables while warning that they are not active: `[caller]`,
 deferred table as a working feature. Commons `store`, `sync`, `project_to`, and
 `mcp` settings from older examples are also preserved but do not override the
 built-in paths, repository remote, or automatic connector behavior.
+
+Pocket is configured globally through the local Desk/API and
+`~/.cuesheet/pocket.json`; `[remote]` remains inactive. See [Pocket](pocket.md)
+for pairing, private HTTPS setup and its separate restricted listener.
 
 ## Roles and leashes
 
@@ -795,6 +800,9 @@ Report vulnerabilities using the private route in [SECURITY.md](../SECURITY.md).
 Current, verifiable properties:
 
 - The daemon binds to IPv4 loopback by default.
+- The Desk API refuses non-loopback binds. Optional Pocket serves a separate
+  loopback listener with expiring paired-device credentials and a restricted
+  standby-only API behind operator-configured Tailscale HTTPS.
 - Cuesheet shells out to CLIs authenticated by the user; it does not proxy or
   store their model API credentials.
 - Project registry, run records, and Commons facts are local files.
@@ -811,8 +819,9 @@ Important limits:
 
 - The daemon API has no authentication layer. Keep it on loopback and do not
   expose port 7373 to an untrusted network.
-- Phone pairing, short-lived device tokens, and tailnet serving are planned,
-  not present.
+- Pocket pairing, expiring device tokens and a private Tailscale Serve setup
+  are implemented in current source. Actual tailnet/physical-phone acceptance
+  is outstanding; background push delivery is not present. See [Pocket](pocket.md).
 - Secret redaction before prompts or diffs leave the machine is planned, not
   present. Vendor CLIs receive the material required for the run under their
   own account and product terms.

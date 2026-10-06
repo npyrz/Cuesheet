@@ -220,6 +220,7 @@ export function createProjectRuntimes(
     }
 
     const queue = createRunQueue({
+      projectId: project.id,
       onError: (operation, error) =>
         options.diagnostics?.error(operation, error),
       store,

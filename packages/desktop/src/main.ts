@@ -31,7 +31,7 @@ import {
   Tray,
 } from "electron";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Diagnostics, EventBus, UpdateStatus } from "@cuesheet/daemon";
 import { autoUpdater } from "electron-updater";
 import { createDesktopUpdates, type DesktopUpdates } from "./updates.js";
@@ -149,6 +149,16 @@ async function connectDaemon(): Promise<DaemonConnection> {
     const handle = await startDaemon({
       ...harnessRuntime(),
       diagnostics,
+      pocket: {
+        uiDir: dirname(
+          uiIndexCandidates({
+            packaged: app.isPackaged,
+            dirname: __dirname,
+            resourcesPath: process.resourcesPath,
+          }).find((candidate) => existsSync(candidate)) ??
+            join(__dirname, "ui", "index.html"),
+        ),
+      },
       repoMap: {
         grammarsDir: grammars,
         runtimeWasm: join(grammars, "web-tree-sitter.wasm"),

@@ -2,9 +2,9 @@
 
 Small, ordered steps to get a **working** Cuesheet on **macOS and Windows**. Everything here is scaffolding you can tear up later; the goal is a running app you can tweak, not a finished product.
 
-Scope of this plan = README milestones **M0 (Spine)** and **M1 (Desk)**, plus just enough of the harness abstraction that M2–M9 don't require a rewrite. Linux, phone pairing, Commons, Gates, Caller, and On-Call are explicitly out of scope here — see [Deferred](#deferred-on-purpose).
+The foundation scope was README milestones **M0 (Spine)** and **M1 (Desk)**, plus harness seams. The plan expanded through Gates, Projects, Limits, Commons and the context economy; Phase 15 now implements **M3 (Pocket)**. Linux, Caller, On-Call and the remaining 1.0 hardening stay open — see [Deferred](#deferred-on-purpose).
 
-**This plan ends at alpha, not at 1.0.** Phases 0–4 are pre-alpha, Phases 5–6 are alpha, and the beta and 1.0 bars are stated in [Release stages](#release-stages) so the gap is visible rather than assumed.
+**The first release bar was alpha; current work reaches toward 1.0 without claiming it.** Phases 0–4 are pre-alpha, Phases 5–6 are alpha, and the beta and 1.0 bars are stated in [Release stages](#release-stages) so the gap is visible rather than assumed.
 
 **Done when:** on both a Mac and a Windows box, you double-click the app, it detects your installed harnesses, you add a Station, type a prompt, and watch a real Claude Code run stream into a tile and land as a durable run record with a diff.
 
@@ -64,7 +64,7 @@ One UI build, three consumers (browser, Electron, later the phone). That is the 
 | 12 · The Commons | 46–50 | 🔵 beta | ✅ **Done.** Facts are committed files, projections are byte-stable, captures wait for approval, MCP recall reaches the long tail, and an operator-owned remote moves them between machines without hiding conflicts |
 | 13 · A product other people can use | 51–56 | 🔵 beta → **`v0.5.0-beta`** | ✅ **Source criteria complete, Steps 51–56.** The CLI, SQLite history, all five published profiles, source release checks/update script, contributor docs and local diagnostics are verified. All five checks pass on macOS and Windows for `68c1290` in CI run 36875667986. Signing is optional for prebuilt installers. The branch still needs merging and the named `v0.5.0-beta` release has not been cut; a stop-test fixture hardening fix is local and awaits its own push/checks |
 | 14 · The context economy | 57–62 | ⚪ post-1.0 | ✅ **Steps 57–62 done.** 57 was pulled forward into Step 39 where the ledger needed it; 58 bounds every brief in whole files, gives Gates path rules, and decides a skip before the reviewer is paid; 59 projects a byte-stable repo map and saved one discovery call before the first edit in each of two paired real-Claude fixture tasks; 60 undoes a run from its record — its *own* record, which the step had to create first; 61 runs the operator's commands between Stations whatever ran them, and answers the capability question with typed members rather than a bag; 62 audits current declared context costs in the Desk and CLI, with observed ledger-based pricing |
-| — beyond this plan — | M3 · Pocket | 🟢 1.0 | ⬜ |
+| 15 · Pocket | 63 | 🟢 1.0 | **Source implemented and HTTP/browser verified on macOS.** Opt-in restricted phone listener, one-time QR pairing, expiring/revocable devices, and cross-project GO/NO. Real tailnet/physical-phone and Windows acceptance stay open |
 | — beyond this plan — | hardening | 🟢 1.0 | ⬜ |
 
 **Branch checkpoint:** the alpha development line is complete. `alpha-v2` is merged into `main` and beta development continues on `beta`; Step 53's expanded five-profile suite passed both CI runners on 2026-09-30. Step 54 now targets source checkout updates, as clarified by the maintainer. Phase 13's source criteria passed both CI platforms on `68c1290` on 2026-10-01. The `codex/phase-13-readiness` branch still needs merging into `beta`; a local stop-test fixture fix should be pushed and verified first. This is a source-control boundary, not a release claim: package versions remain `0.1.0-alpha` until preparing the named `v0.5.0-beta` release. No beta tag or release was published in this audit.
@@ -131,7 +131,7 @@ Verified first against `mock` writing and `claude-code` (Anthropic) reviewing �
 - [x] Repository contribution, security and harness docs, community templates and changelog-backed release notes — **Step 55, done in source**. GitHub private reporting is enabled; new files and issue forms take effect on GitHub when merged/pushed to the relevant branch
 
 **Beta → 1.0**
-- [ ] **M3 · Pocket** — QR pairing, tailnet serving, mobile standby. *The README leads with it; 1.0 can't ship without it.*
+- [ ] **M3 · Pocket** — QR pairing, tailnet serving, mobile standby. **Step 63 implements the source and proves actual HTTP queues plus the built browser UI.** Real tailnet/physical-phone and Windows acceptance remain open. Foreground delivery is explicit; background push is not built
 - [ ] Security review of the daemon's network surface, pairing tokens, and redaction pack. The README already promises "not audited" — 1.0 is where that stops being acceptable
 - [ ] Leash enforcement fuzzed, not just unit-tested
 - [ ] `docs/harnesses.md` published and a third-party harness proven to work against it
@@ -2394,6 +2394,96 @@ the merged source on Windows; it does not add a Windows UI walkthrough.
 
 ---
 
+# Phase 15 · Pocket
+
+### Step 63 — Phone pairing and mobile standby *(source implemented; device acceptance open)*
+
+The next numbered work after Steps 1–62, selected by the maintainer on
+2026-10-05. Pocket gives the operator a small phone view of current permissions
+and Gate Holds across all projects, with GO/NO against the same standby
+registry used by the Desk. Setup, device management and pairing must remain
+HTTP actions so either the browser or Electron Desk can drive them.
+
+**Done when:** an operator on a physical phone connected to their tailnet scans
+a Desk QR, reads a real queued run's standby, answers GO/NO, and observes the
+correct queue result; an unpaired, expired or revoked device cannot read or act,
+and enabling remote access never exposes the unrestricted Desk API.
+
+- [x] **Pairing and lifecycle over actual HTTP.** `pocket-store.test.ts` and
+  `pocket.test.ts`: 256-bit one-time invitations expire after two minutes;
+  concurrent exchanges mint one device; 24-hour sessions store only hashes;
+  expiry, individual revocation, disabling, cancellation and daemon restart are
+  exercised. Corrupt/newer Pocket state stays untouched and does not stop the Desk.
+- [x] **One phone answers queues across projects.** `pocket.test.ts` starts two
+  projects' real queues, reads their labeled/redacted questions and answers
+  one GO and one NO. Duplicate/stale and malformed answers refuse. Project
+  attribution travels with each standby from its queue, independent of run ID.
+- [x] **The remote boundary is exercised.** The phone listener has no Desk,
+  configuration, MCP, diagnostics, run-history or file-browsing routes. Device
+  authentication, Origin checks, query-token rejection, rate bounds and the
+  non-loopback Desk-bind refusal are tested. Invalid credentials cannot rate
+  limit an already paired device.
+- [x] **The built UI was driven.** macOS browser at 390 × 844: pair, read two
+  fixture questions, GO, NO, generate QR, revoke in the Desk and reload the phone
+  to observe refusal. No horizontal overflow. A disposable profile and loopback
+  proxy simulated the HTTPS terminator; the screenshot is in [the guide](docs/pocket.md).
+- [ ] **Actual Tailscale HTTPS and physical phone.** Tailscale is not installed
+  on this host. The operator setup command follows its current official Serve
+  documentation; neither a real tailnet nor a physical-phone alert has been observed.
+- [ ] **Windows acceptance.** Portable paths, atomic state writes, ephemeral
+  test ports and the existing UI-resource resolver are used, but this new source
+  has not been run on a Windows machine or CI runner.
+
+#### A second listener is an access boundary, not a second daemon
+
+The old `startDaemon({ host })` allowed a caller to expose every unauthenticated
+route. It now refuses non-loopback hosts. Pocket is another loopback HTTP
+listener **inside the same daemon**, normally port 7374, created only when the
+operator enables it. It serves the same built UI plus four restricted phone
+routes. Tailscale Serve owns TLS and tailnet routing; the setup points it at
+7374, never 7373. Cuesheet neither installs Tailscale nor modifies its account
+or network configuration. Local pairing/settings/device-management routes
+exist only on the Desk listener. The network surface remains unaudited; these
+checks are implementation evidence, not an independent security review.
+
+#### The two secrets have different lifetimes
+
+A QR carries an invitation in the URL fragment, so it never enters HTTP access
+logs; the UI removes it before React starts. Invitations are memory-only,
+two-minute and single-use. Phone sessions are 24-hour bearer credentials in
+browser session storage, sent in headers, with hashes/expiry in versioned
+`~/.cuesheet/pocket.json`. The local Desk can revoke one device or disable
+Pocket and revoke all. Changing the configured HTTPS origin also revokes all
+credentials and invitations. Closing an HTTP listener waits for active
+requests, so disable releases the serialized mutation queue before awaiting
+close; holding it would deadlock an in-flight pairing request.
+
+#### Small summaries and honest delivery
+
+The phone carries project/Station labels, the question, kind, run ID and time.
+It does not fetch prompts, logs, patches or the Commons. A bounded redactor
+removes recognized credential formats from questions and labels; unknown
+secrets and sensitive prose are still an operator concern. The broader
+pre-vendor redaction pack stays open. GO on a Hold is labeled **override**.
+Questions refresh every three seconds and on foreground return; answers are
+never queued offline. Optional vibration/browser notifications use generic
+text and require an active page. Guaranteed background push/lock-screen buzz
+needs its own delivery design and is explicitly unbuilt. The browser walk
+found an empty-state sentence implying a declined run would continue; it now
+says only that new questions will appear.
+
+The setup and wire contracts are in [docs/pocket.md](docs/pocket.md). No
+Tailscale configuration was changed, no user device was paired, and this is
+not a published-release claim.
+
+**Local verification (2026-10-05):** build, typecheck, lint, format-check and
+tests passed in CI's order on macOS: 85 test files, 1,257 tests passed and 9
+skipped. The new suites include a disable-versus-pairing race and unauthenticated
+answer refusal. The disposable preview daemon, its home and browser tabs were
+removed after the walkthrough. Changes are uncommitted; no CI run is claimed.
+
+---
+
 ## Deferred on purpose
 
 Most of this table has now been claimed by Phases 8–13, which is what the seams were cut for. The rows are kept rather than deleted, because *which* seam absorbed each one is the evidence that the interfaces were drawn in the right places — nothing below required changing `Harness`, `RunStore` or the HTTP transport to become additive.
@@ -2408,7 +2498,7 @@ Most of this table has now been claimed by Phases 8–13, which is what the seam
 | **Projects** | 🔵 beta | **No seam — this is the one nothing was cut for.** `cwd`, `loadConfig` and the store root each assume exactly one, which is why it is a phase and not a step | Phase 8 |
 | ~~Cache-aware accounting~~ | ⚪ post-1.0 | **No seam — `Cost` was three fields and none of them was a cache.** Additive to widen, but a `core` type change rather than a harness one, which is why it could not simply arrive with a new harness | Step 57, done inside Step 39 |
 | ~~Hooks, rewind~~, plan mode | ⚪ post-1.0 | Cues, for hooks — a hook is a cue kind exactly as a gate was; the run store, for rewind. **Plan mode** waits for its own typed `Harness` member, the rule Step 61 wrote down — the interface turned out to have grown capability members one question at a time all along | Steps 60–61; plan mode still deferred |
-| Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12) | still deferred |
+| Phone pairing, tailnet | 🟢 1.0 | The HTTP API is transport-agnostic (Step 12); a restricted listener keeps the full Desk API local | Step 63 source implemented; actual tailnet/phone acceptance and background push remain open |
 | Linux builds | 🟢 1.0 | `electron-builder` target, not an architecture change | still deferred |
 | Caller, On-Call | ⚪ post-1.0 | Both are cuesheets + a trigger over the existing queue | still deferred |
 
@@ -2446,7 +2536,7 @@ If you want the shortest path to something you can play with, do **Steps 1, 4, 5
 
 **Past alpha, the phase number is the order** — see the numbering rule under [Status](#status). Phase 7 came first because a second opinion is the thesis and it was the one claim the README could not back. Phases 8–13 then run in sequence, and the chain is a dependency chain rather than a ranking:
 
-**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product → 14 the context economy.**
+**8 Projects → 9 `ollama` → 10 Limits → 11 the Desk → 12 the Commons → 13 the product → 14 the context economy → 15 Pocket.**
 
 Projects because nothing above it can be scoped without them. `ollama` before Limits because a strip designed without a station that cannot run out is a strip that will need redesigning the week one arrives. Limits before the Desk because half the screen the operator asked for renders usage, and `usage()` returns `[]` from every harness today. The Desk after all three because a rebuilt UI full of placeholders is the expensive kind of mistake — you ship it, and then you cannot tell whether it is wrong or merely empty. The Commons after the Desk because its scoping question is answered by Phase 8 and its inbox needs somewhere to live. And the product last because signing, migrations and a CLI are the work that only pays off once the thing is worth installing.
 

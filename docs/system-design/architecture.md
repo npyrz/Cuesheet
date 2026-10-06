@@ -2,9 +2,9 @@
 
 ## Design center
 
-The daemon is the product. The Desk, Electron shell, terminal CLI, and future phone are clients of the same HTTP and WebSocket API. Product behavior belongs behind that API; Electron is packaging and native integration, not a second backend.
+The daemon is the product. The Desk, Electron shell, terminal CLI, and Pocket phone view are HTTP clients of the same backend. Product behavior belongs behind that API; Electron is packaging and native integration, not a second backend.
 
-The daemon currently binds to `127.0.0.1:7373`. It is intentionally unauthenticated while it is loopback-only. Network serving, pairing, revocation, and phone access are planned and must add an authentication boundary before widening exposure.
+The unrestricted Desk API binds to loopback on port 7373 and refuses non-loopback hosts. Optional Pocket uses a second loopback listener on port 7374, exposing only authenticated standby reads/answers behind operator-managed Tailscale HTTPS. Its pairing, expiry and revocation boundary is described in [Pocket](../pocket.md).
 
 ```mermaid
 flowchart LR
@@ -12,11 +12,13 @@ flowchart LR
         Desk[React Desk]
         Shell[Electron shell]
         CLI[Terminal CLI]
-        Phone[Phone - planned]
+        Phone[Pocket phone view]
     end
 
     subgraph Daemon[cuesheetd]
         API[HTTP and WebSocket]
+        Pocket[Restricted Pocket API]
+        Standbys[Shared standby registry]
         Registry[Project registry]
         Runtimes[Project runtimes]
         Usage[Usage cache]
@@ -32,8 +34,11 @@ flowchart LR
 
     Shell --> Desk
     Desk --> API
-    FutureCLI -.-> API
-    Phone -.-> API
+    CLI --> API
+    Phone --> Tailnet[Private Tailscale HTTPS]
+    Tailnet --> Pocket
+    Pocket --> Standbys
+    API --> Standbys
     API --> Registry
     API --> Runtimes
     API --> Usage
@@ -90,9 +95,11 @@ flowchart TB
 
     Current --> C5[Terminal client]
 
-    Planned --> P1[Phone pairing and remote access]
-    Planned --> P2[SQLite, migration framework, signing]
+    Current --> C6[Pocket pairing and mobile standby]
+    Current --> C7[SQLite and versioned migrations]
+    Planned --> P1[Background phone push delivery]
+    Planned --> P2[Optional installer signing]
     Planned --> P3[Caller, On-Call, fleet, ecosystem]
 ```
 
-The UI is already responsive, but that is not the same as having a phone client.
+Pocket reuses the built UI with its own focused phone page. Actual tailnet/physical-phone acceptance remains open; the source is verified over HTTP and in a phone-width browser walkthrough.
